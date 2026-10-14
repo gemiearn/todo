@@ -22,6 +22,10 @@ interface TaskListDao {
     @Query("SELECT MAX(sortOrder) FROM task_lists WHERE isInbox = 0")
     suspend fun maxUserSortOrder(): Int?
 
+    /** The user defined lists in their current order; the inbox is excluded. */
+    @Query("SELECT * FROM task_lists WHERE isInbox = 0 ORDER BY sortOrder ASC, createdAt ASC, id ASC")
+    suspend fun getUserListsOrdered(): List<TaskList>
+
     @Insert
     suspend fun insert(list: TaskList): Long
 

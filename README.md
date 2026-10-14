@@ -4,17 +4,21 @@
 
 完整的开发需求与实施说明见 [Android待办与番茄钟App_开发需求与实施说明.md](Android待办与番茄钟App_开发需求与实施说明.md)。
 
-## 当前进度：阶段 0（仓库与构建骨架）
+## 当前进度：阶段 1（本地任务核心）
 
-本阶段**只**建立可构建、可测试、可下载的最小骨架，不包含任务管理、番茄钟、通知等业务功能。
+阶段 0 建立了可构建、可测试、可下载的最小骨架；阶段 1 在此基础上实现了本地任务核心（**仍不包含**番茄钟、提醒、重复任务、习惯打卡与云同步）。
 
-已包含：
+阶段 1 已包含：
 
-- 最小 Android 项目：单 `app` 模块，Kotlin + Jetpack Compose + Material 3，单 Activity。
-- Gradle Wrapper（已随仓库提交，CI 不需要预装 Gradle）。
-- GitHub Actions 工作流：构建 Debug APK、运行单元测试、运行 Android lint，并上传可下载的 APK。
-- 一个基础单元测试（仅验证测试链路可用，业务规则测试在后续阶段加入）。
-- `.gitignore`（排除构建产物、IDE 文件与任何签名材料）。
+- Room 本地数据库（`task_lists` / `tasks` / `task_events`，schema 版本 1，schema JSON 随仓库提交）。
+- 内置收件箱与用户自定义清单：新增、改名、排序（上移/下移）、删除清单时把任务移入收件箱（禁止级联删除任务）。
+- 任务的新建、编辑、完成、重新打开、软删除与回收站恢复。
+- 任务标题、备注、优先级（普通/高/紧急）与一层子任务。
+- 关键操作历史（创建、完成、重新打开、删除、恢复），保留标题快照，删除任务也不丢历史。
+- 基础 Compose 界面：抽屉清单、任务列表、任务详情、任务编辑、已完成、回收站。
+- 覆盖上述业务规则的 JVM 单元测试与 Room 数据库测试（含“重启后数据仍在”）。
+
+仍待后续阶段：日期/截止日期与今日·未来·逾期视图、搜索与排序、简版月历、番茄钟与专注历史、本地提醒、主题设置、JSON 导出与固定签名流程（详见需求说明第 10 节）。
 
 ## 技术与版本
 
@@ -26,7 +30,7 @@
 | compileSdk / targetSdk | 35（Android 15，可运行于 Android 15 / 16 真机） |
 | minSdk | 26（Android 8.0） |
 | applicationId | `com.personal.todo` |
-| versionCode / versionName | 1 / 0.1.0（在 `gradle.properties` 中集中管理） |
+| versionCode / versionName | 3 / 0.1.3（在 `gradle.properties` 中集中管理） |
 
 `versionCode` 与 `versionName` 统一写在 [gradle.properties](gradle.properties) 的 `appVersionCode` / `appVersionName`，CI 读取 `appVersionName` 用于生成 artifact 名称。
 
@@ -38,14 +42,18 @@
 ├── app/
 │   ├── build.gradle.kts               # app 模块配置
 │   ├── proguard-rules.pro
+│   ├── schemas/                       # Room 导出的 schema JSON（纳入版本控制）
 │   └── src/
 │       ├── main/
-│       │   ├── AndroidManifest.xml
+│       │   ├── AndroidManifest.xml    # 无权限、无网络、关闭自动备份
 │       │   ├── java/com/personal/todo/
 │       │   │   ├── MainActivity.kt
-│       │   │   └── ui/theme/Theme.kt
-│       │   └── res/                   # 文案、主题、图标
-│       └── test/java/com/personal/todo/SkeletonTest.kt
+│       │   │   ├── data/              # Repository、容器与 Room 数据库（db/）
+│       │   │   ├── model/             # Priority、TaskEventType 等纯模型
+│       │   │   ├── ui/                # Compose 页面与组件
+│       │   │   └── viewmodel/         # Compose 用的 ViewModel
+│       │   └── res/                   # 文案、主题、图标、备份规则
+│       └── test/java/com/personal/todo/  # 业务规则与 Room 测试
 ├── gradle/
 │   ├── libs.versions.toml             # 依赖与版本集中管理
 │   └── wrapper/                       # Gradle Wrapper（含 gradle-wrapper.jar）

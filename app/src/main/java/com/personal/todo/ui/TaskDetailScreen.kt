@@ -73,6 +73,18 @@ fun TaskDetailScreen(
     val deleteLabel = stringResource(R.string.action_delete)
     val addFailedMessage = stringResource(R.string.message_add_subtask_failed)
 
+    // Deleting a parent that still has subtasks asks once before: the subtasks
+    // go to the trash together with it (spec section 4.3). A plain task is
+    // deleted straight away and can be undone from the snackbar (section 4.2).
+    var confirmDelete by remember { mutableStateOf(false) }
+    val deleteWithUndo: () -> Unit = {
+        viewModel.delete()
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(deletedMessage, undoLabel)
+            if (result == SnackbarResult.ActionPerformed) viewModel.restore()
+        }
+    }
+
     // The add row is hidden for deleted tasks, but a refused add can still be
     // triggered from elsewhere - report it instead of letting it crash.
     LaunchedEffect(subtaskAddFailed) {
@@ -119,11 +131,7 @@ fun TaskDetailScreen(
                     onRestore = { viewModel.restore() },
                     onEdit = onEdit,
                     onDelete = {
-                        viewModel.delete()
-                        scope.launch {
-                            val result = snackbarHostState.showSnackbar(deletedMessage, undoLabel)
-                            if (result == SnackbarResult.ActionPerformed) viewModel.restore()
-                        }
+                        if (subtasks.isNotEmpty()) confirmDelete = true else deleteWithUndo()
                     }
                 )
             }
@@ -167,6 +175,19 @@ fun TaskDetailScreen(
                 HorizontalDivider()
             }
         }
+    }
+
+    val deleteTarget = task
+    if (confirmDelete && deleteTarget != null) {
+        DeleteTaskConfirmDialog(
+            taskTitle = deleteTarget.title,
+            subtaskCount = subtasks.size,
+            onConfirm = {
+                confirmDelete = false
+                deleteWithUndo()
+            },
+            onDismiss = { confirmDelete = false }
+        )
     }
 }
 

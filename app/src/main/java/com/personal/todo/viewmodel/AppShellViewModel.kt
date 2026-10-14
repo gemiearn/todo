@@ -50,6 +50,11 @@ class AppShellViewModel(private val repository: TaskRepository) : ViewModel() {
         viewModelScope.launch { repository.renameList(listId, name) }
     }
 
+    /** Moves a user list up (-1) or down (+1) in the drawer order. */
+    fun moveList(listId: Long, offset: Int) {
+        viewModelScope.launch { repository.moveList(listId, offset) }
+    }
+
     fun deleteList(listId: Long) {
         viewModelScope.launch { repository.deleteListMovingTasksToInbox(listId) }
     }

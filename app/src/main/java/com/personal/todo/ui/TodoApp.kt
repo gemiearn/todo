@@ -10,6 +10,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
@@ -230,10 +232,22 @@ private fun MainScreen(
     var showNewListDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<TaskList?>(null) }
     var deleteTarget by remember { mutableStateOf<TaskList?>(null) }
+    var pendingTaskDelete by remember { mutableStateOf<Task?>(null) }
 
     val deletedMessage = stringResource(R.string.message_task_deleted)
     val listDeletedMessage = stringResource(R.string.message_list_deleted)
     val undoLabel = stringResource(R.string.action_undo)
+
+    // Deleting a task always soft deletes it and offers undo. Parents that
+    // still have subtasks ask once before, because the subtasks go to the trash
+    // with them (spec section 4.3).
+    val deleteTaskWithUndo: (Task) -> Unit = { task ->
+        onDelete(task)
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(deletedMessage, actionLabel = undoLabel)
+            if (result == SnackbarResult.ActionPerformed) onRestore(task)
+        }
+    }
 
     val targetListId: Long? = when (collection) {
         TaskCollection.Inbox -> shellViewModel.inboxId
@@ -242,6 +256,9 @@ private fun MainScreen(
     }
     val currentList = (collection as? TaskCollection.ListDetail)
         ?.let { detail -> lists.firstOrNull { it.id == detail.listId } }
+    // The inbox is pinned first, so only user lists can be reordered.
+    val userLists = lists.filter { !it.isInbox }
+    val currentUserListIndex = currentList?.let { list -> userLists.indexOfFirst { it.id == list.id } } ?: -1
 
     val title = when (collection) {
         TaskCollection.Inbox -> stringResource(R.string.list_inbox_name)
@@ -287,6 +304,22 @@ private fun MainScreen(
                     },
                     actions = {
                         if (currentList != null && !currentList.isInbox) {
+                            if (currentUserListIndex > 0) {
+                                IconButton(onClick = { shellViewModel.moveList(currentList.id, -1) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                        contentDescription = stringResource(R.string.action_move_up)
+                                    )
+                                }
+                            }
+                            if (currentUserListIndex in 0 until userLists.lastIndex) {
+                                IconButton(onClick = { shellViewModel.moveList(currentList.id, 1) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowDown,
+                                        contentDescription = stringResource(R.string.action_move_down)
+                                    )
+                                }
+                            }
                             IconButton(onClick = { renameTarget = currentList }) {
                                 Icon(
                                     imageVector = Icons.Default.Edit,
@@ -323,10 +356,10 @@ private fun MainScreen(
                 onOpenTask = onOpenTask,
                 onToggleComplete = onToggleComplete,
                 onDelete = { task ->
-                    onDelete(task)
-                    scope.launch {
-                        val result = snackbarHostState.showSnackbar(deletedMessage, actionLabel = undoLabel)
-                        if (result == SnackbarResult.ActionPerformed) onRestore(task)
+                    if ((subtaskCounts[task.id] ?: 0) > 0) {
+                        pendingTaskDelete = task
+                    } else {
+                        deleteTaskWithUndo(task)
                     }
                 },
                 onRestore = onRestore,
@@ -387,6 +420,18 @@ private fun MainScreen(
                     Text(stringResource(R.string.action_cancel))
                 }
             }
+        )
+    }
+
+    pendingTaskDelete?.let { task ->
+        DeleteTaskConfirmDialog(
+            taskTitle = task.title,
+            subtaskCount = subtaskCounts[task.id] ?: 0,
+            onConfirm = {
+                deleteTaskWithUndo(task)
+                pendingTaskDelete = null
+            },
+            onDismiss = { pendingTaskDelete = null }
         )
     }
 }

@@ -106,6 +106,49 @@ class TaskRepositoryTest {
         assertEquals(1, repository.observeLists().first().size)
     }
 
+    @Test
+    fun movingAUserListReordersTheUserListsButLeavesTheInboxFirst() = runBlocking {
+        val work = repository.createList("工作")
+        repository.createList("生活")
+        val study = repository.createList("学习")
+        assertEquals(listOf("工作", "生活", "学习"), userListNames())
+
+        assertTrue(repository.moveList(study, -1))
+        assertEquals(listOf("工作", "学习", "生活"), userListNames())
+
+        assertTrue(repository.moveList(work, 1))
+        assertEquals(listOf("学习", "工作", "生活"), userListNames())
+
+        // The inbox is pinned: it is never part of the user order.
+        assertEquals("收件箱", repository.observeLists().first().first().name)
+    }
+
+    @Test
+    fun movingAListBeyondTheOrderChangesNothing() = runBlocking {
+        val work = repository.createList("工作")
+        val life = repository.createList("生活")
+
+        assertFalse(repository.moveList(work, -1)) // already first
+        assertFalse(repository.moveList(life, 1))  // already last
+
+        assertEquals(listOf("工作", "生活"), userListNames())
+    }
+
+    @Test
+    fun theInboxIsNeverPartOfTheReorderableUserLists() = runBlocking {
+        repository.createList("工作")
+
+        assertFalse(repository.moveList(inboxId, -1))
+        assertFalse(repository.moveList(inboxId, 1))
+
+        assertEquals(listOf("工作"), userListNames())
+    }
+
+    private suspend fun userListNames(): List<String> =
+        repository.observeLists().first()
+            .filter { !it.isInbox }
+            .map { it.name }
+
     // -------------------------------------------------------- task basics
 
     @Test

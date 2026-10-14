@@ -139,6 +139,32 @@ fun TextInputDialog(
     )
 }
 
+/**
+ * Confirmation shown before deleting a parent task that still has subtasks:
+ * the spec (section 4.3) requires the user to be told that the subtasks go to
+ * the trash together with their parent. It is only shown when subtasks exist -
+ * a plain task keeps the plain "delete and undo" flow of section 4.2.
+ */
+@Composable
+fun DeleteTaskConfirmDialog(
+    taskTitle: String,
+    subtaskCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dialog_delete_task_title)) },
+        text = { Text(stringResource(R.string.dialog_delete_task_message, taskTitle, subtaskCount)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.dialog_delete_task_confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
+    )
+}
+
 @Composable
 fun PriorityChips(
     selected: Priority,

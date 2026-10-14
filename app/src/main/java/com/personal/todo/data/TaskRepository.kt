@@ -89,6 +89,29 @@ class TaskRepository(
     }
 
     /**
+     * Moves a user list one step up (-1) or down (+1) in the drawer order
+     * (spec section 3: lists can be created, renamed and sorted). The built-in
+     * inbox is not part of the user order.
+     *
+     * @return true when the list actually moved; false at an edge or for the
+     * inbox, so the UI can hide the button instead of failing silently.
+     */
+    suspend fun moveList(listId: Long, offset: Int): Boolean = db.withTransaction {
+        if (offset == 0) return@withTransaction false
+        val lists = listDao.getUserListsOrdered()
+        val from = lists.indexOfFirst { it.id == listId }
+        if (from < 0) return@withTransaction false
+        val to = from + offset
+        if (to !in lists.indices) return@withTransaction false
+        val reordered = lists.toMutableList().apply { add(to, removeAt(from)) }
+        val time = now()
+        reordered.forEachIndexed { index, list ->
+            if (list.sortOrder != index) listDao.update(list.copy(sortOrder = index, updatedAt = time))
+        }
+        true
+    }
+
+    /**
      * Deletes a list the only allowed way: every task of that list - including
      * soft deleted ones, otherwise the foreign key would block the delete - is
      * moved into the inbox, then the list row is removed. Tasks are never
