@@ -82,4 +82,9 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    // Compose screens are composed on the JVM too: the smoke tests catch a
+    // crash in the composition itself, which no pure logic test can see.
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(libs.androidx.ui.test.manifest)
 }

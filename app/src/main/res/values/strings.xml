@@ -200,4 +200,10 @@
     <string name="focus_duration_seconds">%1$d 秒</string>
     <string name="focus_duration_minutes">%1$d 分钟</string>
     <string name="focus_duration_minutes_seconds">%1$d 分 %2$d 秒</string>
+
+    <!-- 崩溃日志（手机上自查闪退原因） -->
+    <string name="crash_log_title">崩溃日志</string>
+    <string name="crash_log_empty">没有记录到崩溃</string>
+    <string name="crash_log_hint">长按下面的内容可以选择并复制，把整段发给开发者就能定位闪退原因。</string>
+    <string name="crash_log_clear">清除这条记录</string>
 </resources>

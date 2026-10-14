@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.personal.todo.R
 import com.personal.todo.ui.theme.LocalTodoColors
@@ -45,6 +46,9 @@ enum class HomeTab(val route: String, @StringRes val labelRes: Int) {
     Quadrant("quadrant", R.string.nav_quadrant),
     More("more", R.string.nav_more)
 }
+
+/** The tag the smoke tests use to reach a tab, since the icons carry no text. */
+internal fun tabTag(tab: HomeTab): String = "tab-${tab.route}"
 
 /**
  * The bottom bar of the screenshots: no labels, one rounded square icon per
@@ -72,7 +76,7 @@ fun TodoBottomBar(
                 selected = tab == selected,
                 todayDayOfMonth = todayDayOfMonth,
                 onClick = { onSelect(tab) },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).testTag(tabTag(tab))
             )
         }
     }

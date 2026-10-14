@@ -97,6 +97,7 @@ private const val ROUTE_LIST = "list"
 private const val ROUTE_FUTURE = "future"
 private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_FOCUS = "focus"
+private const val ROUTE_CRASH = "crash"
 private const val ROUTE_TASK = "task"
 private const val ROUTE_NEW = "new"
 private const val ROUTE_EDIT = "edit"
@@ -205,6 +206,8 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
             )
             FocusScreen(viewModel = focusViewModel, onBack = { nav.pop() })
         }
+
+        ROUTE_CRASH -> CrashLogScreen(onBack = { nav.pop() })
 
         else -> MainScreen(
             repository = repository,
@@ -560,10 +563,15 @@ private fun MainScreen(
                 HomeTab.More.route -> MoreScreen(
                     lists = lists,
                     openTaskCounts = openTaskCounts,
-                    // 专注 is a screen of its own with a back button, so it is
-                    // pushed on top; the other entries are root views.
+                    // 专注 and 崩溃日志 are screens of their own with a back
+                    // button, so they are pushed on top; the other entries are
+                    // root views.
                     onOpen = { target ->
-                        if (target == ROUTE_FOCUS) nav.push(target) else nav.resetTo(target)
+                        if (target == ROUTE_FOCUS || target == ROUTE_CRASH) {
+                            nav.push(target)
+                        } else {
+                            nav.resetTo(target)
+                        }
                     },
                     onNewList = { showNewListDialog = true },
                     modifier = Modifier.padding(innerPadding)
@@ -683,6 +691,10 @@ private fun MoreScreen(
         MoreEntry(
             label = stringResource(R.string.nav_trash),
             onClick = { onOpen(ROUTE_TRASH) }
+        )
+        MoreEntry(
+            label = stringResource(R.string.crash_log_title),
+            onClick = { onOpen(ROUTE_CRASH) }
         )
 
         SectionHeader(stringResource(R.string.drawer_title))
