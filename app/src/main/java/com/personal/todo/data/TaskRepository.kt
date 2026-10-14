@@ -41,7 +41,7 @@ class TaskRepository(
     private val db: TodoDatabase,
     private val inboxName: String,
     private val now: () -> Long = System::currentTimeMillis,
-    private val zone: ZoneId = ZoneId.systemDefault()
+    val zone: ZoneId = ZoneId.systemDefault()
 ) {
 
     private val listDao = db.taskListDao()
@@ -149,6 +149,15 @@ class TaskRepository(
         flow { emit(ensureInbox()) }.flatMapLatest { taskDao.observeOpenTasksInList(it) }
 
     fun observeCompletedTasks(): Flow<List<Task>> = taskDao.observeCompletedTasks()
+
+    /** Completed tasks of one list - the "已完成 N" group of that list view. */
+    fun observeCompletedTasksInList(listId: Long): Flow<List<Task>> =
+        taskDao.observeCompletedTasksInList(listId)
+
+    /** Completed tasks of the built-in inbox, for the same folded group. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeCompletedInboxTasks(): Flow<List<Task>> =
+        flow { emit(ensureInbox()) }.flatMapLatest { taskDao.observeCompletedTasksInList(it) }
 
     fun observeDeletedTasks(): Flow<List<Task>> = taskDao.observeDeletedTasks()
 

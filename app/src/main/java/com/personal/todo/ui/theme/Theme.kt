@@ -1,40 +1,28 @@
 package com.personal.todo.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-
-private val LightColors = lightColorScheme()
-private val DarkColors = darkColorScheme()
+import androidx.compose.runtime.CompositionLocalProvider
 
 /**
- * App theme. Phase 0 follows the system light/dark setting and, on Android 12+,
- * the system wallpaper colors. Explicit light/dark selection is a later phase.
+ * App theme: system light/dark, with the fixed palette of the design.
+ *
+ * The wallpaper based dynamic colors of phase 0 are deliberately switched off
+ * now: the screens follow the screenshots the user supplied, and the blue accent
+ * those screens are built around is not something the wallpaper should replace.
  */
 @Composable
 fun TodoPomodoroTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColors
-        else -> LightColors
+    CompositionLocalProvider(
+        LocalTodoColors provides if (darkTheme) DarkTodoColors else LightTodoColors
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkScheme else LightScheme,
+            content = content
+        )
     }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        content = content
-    )
 }

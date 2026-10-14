@@ -8,6 +8,7 @@ import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -33,6 +34,17 @@ class TaskCollectionViewModel(
 
     val subtaskCounts: StateFlow<Map<Long, Int>> = repository.observeSubtaskCounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * Completed tasks of this list view. A list keeps its finished tasks folded
+     * away behind a "已完成 N" header instead of losing them to another screen;
+     * the 已完成 and 回收站 views have nothing to fold.
+     */
+    val completedTasks: StateFlow<List<Task>> = when (collection) {
+        TaskCollection.Inbox -> repository.observeCompletedInboxTasks()
+        is TaskCollection.ListDetail -> repository.observeCompletedTasksInList(collection.listId)
+        TaskCollection.Completed, TaskCollection.Trash -> flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun complete(taskId: Long) {
         viewModelScope.launch { repository.completeTask(taskId) }

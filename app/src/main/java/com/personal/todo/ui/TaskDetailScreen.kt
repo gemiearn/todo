@@ -45,6 +45,7 @@ import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.viewmodel.TaskDetailViewModel
+import java.time.ZoneId
 import kotlinx.coroutines.launch
 
 /**
@@ -58,6 +59,7 @@ import kotlinx.coroutines.launch
 fun TaskDetailScreen(
     viewModel: TaskDetailViewModel,
     lists: List<TaskList>,
+    zone: ZoneId,
     onOpenTask: (Long) -> Unit,
     onEdit: () -> Unit,
     onBack: () -> Unit
@@ -66,6 +68,7 @@ fun TaskDetailScreen(
     val subtasks by viewModel.subtasks.collectAsStateWithLifecycle()
     val events by viewModel.events.collectAsStateWithLifecycle()
     val subtaskAddFailed by viewModel.subtaskAddFailed.collectAsStateWithLifecycle()
+    val nowMillis = rememberNowMillis()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val deletedMessage = stringResource(R.string.message_task_deleted)
@@ -142,12 +145,14 @@ fun TaskDetailScreen(
                     item { InfoText(stringResource(R.string.empty_subtasks)) }
                 }
                 items(subtasks, key = { it.id }) { subtask ->
-                    TaskRow(
+                    TaskCard(
                         task = subtask,
                         subtaskCount = 0,
                         checked = subtask.completedAt != null,
                         onCheckedChange = { viewModel.toggleSubtask(subtask) },
                         onClick = { onOpenTask(subtask.id) },
+                        nowMillis = nowMillis,
+                        zone = zone,
                         actionLabel = deleteLabel,
                         onAction = {
                             viewModel.deleteSubtask(subtask.id)
@@ -155,9 +160,9 @@ fun TaskDetailScreen(
                                 val result = snackbarHostState.showSnackbar(deletedMessage, undoLabel)
                                 if (result == SnackbarResult.ActionPerformed) viewModel.restoreSubtask(subtask.id)
                             }
-                        }
+                        },
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
                     )
-                    HorizontalDivider()
                 }
                 // A deleted parent must not offer "add subtask": the repository
                 // refuses it (spec: no children under a deleted task).

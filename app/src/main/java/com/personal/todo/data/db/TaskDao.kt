@@ -45,6 +45,23 @@ interface TaskDao {
     fun observeCompletedTasks(): Flow<List<Task>>
 
     /**
+     * Completed top level tasks of one list: the tasks the list view folds away
+     * behind its "已完成 N" header, so a finished task leaves the working list
+     * without disappearing.
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE listId = :listId
+          AND parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NOT NULL
+        ORDER BY completedAt DESC, id DESC
+        """
+    )
+    fun observeCompletedTasksInList(listId: Long): Flow<List<Task>>
+
+    /**
      * Everything in the trash, including subtasks. A subtask can be deleted on
      * its own, so the trash must be able to show and restore it.
      */

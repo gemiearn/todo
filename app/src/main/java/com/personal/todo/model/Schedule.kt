@@ -86,6 +86,27 @@ object Schedule {
         }
     }
 
+    /**
+     * How long is left until a due moment - the countdown badge of a task card.
+     *
+     * Only a due date *with* a time has something to count down to: "due at the
+     * end of the day" carries no moment, and an overdue task shows its overdue
+     * marker instead of a countdown. Nothing here changes a date.
+     */
+    fun countdownTo(nowMillis: Long, dueDate: LocalDate?, dueTime: LocalTime?, zone: ZoneId): Countdown {
+        if (dueDate == null || dueTime == null) return Countdown.None
+        val due = dueInstant(dueDate, dueTime, zone) ?: return Countdown.None
+        val minutes = ChronoUnit.MINUTES.between(Instant.ofEpochMilli(nowMillis), due)
+        return when {
+            minutes <= 0L -> Countdown.None
+            minutes < 60L -> Countdown.Minutes(minutes)
+            minutes < MINUTES_PER_DAY -> Countdown.Hours(minutes / 60L)
+            else -> Countdown.Days(minutes / MINUTES_PER_DAY)
+        }
+    }
+
+    private const val MINUTES_PER_DAY = 24L * 60L
+
     /** Label for a due date, including the overdue state. */
     fun dueLabel(nowMillis: Long, dueDate: LocalDate?, dueTime: LocalTime?, zone: ZoneId): DateLabel {
         if (dueDate == null) return DateLabel.None
@@ -129,6 +150,16 @@ sealed interface DateLabel {
     data class MonthDay(val month: Int, val day: Int) : DateLabel
 
     data class OverdueDays(val days: Int) : DateLabel
+}
 
-    data class RemainingDays(val days: Int) : DateLabel
+/** Time left until a due moment, as shown next to the date of a task card. */
+sealed interface Countdown {
+    /** Nothing to count down to: no due date, no due time, or already overdue. */
+    data object None : Countdown
+
+    data class Minutes(val minutes: Long) : Countdown
+
+    data class Hours(val hours: Long) : Countdown
+
+    data class Days(val days: Long) : Countdown
 }

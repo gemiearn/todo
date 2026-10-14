@@ -120,6 +120,53 @@ class ScheduleTest {
         )
     }
 
+    // ------------------------------------------------------------- 倒计时
+
+    @Test
+    fun onlyADueMomentThatIsStillAheadHasACountdown() {
+        val now = atTime(LocalDateTime.of(2026, 10, 14, 9, 0))
+
+        assertEquals(Countdown.None, Schedule.countdownTo(now, null, null, shanghai))
+        assertEquals(
+            "只有截止日期没有时刻，没有可以倒计时的时刻",
+            Countdown.None,
+            Schedule.countdownTo(now, dueToday, null, shanghai)
+        )
+        assertEquals(
+            "已经逾期的不再显示倒计时，改显示逾期标记",
+            Countdown.None,
+            Schedule.countdownTo(now, dueToday, LocalTime.of(8, 0), shanghai)
+        )
+    }
+
+    @Test
+    fun theCountdownSwitchesFromMinutesToHoursToDays() {
+        val now = atTime(LocalDateTime.of(2026, 10, 14, 9, 0))
+
+        assertEquals(
+            Countdown.Minutes(30),
+            Schedule.countdownTo(now, dueToday, LocalTime.of(9, 30), shanghai)
+        )
+        assertEquals(
+            "满一小时就不再按分钟显示",
+            Countdown.Hours(1),
+            Schedule.countdownTo(now, dueToday, LocalTime.of(10, 0), shanghai)
+        )
+        assertEquals(
+            Countdown.Hours(5),
+            Schedule.countdownTo(now, dueToday, LocalTime.of(14, 0), shanghai)
+        )
+        assertEquals(
+            "不足一天的仍按小时显示",
+            Countdown.Hours(23),
+            Schedule.countdownTo(now, dueToday.plusDays(1), LocalTime.of(8, 59), shanghai)
+        )
+        assertEquals(
+            Countdown.Days(1),
+            Schedule.countdownTo(now, dueToday.plusDays(1), LocalTime.of(9, 30), shanghai)
+        )
+    }
+
     // ------------------------------------------------------------- 四象限
 
     @Test

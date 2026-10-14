@@ -27,6 +27,26 @@
     <string name="action_add">添加</string>
     <string name="action_move_up">上移</string>
     <string name="action_move_down">下移</string>
+    <string name="action_show_completed">展开已完成任务</string>
+    <string name="action_hide_completed">收起已完成任务</string>
+
+    <!-- 日期、星期与倒计时 -->
+    <string name="date_today">今天</string>
+    <string name="date_tomorrow">明天</string>
+    <string name="date_yesterday">昨天</string>
+    <string name="date_overdue">已逾期</string>
+    <string name="date_overdue_days">逾期 %1$d 天</string>
+    <string name="date_month_day">%1$d月%2$d日</string>
+    <string name="weekday_mon">周一</string>
+    <string name="weekday_tue">周二</string>
+    <string name="weekday_wed">周三</string>
+    <string name="weekday_thu">周四</string>
+    <string name="weekday_fri">周五</string>
+    <string name="weekday_sat">周六</string>
+    <string name="weekday_sun">周日</string>
+    <string name="countdown_minutes">剩 %1$d 分钟</string>
+    <string name="countdown_hours">剩 %1$d 小时</string>
+    <string name="countdown_days">剩 %1$d 天</string>
 
     <!-- 任务字段 -->
     <string name="task_title_label">标题</string>
@@ -80,6 +100,7 @@
     <string name="dialog_delete_task_message">“%1$s”下有 %2$d 个子任务，删除父任务会一并删除这些子任务。之后可以从回收站恢复。</string>
     <string name="dialog_delete_task_confirm">删除</string>
     <string name="message_task_deleted">任务已移入回收站</string>
+    <string name="message_task_completed">任务已完成</string>
     <string name="message_list_deleted">清单已删除，其中的任务已移入收件箱</string>
     <string name="message_add_subtask_failed">无法添加子任务</string>
 </resources>

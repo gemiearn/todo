@@ -175,6 +175,49 @@ class TaskDateViewTest {
         )
     }
 
+    // --------------------------------------------------------- 已完成分组
+
+    @Test
+    fun completedTasksAreKeptPerListAndLeaveTheOpenList() = runBlocking {
+        val otherListId = repository.createList("工作")
+        val completedInbox = repository.createTask("收件箱里完成", inboxId)
+        val completedOther = repository.createTask("工作里完成", otherListId)
+        repository.createTask("收件箱里未完成", inboxId)
+        repository.completeTask(completedInbox)
+        repository.completeTask(completedOther)
+
+        assertEquals(
+            listOf(completedInbox),
+            repository.observeCompletedInboxTasks().first().map { it.id }
+        )
+        assertEquals(
+            listOf(completedOther),
+            repository.observeCompletedTasksInList(otherListId).first().map { it.id }
+        )
+        assertEquals(
+            "已完成的任务离开未完成列表，但不会消失",
+            listOf("收件箱里未完成"),
+            repository.observeInboxTasks().first().map { it.title }
+        )
+    }
+
+    @Test
+    fun theCompletedGroupLeavesOutDeletedTasksAndSubtasks() = runBlocking {
+        val parent = repository.createTask("父任务", inboxId)
+        val subtask = repository.addSubtask(parent, "子任务")
+        val deleted = repository.createTask("已完成又被删除", inboxId)
+        repository.completeTask(parent)
+        repository.completeTask(subtask)
+        repository.completeTask(deleted)
+        repository.deleteTask(deleted)
+
+        assertEquals(
+            "子任务跟着父任务显示在详情页，回收站里的任务不显示",
+            listOf(parent),
+            repository.observeCompletedInboxTasks().first().map { it.id }
+        )
+    }
+
     // ------------------------------------------------------------- 存储格式
 
     @Test

@@ -56,6 +56,7 @@ import com.personal.todo.viewmodel.TaskCollection
 import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import com.personal.todo.viewmodel.TaskEditorViewModel
+import java.time.ZoneId
 import kotlinx.coroutines.launch
 
 // ---------------------------------------------------------------- routes
@@ -135,6 +136,7 @@ fun TodoApp(repository: TaskRepository) {
             TaskDetailScreen(
                 viewModel = detailViewModel,
                 lists = lists,
+                zone = repository.zone,
                 onOpenTask = { nav.push(taskRoute(it)) },
                 onEdit = { nav.push(editTaskRoute(taskId)) },
                 onBack = { nav.pop() }
@@ -179,6 +181,7 @@ fun TodoApp(repository: TaskRepository) {
                 factory = TaskCollectionViewModel.factory(repository, collection)
             )
             val tasks by collectionViewModel.tasks.collectAsStateWithLifecycle()
+            val completedTasks by collectionViewModel.completedTasks.collectAsStateWithLifecycle()
             val subtaskCounts by collectionViewModel.subtaskCounts.collectAsStateWithLifecycle()
 
             MainScreen(
@@ -190,15 +193,12 @@ fun TodoApp(repository: TaskRepository) {
                 taskCounts = taskCounts,
                 collection = collection,
                 tasks = tasks,
+                completedTasks = completedTasks,
                 subtaskCounts = subtaskCounts,
+                zone = repository.zone,
                 onOpenTask = { nav.push(taskRoute(it)) },
-                onToggleComplete = { task ->
-                    if (task.completedAt == null) {
-                        collectionViewModel.complete(task.id)
-                    } else {
-                        collectionViewModel.reopen(task.id)
-                    }
-                },
+                onComplete = { collectionViewModel.complete(it.id) },
+                onReopen = { collectionViewModel.reopen(it.id) },
                 onDelete = { collectionViewModel.delete(it.id) },
                 onRestore = { collectionViewModel.restore(it.id) }
             )
@@ -219,9 +219,12 @@ private fun MainScreen(
     taskCounts: Map<Long, Int>,
     collection: TaskCollection,
     tasks: List<Task>,
+    completedTasks: List<Task>,
     subtaskCounts: Map<Long, Int>,
+    zone: ZoneId,
     onOpenTask: (Long) -> Unit,
-    onToggleComplete: (Task) -> Unit,
+    onComplete: (Task) -> Unit,
+    onReopen: (Task) -> Unit,
     onDelete: (Task) -> Unit,
     onRestore: (Task) -> Unit
 ) {
@@ -235,6 +238,7 @@ private fun MainScreen(
     var pendingTaskDelete by remember { mutableStateOf<Task?>(null) }
 
     val deletedMessage = stringResource(R.string.message_task_deleted)
+    val completedMessage = stringResource(R.string.message_task_completed)
     val listDeletedMessage = stringResource(R.string.message_list_deleted)
     val undoLabel = stringResource(R.string.action_undo)
 
@@ -246,6 +250,16 @@ private fun MainScreen(
         scope.launch {
             val result = snackbarHostState.showSnackbar(deletedMessage, actionLabel = undoLabel)
             if (result == SnackbarResult.ActionPerformed) onRestore(task)
+        }
+    }
+
+    // Finishing a task by the checkbox or by a swipe offers undo as well, and
+    // that undo is an explicit reopen - nothing reopens a task on its own.
+    val completeWithUndo: (Task) -> Unit = { task ->
+        onComplete(task)
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(completedMessage, actionLabel = undoLabel)
+            if (result == SnackbarResult.ActionPerformed) onReopen(task)
         }
     }
 
@@ -351,10 +365,13 @@ private fun MainScreen(
             TaskCollectionContent(
                 collection = collection,
                 tasks = tasks,
+                completedTasks = completedTasks,
                 subtaskCounts = subtaskCounts,
                 emptyText = emptyText,
+                zone = zone,
                 onOpenTask = onOpenTask,
-                onToggleComplete = onToggleComplete,
+                onComplete = completeWithUndo,
+                onReopen = onReopen,
                 onDelete = { task ->
                     if ((subtaskCounts[task.id] ?: 0) > 0) {
                         pendingTaskDelete = task
