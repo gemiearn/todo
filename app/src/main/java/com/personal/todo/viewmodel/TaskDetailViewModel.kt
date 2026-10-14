@@ -23,8 +23,12 @@ class TaskDetailViewModel(
     private val taskId: Long
 ) : ViewModel() {
 
-    private val _task = MutableStateFlow<Task?>(null)
-    val task: StateFlow<Task?> = _task
+    /**
+     * The task itself is a live query, not a snapshot: completing a task from
+     * the list (or any other screen) is reflected here without a manual reload.
+     */
+    val task: StateFlow<Task?> = repository.observeTask(taskId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val subtasks: StateFlow<List<Task>> = repository.observeSubtasks(taskId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -32,44 +36,47 @@ class TaskDetailViewModel(
     val events: StateFlow<List<TaskEvent>> = repository.observeEvents(taskId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    init {
-        reload()
-    }
+    private val _subtaskAddFailed = MutableStateFlow(false)
+
+    /** True when the last "add subtask" attempt was refused by the repository. */
+    val subtaskAddFailed: StateFlow<Boolean> = _subtaskAddFailed
 
     fun complete() {
-        viewModelScope.launch {
-            if (repository.completeTask(taskId)) reload()
-        }
+        viewModelScope.launch { repository.completeTask(taskId) }
     }
 
     fun reopen() {
-        viewModelScope.launch {
-            if (repository.reopenTask(taskId)) reload()
-        }
+        viewModelScope.launch { repository.reopenTask(taskId) }
     }
 
     /** Soft deletes the task, and its subtasks with it. */
     fun delete() {
-        viewModelScope.launch {
-            repository.deleteTask(taskId)
-            reload()
-        }
+        viewModelScope.launch { repository.deleteTask(taskId) }
     }
 
     fun restore() {
-        viewModelScope.launch {
-            repository.restoreTask(taskId)
-            reload()
-        }
+        viewModelScope.launch { repository.restoreTask(taskId) }
     }
 
     fun restoreSubtask(subtaskId: Long) {
         viewModelScope.launch { repository.restoreTask(subtaskId) }
     }
 
+    /**
+     * Never throws to the caller: a refused add (deleted parent, second level,
+     * ...) surfaces as [subtaskAddFailed] so the screen shows a message instead
+     * of crashing.
+     */
     fun addSubtask(title: String) {
         if (title.isBlank()) return
-        viewModelScope.launch { repository.addSubtask(taskId, title) }
+        viewModelScope.launch {
+            runCatching { repository.addSubtask(taskId, title) }
+                .onFailure { _subtaskAddFailed.value = true }
+        }
+    }
+
+    fun consumeSubtaskAddFailure() {
+        _subtaskAddFailed.value = false
     }
 
     fun toggleSubtask(subtask: Task) {
@@ -84,10 +91,6 @@ class TaskDetailViewModel(
 
     fun deleteSubtask(subtaskId: Long) {
         viewModelScope.launch { repository.deleteTask(subtaskId) }
-    }
-
-    private fun reload() {
-        viewModelScope.launch { _task.value = repository.getTask(taskId) }
     }
 
     companion object {

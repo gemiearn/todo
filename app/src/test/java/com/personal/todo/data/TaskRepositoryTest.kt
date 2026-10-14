@@ -203,6 +203,21 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun observingOneTaskReflectsChangesMadeElsewhere() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId)
+        assertNull(repository.observeTask(taskId).first()?.completedAt)
+
+        // Completed from the list screen, not from the detail screen.
+        repository.completeTask(taskId)
+
+        // The detail screen reads this same query, so it can never show a stale
+        // snapshot of the task.
+        val observed = requireNotNull(repository.observeTask(taskId).first())
+        assertNotNull(observed.completedAt)
+        assertEquals("任务", observed.title)
+    }
+
+    @Test
     fun theHistoryKeepsTheTitleSnapshotOfEarlierEvents() = runBlocking {
         val taskId = repository.createTask("旧标题", inboxId)
         advanceClock()
@@ -303,7 +318,7 @@ class TaskRepositoryTest {
 
         val parentEvents = db.taskEventDao().getForTask(parentId)
         assertEquals(listOf(TaskEventType.CREATED, TaskEventType.DELETED), parentEvents.map { it.eventType })
-        assertEquals("""{"subtaskCount":1}""", parentEvents.last().detailsJson)
+        assertEquals("""{"subtaskIds":[$subtaskId]}""", parentEvents.last().detailsJson)
 
         val subtaskEvents = db.taskEventDao().getForTask(subtaskId)
         assertEquals(listOf(TaskEventType.CREATED, TaskEventType.DELETED), subtaskEvents.map { it.eventType })
@@ -384,6 +399,51 @@ class TaskRepositoryTest {
         assertNull(repository.getTask(parentId)?.deletedAt)
         assertNull(repository.getTask(firstSubtask)?.deletedAt)
         assertNotNull(repository.getTask(secondSubtask)?.deletedAt)
+    }
+
+    @Test
+    fun restoringAParentDoesNotReviveSubtasksDeletedOnTheirOwn() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val deletedOnItsOwn = repository.addSubtask(parentId, "先被单独删除的子任务")
+        val cascaded = repository.addSubtask(parentId, "随父任务删除的子任务")
+        advanceClock()
+        repository.deleteTask(deletedOnItsOwn)
+        advanceClock()
+
+        repository.deleteTask(parentId)
+        val restored = repository.restoreTask(parentId)
+
+        // The parent and the subtask that went down with it come back...
+        assertEquals(2, restored)
+        assertNull(repository.getTask(parentId)?.deletedAt)
+        assertNull(repository.getTask(cascaded)?.deletedAt)
+        // ...but the one the user deleted on its own stays in the trash.
+        assertNotNull(repository.getTask(deletedOnItsOwn)?.deletedAt)
+        assertEquals(
+            listOf(deletedOnItsOwn),
+            repository.observeDeletedTasks().first().map { it.id }
+        )
+    }
+
+    @Test
+    fun eachDeleteOnlyBringsBackTheSubtasksOfThatDelete() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val first = repository.addSubtask(parentId, "子任务 1")
+        val second = repository.addSubtask(parentId, "子任务 2")
+
+        advanceClock()
+        repository.deleteTask(parentId)
+        assertEquals(3, repository.restoreTask(parentId))
+
+        // A later delete round covers only the subtasks still live at that time.
+        advanceClock()
+        repository.deleteTask(second)
+        advanceClock()
+        repository.deleteTask(parentId)
+
+        assertEquals(2, repository.restoreTask(parentId))
+        assertNull(repository.getTask(first)?.deletedAt)
+        assertNotNull(repository.getTask(second)?.deletedAt)
     }
 
     @Test

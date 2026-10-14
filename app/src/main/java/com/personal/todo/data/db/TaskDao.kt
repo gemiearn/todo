@@ -80,11 +80,16 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getById(id: Long): Task?
 
+    /**
+     * Live view of one task. The detail screen observes this instead of keeping
+     * a snapshot, so a change made anywhere else (completing the task from the
+     * list, for example) is reflected immediately.
+     */
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    fun observeById(id: Long): Flow<Task?>
+
     @Query("SELECT * FROM tasks WHERE parentTaskId = :parentTaskId AND deletedAt IS NULL")
     suspend fun getLiveSubtasks(parentTaskId: Long): List<Task>
-
-    @Query("SELECT * FROM tasks WHERE parentTaskId = :parentTaskId AND deletedAt IS NOT NULL")
-    suspend fun getDeletedSubtasks(parentTaskId: Long): List<Task>
 
     @Query("SELECT * FROM tasks WHERE listId = :listId")
     suspend fun getAllInList(listId: Long): List<Task>

@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Phase 0 skeleton: no permissions, no network, no accounts. -->
+    <!--
+        Phase 1 keeps every task on the device: no permissions, no network, no
+        accounts - and no Android auto backup either, so the local database is
+        never uploaded to Google's servers. allowBackup plus fullBackupContent
+        cover Android 11 and lower, dataExtractionRules covers Android 12 and
+        higher. A user controlled export is planned as a later phase.
+    -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

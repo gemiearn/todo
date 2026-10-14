@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,11 +65,22 @@ fun TaskDetailScreen(
     val task by viewModel.task.collectAsStateWithLifecycle()
     val subtasks by viewModel.subtasks.collectAsStateWithLifecycle()
     val events by viewModel.events.collectAsStateWithLifecycle()
+    val subtaskAddFailed by viewModel.subtaskAddFailed.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val deletedMessage = stringResource(R.string.message_task_deleted)
     val undoLabel = stringResource(R.string.action_undo)
     val deleteLabel = stringResource(R.string.action_delete)
+    val addFailedMessage = stringResource(R.string.message_add_subtask_failed)
+
+    // The add row is hidden for deleted tasks, but a refused add can still be
+    // triggered from elsewhere - report it instead of letting it crash.
+    LaunchedEffect(subtaskAddFailed) {
+        if (subtaskAddFailed) {
+            snackbarHostState.showSnackbar(addFailedMessage)
+            viewModel.consumeSubtaskAddFailure()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -139,7 +151,11 @@ fun TaskDetailScreen(
                     )
                     HorizontalDivider()
                 }
-                item { AddSubtaskRow(onAdd = viewModel::addSubtask) }
+                // A deleted parent must not offer "add subtask": the repository
+                // refuses it (spec: no children under a deleted task).
+                if (current.deletedAt == null) {
+                    item { AddSubtaskRow(onAdd = viewModel::addSubtask) }
+                }
             }
 
             item { SectionTitle(stringResource(R.string.task_events_title)) }

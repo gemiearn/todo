@@ -1,5 +1,6 @@
 package com.personal.todo.data
 
+import androidx.room.withTransaction
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskList
@@ -91,9 +92,11 @@ class TaskRepository(
         val inboxId = ensureInbox()
         val tasks = taskDao.getAllInList(listId)
         val time = now()
-        tasks.forEach { taskDao.update(it.copy(listId = inboxId, updatedAt = time)) }
-        listDao.deleteNonInboxById(listId)
-        return tasks.size
+        return db.withTransaction {
+            tasks.forEach { taskDao.update(it.copy(listId = inboxId, updatedAt = time)) }
+            listDao.deleteNonInboxById(listId)
+            tasks.size
+        }
     }
 
     // ---------------------------------------------------------------- tasks
@@ -123,6 +126,9 @@ class TaskRepository(
 
     suspend fun getTask(taskId: Long): Task? = taskDao.getById(taskId)
 
+    /** Live view of one task, used by the detail screen. */
+    fun observeTask(taskId: Long): Flow<Task?> = taskDao.observeById(taskId)
+
     /**
      * Creates a task or a subtask. Titles are mandatory and trimmed; notes are
      * optional. Subtasks may only be created under a top level task of the same
@@ -148,19 +154,21 @@ class TaskRepository(
         }
 
         val time = now()
-        val taskId = taskDao.insert(
-            Task(
-                title = trimmedTitle,
-                notes = notes?.trim()?.ifEmpty { null },
-                listId = list.id,
-                parentTaskId = parentTaskId,
-                priority = priority,
-                createdAt = time,
-                updatedAt = time
+        return db.withTransaction {
+            val taskId = taskDao.insert(
+                Task(
+                    title = trimmedTitle,
+                    notes = notes?.trim()?.ifEmpty { null },
+                    listId = list.id,
+                    parentTaskId = parentTaskId,
+                    priority = priority,
+                    createdAt = time,
+                    updatedAt = time
+                )
             )
-        )
-        recordEvent(taskId, TaskEventType.CREATED, trimmedTitle, time)
-        return taskId
+            recordEvent(taskId, TaskEventType.CREATED, trimmedTitle, time)
+            taskId
+        }
     }
 
     suspend fun addSubtask(parentTaskId: Long, title: String): Long {
@@ -202,35 +210,37 @@ class TaskRepository(
     }
 
     /** @return true when the task just became completed. */
-    suspend fun completeTask(taskId: Long): Boolean {
-        val task = taskDao.getById(taskId) ?: return false
-        if (task.deletedAt != null || task.completedAt != null) return false
+    suspend fun completeTask(taskId: Long): Boolean = db.withTransaction {
+        val task = taskDao.getById(taskId) ?: return@withTransaction false
+        if (task.deletedAt != null || task.completedAt != null) return@withTransaction false
         val time = now()
         taskDao.update(task.copy(completedAt = time, updatedAt = time))
         recordEvent(task.id, TaskEventType.COMPLETED, task.title, time)
-        return true
+        true
     }
 
     /** @return true when a completed task was reopened. */
-    suspend fun reopenTask(taskId: Long): Boolean {
-        val task = taskDao.getById(taskId) ?: return false
-        if (task.deletedAt != null || task.completedAt == null) return false
+    suspend fun reopenTask(taskId: Long): Boolean = db.withTransaction {
+        val task = taskDao.getById(taskId) ?: return@withTransaction false
+        if (task.deletedAt != null || task.completedAt == null) return@withTransaction false
         val time = now()
         taskDao.update(task.copy(completedAt = null, updatedAt = time))
         recordEvent(task.id, TaskEventType.REOPENED, task.title, time)
-        return true
+        true
     }
 
     /**
      * Soft deletes a task and - as the spec requires - its live subtasks.
      * Nothing is removed from the database, so the trash can bring the whole
-     * set back.
+     * set back. The ids of the cascaded subtasks are recorded in the parent's
+     * DELETED event, so a later restore brings back exactly that set instead of
+     * every subtask that happens to be deleted.
      *
      * @return the number of subtasks that were soft deleted together with it.
      */
-    suspend fun deleteTask(taskId: Long): Int {
-        val task = taskDao.getById(taskId) ?: return 0
-        if (task.deletedAt != null) return 0
+    suspend fun deleteTask(taskId: Long): Int = db.withTransaction {
+        val task = taskDao.getById(taskId) ?: return@withTransaction 0
+        if (task.deletedAt != null) return@withTransaction 0
         val time = now()
         val subtasks = taskDao.getLiveSubtasks(taskId)
         taskDao.markDeleted(taskId, time)
@@ -239,13 +249,13 @@ class TaskRepository(
             TaskEventType.DELETED,
             task.title,
             time,
-            detailsJson = if (subtasks.isEmpty()) null else """{"subtaskCount":${subtasks.size}}"""
+            detailsJson = encodeSubtaskIds(subtasks.map { it.id })
         )
         subtasks.forEach { subtask ->
             taskDao.markDeleted(subtask.id, time)
             recordEvent(subtask.id, TaskEventType.DELETED, subtask.title, time)
         }
-        return subtasks.size
+        subtasks.size
     }
 
     /**
@@ -259,25 +269,50 @@ class TaskRepository(
      * @return the number of tasks (including the requested one) that were
      * restored.
      */
-    suspend fun restoreTask(taskId: Long): Int {
-        val task = taskDao.getById(taskId) ?: return 0
-        if (task.deletedAt == null) return 0
+    suspend fun restoreTask(taskId: Long): Int = db.withTransaction {
+        val task = taskDao.getById(taskId) ?: return@withTransaction 0
+        if (task.deletedAt == null) return@withTransaction 0
         val time = now()
         var restored = 0
 
-        val parentId = task.parentTaskId
-        if (parentId != null) {
-            val parent = taskDao.getById(parentId)
-            if (parent != null && parent.deletedAt != null) {
-                restored += restoreOne(parent, time)
-            }
+        task.parentTaskId?.let { parentId ->
+            taskDao.getById(parentId)
+                ?.takeIf { it.deletedAt != null }
+                ?.let { parent -> restored += restoreOne(parent, time) }
         }
         restored += restoreOne(task, time)
-        taskDao.getDeletedSubtasks(taskId).forEach { subtask ->
-            restored += restoreOne(subtask, time)
+        // Only the subtasks that went down together with this task come back; a
+        // subtask the user had deleted on its own stays in the trash.
+        cascadedSubtaskIdsOf(taskId).forEach { subtaskId ->
+            taskDao.getById(subtaskId)
+                ?.takeIf { it.deletedAt != null }
+                ?.let { subtask -> restored += restoreOne(subtask, time) }
         }
-        return restored
+        restored
     }
+
+    /**
+     * The subtask ids that were cascaded with [taskId], read from its latest
+     * DELETED event. Keeping this in the event table makes the history the
+     * single source of truth and avoids a schema change for the bookkeeping.
+     */
+    private suspend fun cascadedSubtaskIdsOf(taskId: Long): List<Long> =
+        parseSubtaskIds(
+            eventDao.getForTask(taskId)
+                .lastOrNull { it.eventType == TaskEventType.DELETED }
+                ?.detailsJson
+        )
+
+    private fun parseSubtaskIds(detailsJson: String?): List<Long> =
+        detailsJson
+            ?.let { SubtaskIdsPattern.find(it)?.groupValues?.getOrNull(1) }
+            ?.split(',')
+            ?.filter { it.isNotBlank() }
+            ?.map { it.toLong() }
+            .orEmpty()
+
+    private fun encodeSubtaskIds(ids: List<Long>): String? =
+        ids.takeIf { it.isNotEmpty() }?.let { """{"subtaskIds":[${it.joinToString(",")}]}""" }
 
     private suspend fun restoreOne(task: Task, time: Long): Int {
         val changed = taskDao.markRestored(task.id, time)
@@ -303,5 +338,10 @@ class TaskRepository(
                 detailsJson = detailsJson
             )
         )
+    }
+
+    private companion object {
+        /** Matches the id array of a `{"subtaskIds":[1,2]}` payload. */
+        val SubtaskIdsPattern = Regex("""\[([0-9,]*)\]""")
     }
 }

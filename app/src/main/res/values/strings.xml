@@ -76,4 +76,5 @@
     <string name="dialog_delete_list_confirm">删除并移入收件箱</string>
     <string name="message_task_deleted">任务已移入回收站</string>
     <string name="message_list_deleted">清单已删除，其中的任务已移入收件箱</string>
+    <string name="message_add_subtask_failed">无法添加子任务</string>
 </resources>
