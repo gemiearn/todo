@@ -1,0 +1,31 @@
+# Build output
+build/
+.gradle/
+
+# Keep the Gradle wrapper JAR under version control (CI must not need a
+# pre-installed Gradle).
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Signing material and secrets - never commit these.
+*.jks
+*.keystore
+keystore.properties
+secrets.properties
+
+# Logs
+*.log

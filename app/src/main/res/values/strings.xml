@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">待办与番茄钟</string>
+    <string name="skeleton_placeholder">阶段 0：构建骨架已就绪</string>
+</resources>

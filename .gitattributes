@@ -1,0 +1,10 @@
+# Normalise line endings so the committed Gradle wrapper behaves the same
+# on every checkout / CI runner.
+gradlew text eol=lf
+*.bat text eol=crlf
+
+# Binary assets must not be line-ending converted.
+*.jar binary
+*.png binary
+*.jpg binary
+*.webp binary

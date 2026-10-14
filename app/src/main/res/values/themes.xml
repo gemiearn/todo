@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light window theme; Compose draws all content. -->
+    <style name="Theme.TodoPomodoro" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
