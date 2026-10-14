@@ -1,0 +1,428 @@
+package com.personal.todo.data
+
+import androidx.room.Room
+import com.personal.todo.data.db.TodoDatabase
+import com.personal.todo.model.Priority
+import com.personal.todo.model.TaskEventType
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+
+/**
+ * Business rule tests for the phase 1 task core. They run on the JVM against a
+ * real (in memory) Room database, so the DAO queries, the foreign keys and the
+ * event table are all exercised - only the Android UI is left out.
+ *
+ * The clock is injected and only moves when a test explicitly advances it, so
+ * ordering assertions (createdAt / eventAt) are deterministic.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class TaskRepositoryTest {
+
+    private lateinit var db: TodoDatabase
+    private lateinit var repository: TaskRepository
+    private var clock = 1_000L
+    private var inboxId = 0L
+
+    @Before
+    fun setUp() = runBlocking {
+        db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), TodoDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        repository = TaskRepository(db = db, inboxName = "收件箱", now = { clock })
+        inboxId = repository.ensureInbox()
+    }
+
+    @After
+    fun tearDown() {
+        db.close()
+    }
+
+    // ------------------------------------------------------------- lists
+
+    @Test
+    fun inboxIsCreatedOnceAndIsTheOnlyBuiltInList() = runBlocking {
+        val again = repository.ensureInbox()
+
+        assertEquals(inboxId, again)
+        val lists = repository.observeLists().first()
+        assertEquals(1, lists.size)
+        assertTrue(lists.single().isInbox)
+        assertEquals("收件箱", lists.single().name)
+    }
+
+    @Test
+    fun creatingAListTrimsTheNameAndRejectsBlank() = runBlocking {
+        val listId = repository.createList("  工作  ")
+
+        assertEquals("工作", db.taskListDao().getById(listId)?.name)
+        assertFailsWithIllegalArgument { repository.createList("   ") }
+    }
+
+    @Test
+    fun renamingAListTrimsTheNameAndRejectsBlank() = runBlocking {
+        val listId = repository.createList("工作")
+        repository.renameList(listId, "  个人事务 ")
+
+        assertEquals("个人事务", db.taskListDao().getById(listId)?.name)
+        assertFailsWithIllegalArgument { repository.renameList(listId, " ") }
+    }
+
+    @Test
+    fun deletingAListMovesEveryTaskToTheInboxIncludingDeletedOnes() = runBlocking {
+        val listId = repository.createList("工作")
+        val open = repository.createTask("任务 A", listId)
+        val deleted = repository.createTask("任务 B", listId)
+        advanceClock()
+        repository.deleteTask(deleted)
+
+        val moved = repository.deleteListMovingTasksToInbox(listId)
+
+        assertEquals(2, moved)
+        assertNull(db.taskListDao().getById(listId))
+        assertEquals(inboxId, repository.getTask(open)?.listId)
+        assertEquals(inboxId, repository.getTask(deleted)?.listId)
+        // The deleted task is still in the trash - a list delete never deletes tasks.
+        assertNotNull(repository.getTask(deleted)?.deletedAt)
+        assertEquals(1, repository.observeLists().first().size)
+    }
+
+    @Test
+    fun theInboxCannotBeDeleted() = runBlocking {
+        assertFailsWithIllegalArgument { repository.deleteListMovingTasksToInbox(inboxId) }
+
+        assertEquals(1, repository.observeLists().first().size)
+    }
+
+    // -------------------------------------------------------- task basics
+
+    @Test
+    fun creatingATaskRequiresATitleAndCreatesACreatedEvent() = runBlocking {
+        assertFailsWithIllegalArgument { repository.createTask("   ", inboxId) }
+
+        val taskId = repository.createTask("写周报", inboxId, notes = "  含下季度计划  ", priority = Priority.HIGH)
+        val task = requireNotNull(repository.getTask(taskId))
+        assertEquals("写周报", task.title)
+        assertEquals("含下季度计划", task.notes)
+        assertEquals(Priority.HIGH, task.priority)
+        assertNull(task.completedAt)
+        assertNull(task.deletedAt)
+
+        val events = db.taskEventDao().getForTask(taskId)
+        assertEquals(1, events.size)
+        assertEquals(TaskEventType.CREATED, events.single().eventType)
+        assertEquals("写周报", events.single().titleSnapshot)
+    }
+
+    @Test
+    fun blankNotesAreStoredAsNull() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId, notes = "   ")
+
+        assertNull(repository.getTask(taskId)?.notes)
+    }
+
+    @Test
+    fun anOpenTaskDisappearsFromTheListWhenCompletedAndComesBackWhenReopened() = runBlocking {
+        val taskId = repository.createTask("整理桌面", inboxId)
+
+        assertEquals(listOf(taskId), repository.observeOpenTasksInList(inboxId).first().map { it.id })
+
+        assertTrue(repository.completeTask(taskId))
+        assertTrue(repository.observeOpenTasksInList(inboxId).first().isEmpty())
+        assertEquals(listOf(taskId), repository.observeCompletedTasks().first().map { it.id })
+
+        advanceClock()
+        assertTrue(repository.reopenTask(taskId))
+        assertEquals(listOf(taskId), repository.observeOpenTasksInList(inboxId).first().map { it.id })
+        assertTrue(repository.observeCompletedTasks().first().isEmpty())
+    }
+
+    @Test
+    fun completingTwiceOrReopeningAnOpenTaskChangesNothing() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId)
+
+        // Reopening (or completing) a task in the wrong state is a no-op.
+        assertFalse(repository.reopenTask(taskId))
+
+        assertTrue(repository.completeTask(taskId))
+        advanceClock()
+        assertFalse(repository.completeTask(taskId))
+        assertTrue(repository.reopenTask(taskId))
+        advanceClock()
+        assertFalse(repository.reopenTask(taskId))
+
+        // No-op calls leave no trace in the history either.
+        val events = db.taskEventDao().getForTask(taskId).map { it.eventType }
+        assertEquals(
+            listOf(TaskEventType.CREATED, TaskEventType.COMPLETED, TaskEventType.REOPENED),
+            events
+        )
+    }
+
+    @Test
+    fun reopeningKeepsTheEarlierCompletionEvent() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId)
+        repository.completeTask(taskId)
+        advanceClock()
+        repository.reopenTask(taskId)
+
+        val events = db.taskEventDao().getForTask(taskId)
+
+        assertEquals(
+            listOf(TaskEventType.CREATED, TaskEventType.COMPLETED, TaskEventType.REOPENED),
+            events.map { it.eventType }
+        )
+        assertNull(repository.getTask(taskId)?.completedAt)
+    }
+
+    @Test
+    fun editingACompletedTaskDoesNotReopenItAndKeepsTheCompletionTime() = runBlocking {
+        val taskId = repository.createTask("写周报", inboxId)
+        repository.completeTask(taskId)
+        val completedAt = repository.getTask(taskId)?.completedAt
+        advanceClock()
+
+        repository.updateTask(taskId, title = "写周报（补充）", notes = null, priority = Priority.URGENT, listId = inboxId)
+
+        val task = requireNotNull(repository.getTask(taskId))
+        assertEquals(completedAt, task.completedAt)
+        assertEquals("写周报（补充）", task.title)
+        assertEquals(Priority.URGENT, task.priority)
+    }
+
+    @Test
+    fun theHistoryKeepsTheTitleSnapshotOfEarlierEvents() = runBlocking {
+        val taskId = repository.createTask("旧标题", inboxId)
+        advanceClock()
+        repository.updateTask(taskId, title = "新标题", notes = null, priority = Priority.NORMAL, listId = inboxId)
+        advanceClock()
+        repository.completeTask(taskId)
+
+        val events = db.taskEventDao().getForTask(taskId)
+
+        assertEquals(listOf(TaskEventType.CREATED, TaskEventType.COMPLETED), events.map { it.eventType })
+        assertEquals("旧标题", events.first().titleSnapshot)
+        assertEquals("新标题", events.last().titleSnapshot)
+    }
+
+    // ---------------------------------------------------------- subtasks
+
+    @Test
+    fun completingAParentDoesNotCompleteItsSubtasks() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val firstSubtask = repository.addSubtask(parentId, "子任务 1")
+        val secondSubtask = repository.addSubtask(parentId, "子任务 2")
+
+        assertTrue(repository.completeTask(parentId))
+
+        assertNotNull(repository.getTask(parentId)?.completedAt)
+        assertNull(repository.getTask(firstSubtask)?.completedAt)
+        assertNull(repository.getTask(secondSubtask)?.completedAt)
+        // The unfinished subtasks stay reachable from the parent.
+        assertEquals(
+            listOf(firstSubtask, secondSubtask),
+            repository.observeSubtasks(parentId).first().map { it.id }
+        )
+    }
+
+    @Test
+    fun completingASubtaskDoesNotCompleteItsParent() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val subtaskId = repository.addSubtask(parentId, "子任务")
+
+        assertTrue(repository.completeTask(subtaskId))
+
+        assertNull(repository.getTask(parentId)?.completedAt)
+        assertNotNull(repository.getTask(subtaskId)?.completedAt)
+    }
+
+    @Test
+    fun subtasksOfSubtasksAreRefused() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val subtaskId = repository.addSubtask(parentId, "子任务")
+
+        assertFailsWithIllegalArgument { repository.addSubtask(subtaskId, "二级子任务") }
+    }
+
+    @Test
+    fun aSubtaskCannotBeCreatedUnderADeletedParent() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        advanceClock()
+        repository.deleteTask(parentId)
+
+        assertFailsWithIllegalArgument { repository.addSubtask(parentId, "子任务") }
+    }
+
+    @Test
+    fun editingASubtaskKeepsItInTheListOfItsParent() = runBlocking {
+        val otherListId = repository.createList("工作")
+        val parentId = repository.createTask("父任务", inboxId)
+        val subtaskId = repository.addSubtask(parentId, "子任务")
+
+        repository.updateTask(subtaskId, title = "子任务改", notes = null, priority = Priority.NORMAL, listId = otherListId)
+
+        assertEquals(inboxId, repository.getTask(subtaskId)?.listId)
+        assertEquals("子任务改", repository.getTask(subtaskId)?.title)
+    }
+
+    @Test
+    fun subtaskCountsAreReportedPerParent() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        repository.createTask("独立任务", inboxId)
+        repository.addSubtask(parentId, "子任务 1")
+        repository.addSubtask(parentId, "子任务 2")
+
+        assertEquals(mapOf(parentId to 2), repository.observeSubtaskCounts().first())
+    }
+
+    // -------------------------------------------------- delete / restore
+
+    @Test
+    fun deletingAParentSoftDeletesItsSubtasksAndRecordsEvents() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val subtaskId = repository.addSubtask(parentId, "子任务")
+        advanceClock()
+
+        val removedSubtasks = repository.deleteTask(parentId)
+
+        assertEquals(1, removedSubtasks)
+        assertNotNull(repository.getTask(parentId)?.deletedAt)
+        assertNotNull(repository.getTask(subtaskId)?.deletedAt)
+
+        val parentEvents = db.taskEventDao().getForTask(parentId)
+        assertEquals(listOf(TaskEventType.CREATED, TaskEventType.DELETED), parentEvents.map { it.eventType })
+        assertEquals("""{"subtaskCount":1}""", parentEvents.last().detailsJson)
+
+        val subtaskEvents = db.taskEventDao().getForTask(subtaskId)
+        assertEquals(listOf(TaskEventType.CREATED, TaskEventType.DELETED), subtaskEvents.map { it.eventType })
+    }
+
+    @Test
+    fun deletingAlreadyDeletedTaskIsANoOp() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId)
+        repository.deleteTask(taskId)
+        advanceClock()
+
+        assertEquals(0, repository.deleteTask(taskId))
+        assertEquals(2, db.taskEventDao().getForTask(taskId).size)
+    }
+
+    @Test
+    fun deletedTasksLeaveTheOpenAndCompletedViewsAndAppearInTheTrash() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val subtaskId = repository.addSubtask(parentId, "子任务")
+        repository.completeTask(subtaskId)
+        advanceClock()
+
+        repository.deleteTask(parentId)
+
+        assertTrue(repository.observeOpenTasksInList(inboxId).first().isEmpty())
+        assertTrue(repository.observeCompletedTasks().first().isEmpty())
+        assertEquals(
+            setOf(parentId, subtaskId),
+            repository.observeDeletedTasks().first().map { it.id }.toSet()
+        )
+    }
+
+    @Test
+    fun aDeletedTaskCannotBeCompletedAndKeepsItsHistory() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId)
+        advanceClock()
+        repository.deleteTask(taskId)
+
+        assertFalse(repository.completeTask(taskId))
+        assertNull(repository.getTask(taskId)?.completedAt)
+        // Deleting a task must not remove its events.
+        assertEquals(
+            listOf(TaskEventType.CREATED, TaskEventType.DELETED),
+            db.taskEventDao().getForTask(taskId).map { it.eventType }
+        )
+    }
+
+    @Test
+    fun restoringAParentBringsBackTheSubtasksDeletedWithIt() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val subtaskId = repository.addSubtask(parentId, "子任务")
+        advanceClock()
+        repository.deleteTask(parentId)
+
+        val restored = repository.restoreTask(parentId)
+
+        assertEquals(2, restored)
+        assertNull(repository.getTask(parentId)?.deletedAt)
+        assertNull(repository.getTask(subtaskId)?.deletedAt)
+        assertTrue(repository.observeDeletedTasks().first().isEmpty())
+        assertEquals(
+            listOf(TaskEventType.CREATED, TaskEventType.DELETED, TaskEventType.RESTORED),
+            db.taskEventDao().getForTask(subtaskId).map { it.eventType }
+        )
+    }
+
+    @Test
+    fun restoringASubtaskAlsoRestoresItsDeletedParentButNotItsSiblings() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val firstSubtask = repository.addSubtask(parentId, "子任务 1")
+        val secondSubtask = repository.addSubtask(parentId, "子任务 2")
+        advanceClock()
+        repository.deleteTask(parentId)
+
+        val restored = repository.restoreTask(firstSubtask)
+
+        assertEquals(2, restored)
+        assertNull(repository.getTask(parentId)?.deletedAt)
+        assertNull(repository.getTask(firstSubtask)?.deletedAt)
+        assertNotNull(repository.getTask(secondSubtask)?.deletedAt)
+    }
+
+    @Test
+    fun restoringATaskThatIsNotDeletedDoesNothing() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId)
+
+        assertEquals(0, repository.restoreTask(taskId))
+        assertEquals(1, db.taskEventDao().getForTask(taskId).size)
+    }
+
+    @Test
+    fun restoringADeletedSubtaskAloneDoesNotTouchALivingParent() = runBlocking {
+        val parentId = repository.createTask("父任务", inboxId)
+        val subtaskId = repository.addSubtask(parentId, "子任务")
+        advanceClock()
+        repository.deleteTask(subtaskId)
+
+        assertEquals(1, repository.restoreTask(subtaskId))
+        assertNull(repository.getTask(subtaskId)?.deletedAt)
+        assertNull(repository.getTask(parentId)?.deletedAt)
+        assertEquals(listOf(subtaskId), repository.observeSubtasks(parentId).first().map { it.id })
+    }
+
+    private fun advanceClock(millis: Long = 1_000L) {
+        clock += millis
+    }
+
+    private fun assertFailsWithIllegalArgument(block: suspend () -> Unit) {
+        var caught: Throwable? = null
+        runBlocking {
+            try {
+                block()
+            } catch (error: Throwable) {
+                caught = error
+            }
+        }
+        assertTrue(
+            "期望 IllegalArgumentException，实际是 $caught",
+            caught is IllegalArgumentException
+        )
+    }
+}

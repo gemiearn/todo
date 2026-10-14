@@ -1,5 +1,79 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">待办与番茄钟</string>
-    <string name="skeleton_placeholder">阶段 0：构建骨架已就绪</string>
+
+    <!-- 清单与视图 -->
+    <string name="list_inbox_name">收件箱</string>
+    <string name="drawer_title">清单</string>
+    <string name="nav_completed">已完成</string>
+    <string name="nav_trash">回收站</string>
+    <string name="list_task_count">%1$d 个未完成任务</string>
+
+    <!-- 通用操作 -->
+    <string name="action_new_task">新建任务</string>
+    <string name="action_new_list">新建清单</string>
+    <string name="action_rename">重命名</string>
+    <string name="action_delete">删除</string>
+    <string name="action_delete_list">删除清单</string>
+    <string name="action_restore">恢复</string>
+    <string name="action_undo">撤销</string>
+    <string name="action_complete">完成</string>
+    <string name="action_reopen">重新打开</string>
+    <string name="action_edit">编辑</string>
+    <string name="action_save">保存</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_back">返回</string>
+    <string name="action_open_lists">打开清单列表</string>
+    <string name="action_add">添加</string>
+
+    <!-- 任务字段 -->
+    <string name="task_title_label">标题</string>
+    <string name="task_title_required">标题不能为空</string>
+    <string name="task_notes_label">备注（可选）</string>
+    <string name="task_priority_label">优先级</string>
+    <string name="task_list_label">所属清单</string>
+    <string name="priority_normal">普通</string>
+    <string name="priority_high">高</string>
+    <string name="priority_urgent">紧急</string>
+
+    <!-- 任务详情 -->
+    <string name="task_detail_title">任务详情</string>
+    <string name="task_status_open">未完成</string>
+    <string name="task_status_completed">已完成</string>
+    <string name="task_priority_value">优先级：%1$s</string>
+    <string name="task_list_value">所属清单：%1$s</string>
+    <string name="task_completed_at">完成时间：%1$s</string>
+    <string name="task_subtasks_title">子任务</string>
+    <string name="task_add_subtask_hint">添加子任务</string>
+    <string name="task_subtask_count">%1$d 个子任务</string>
+    <string name="task_events_title">关键操作历史</string>
+
+    <!-- 事件类型 -->
+    <string name="event_created">创建</string>
+    <string name="event_completed">完成</string>
+    <string name="event_reopened">重新打开</string>
+    <string name="event_deleted">删除</string>
+    <string name="event_restored">恢复</string>
+
+    <!-- 编辑器 -->
+    <string name="editor_title_new">新建任务</string>
+    <string name="editor_title_edit">编辑任务</string>
+
+    <!-- 空状态 -->
+    <string name="empty_inbox">收件箱还没有任务，点右下角的按钮新建一个</string>
+    <string name="empty_list">这个清单还没有任务</string>
+    <string name="empty_completed">还没有已完成的任务</string>
+    <string name="empty_trash">回收站是空的</string>
+    <string name="empty_subtasks">还没有子任务</string>
+    <string name="empty_events">还没有记录</string>
+
+    <!-- 对话框与提示 -->
+    <string name="dialog_new_list_title">新建清单</string>
+    <string name="dialog_rename_list_title">重命名清单</string>
+    <string name="dialog_list_name_label">清单名称</string>
+    <string name="dialog_delete_list_title">删除清单</string>
+    <string name="dialog_delete_list_message">“%1$s”中的 %2$d 个任务会移入收件箱。任务不会被删除，只有清单本身会消失。</string>
+    <string name="dialog_delete_list_confirm">删除并移入收件箱</string>
+    <string name="message_task_deleted">任务已移入回收站</string>
+    <string name="message_list_deleted">清单已删除，其中的任务已移入收件箱</string>
 </resources>
