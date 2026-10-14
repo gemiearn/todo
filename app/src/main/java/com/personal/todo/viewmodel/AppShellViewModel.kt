@@ -15,14 +15,20 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * State of the app shell: the list of 清单 shown in the drawer, the live task
- * count per list, and the list operations.
+ * State of the app shell: the list of 清单 shown in the drawer, the live open
+ * task count per list shown as a badge, the total task count used by the
+ * delete dialog, and the list operations.
  */
 class AppShellViewModel(private val repository: TaskRepository) : ViewModel() {
 
     val lists: StateFlow<List<TaskList>> = repository.observeLists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Open tasks per list - the badge next to each list in the drawer. */
+    val openTaskCounts: StateFlow<Map<Long, Int>> = repository.observeOpenTaskCountsByList()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** Every not deleted task per list - how many a list delete would move. */
     val taskCounts: StateFlow<Map<Long, Int>> = repository.observeTaskCountsByList()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 

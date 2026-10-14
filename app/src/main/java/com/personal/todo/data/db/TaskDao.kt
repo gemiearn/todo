@@ -68,6 +68,28 @@ interface TaskDao {
     )
     fun observeSubtaskCounts(): Flow<List<TaskSubtaskCount>>
 
+    /**
+     * Open top level tasks per list: not completed and not soft deleted. This
+     * is the number the drawer shows next to a list and it matches exactly the
+     * rows the list view can display, so completing or trashing a task changes
+     * it immediately. Subtasks belong to their parent's detail screen and are
+     * therefore not counted here.
+     */
+    @Query(
+        """
+        SELECT listId, COUNT(*) AS taskCount FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NULL
+        GROUP BY listId
+        """
+    )
+    fun observeOpenTaskCountsByList(): Flow<List<ListTaskCount>>
+
+    /**
+     * Every not soft deleted task per list, in any state and including
+     * subtasks: the number of tasks a list delete would move to the inbox.
+     */
     @Query(
         """
         SELECT listId, COUNT(*) AS taskCount FROM tasks

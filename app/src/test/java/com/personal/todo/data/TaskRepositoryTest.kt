@@ -302,6 +302,36 @@ class TaskRepositoryTest {
         assertEquals(mapOf(parentId to 2), repository.observeSubtaskCounts().first())
     }
 
+    @Test
+    fun openTaskCountsPerListIgnoreCompletedDeletedAndSubtaskRows() = runBlocking {
+        val workListId = repository.createList("工作")
+        val firstId = repository.createTask("任务一", inboxId)
+        val secondId = repository.createTask("任务二", inboxId)
+        val subtaskId = repository.addSubtask(secondId, "子任务")
+        val workId = repository.createTask("工作任务", workListId)
+
+        // The subtask belongs to its parent's detail screen, so it is not counted.
+        assertEquals(
+            mapOf(inboxId to 2, workListId to 1),
+            repository.observeOpenTaskCountsByList().first()
+        )
+
+        repository.completeTask(firstId)
+        assertEquals(mapOf(inboxId to 1, workListId to 1), repository.observeOpenTaskCountsByList().first())
+
+        repository.deleteTask(workId)
+        assertEquals(mapOf(inboxId to 1), repository.observeOpenTaskCountsByList().first())
+
+        repository.reopenTask(firstId)
+        assertEquals(mapOf(inboxId to 2), repository.observeOpenTaskCountsByList().first())
+
+        // Deleting the parent takes its subtask with it: the count drops by one,
+        // because only the parent was ever counted.
+        repository.deleteTask(secondId)
+        assertNotNull(repository.getTask(subtaskId)?.deletedAt)
+        assertEquals(mapOf(inboxId to 1), repository.observeOpenTaskCountsByList().first())
+    }
+
     // -------------------------------------------------- delete / restore
 
     @Test

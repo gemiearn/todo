@@ -46,7 +46,17 @@ class TaskRepository(
 
     fun observeLists(): Flow<List<TaskList>> = listDao.observeAll()
 
-    /** Live task count per list, used by the drawer and the delete dialog. */
+    /**
+     * Live open task count per list: the badge the drawer shows next to each
+     * list. It excludes completed and soft deleted tasks as well as subtasks,
+     * so it agrees with the rows the list view displays.
+     */
+    fun observeOpenTaskCountsByList(): Flow<Map<Long, Int>> =
+        taskDao.observeOpenTaskCountsByList().map { rows ->
+            rows.associate { it.listId to it.taskCount }
+        }
+
+    /** Live task count per list, used by the delete list dialog. */
     fun observeTaskCountsByList(): Flow<Map<Long, Int>> =
         taskDao.observeTaskCountsByList().map { rows ->
             rows.associate { it.listId to it.taskCount }

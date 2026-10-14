@@ -118,6 +118,7 @@ fun TodoApp(repository: TaskRepository) {
 
     val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
     val lists by shellViewModel.lists.collectAsStateWithLifecycle()
+    val openTaskCounts by shellViewModel.openTaskCounts.collectAsStateWithLifecycle()
     val taskCounts by shellViewModel.taskCounts.collectAsStateWithLifecycle()
 
     BackHandler(enabled = nav.canPop()) { nav.pop() }
@@ -183,6 +184,7 @@ fun TodoApp(repository: TaskRepository) {
                 route = route,
                 shellViewModel = shellViewModel,
                 lists = lists,
+                openTaskCounts = openTaskCounts,
                 taskCounts = taskCounts,
                 collection = collection,
                 tasks = tasks,
@@ -211,6 +213,7 @@ private fun MainScreen(
     route: String,
     shellViewModel: AppShellViewModel,
     lists: List<TaskList>,
+    openTaskCounts: Map<Long, Int>,
     taskCounts: Map<Long, Int>,
     collection: TaskCollection,
     tasks: List<Task>,
@@ -259,7 +262,7 @@ private fun MainScreen(
             ModalDrawerSheet {
                 ListsDrawer(
                     lists = lists,
-                    taskCounts = taskCounts,
+                    openTaskCounts = openTaskCounts,
                     currentRoute = route,
                     onSelect = { target ->
                         nav.resetTo(target)
@@ -391,7 +394,7 @@ private fun MainScreen(
 @Composable
 private fun ListsDrawer(
     lists: List<TaskList>,
-    taskCounts: Map<Long, Int>,
+    openTaskCounts: Map<Long, Int>,
     currentRoute: String,
     onSelect: (String) -> Unit,
     onNewList: () -> Unit
@@ -413,7 +416,7 @@ private fun ListsDrawer(
             item(key = ROUTE_INBOX) {
                 NavigationDrawerItem(
                     label = { Text(stringResource(R.string.list_inbox_name)) },
-                    badge = { CountBadge(taskCounts[inboxId ?: 0L] ?: 0) },
+                    badge = { CountBadge(openTaskCounts[inboxId ?: 0L] ?: 0) },
                     selected = currentRoute == ROUTE_INBOX,
                     onClick = { onSelect(ROUTE_INBOX) },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
@@ -422,7 +425,7 @@ private fun ListsDrawer(
             items(lists.filter { !it.isInbox }, key = { it.id }) { list ->
                 NavigationDrawerItem(
                     label = { Text(list.name) },
-                    badge = { CountBadge(taskCounts[list.id] ?: 0) },
+                    badge = { CountBadge(openTaskCounts[list.id] ?: 0) },
                     selected = currentRoute == listRoute(list.id),
                     onClick = { onSelect(listRoute(list.id)) },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
