@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.todo.R
+import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
@@ -72,6 +73,7 @@ import com.personal.todo.model.filterTasks
 import com.personal.todo.model.sortTasks
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.AppShellViewModel
+import com.personal.todo.viewmodel.FocusViewModel
 import com.personal.todo.viewmodel.TaskCollection
 import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
@@ -94,6 +96,7 @@ private const val ROUTE_TRASH = "trash"
 private const val ROUTE_LIST = "list"
 private const val ROUTE_FUTURE = "future"
 private const val ROUTE_OVERDUE = "overdue"
+private const val ROUTE_FOCUS = "focus"
 private const val ROUTE_TASK = "task"
 private const val ROUTE_NEW = "new"
 private const val ROUTE_EDIT = "edit"
@@ -138,7 +141,7 @@ private fun rememberNavStack(): NavStack {
 // ---------------------------------------------------------------- app root
 
 @Composable
-fun TodoApp(repository: TaskRepository) {
+fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
     val nav = rememberNavStack()
     val route = nav.current
     val kind = route.substringBefore('/')
@@ -193,6 +196,14 @@ fun TodoApp(repository: TaskRepository) {
                 onSaved = { nav.pop() },
                 onBack = { nav.pop() }
             )
+        }
+
+        ROUTE_FOCUS -> {
+            val focusViewModel: FocusViewModel = viewModel(
+                key = ROUTE_FOCUS,
+                factory = FocusViewModel.factory(focusRepository, repository)
+            )
+            FocusScreen(viewModel = focusViewModel, onBack = { nav.pop() })
         }
 
         else -> MainScreen(
@@ -549,7 +560,11 @@ private fun MainScreen(
                 HomeTab.More.route -> MoreScreen(
                     lists = lists,
                     openTaskCounts = openTaskCounts,
-                    onOpen = { nav.resetTo(it) },
+                    // 专注 is a screen of its own with a back button, so it is
+                    // pushed on top; the other entries are root views.
+                    onOpen = { target ->
+                        if (target == ROUTE_FOCUS) nav.push(target) else nav.resetTo(target)
+                    },
                     onNewList = { showNewListDialog = true },
                     modifier = Modifier.padding(innerPadding)
                 )
@@ -657,6 +672,10 @@ private fun MoreScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
+        MoreEntry(
+            label = stringResource(R.string.focus_title),
+            onClick = { onOpen(ROUTE_FOCUS) }
+        )
         MoreEntry(
             label = stringResource(R.string.nav_completed),
             onClick = { onOpen(ROUTE_COMPLETED) }

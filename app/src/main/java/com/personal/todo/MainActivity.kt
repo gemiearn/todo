@@ -19,9 +19,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val repository = TodoContainer.repository(applicationContext)
+        val focusRepository = TodoContainer.focusRepository(applicationContext)
         setContent {
             TodoPomodoroTheme {
-                TodoApp(repository = repository)
+                TodoApp(repository = repository, focusRepository = focusRepository)
             }
         }
     }

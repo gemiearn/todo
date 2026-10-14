@@ -170,4 +170,34 @@
     <string name="message_task_completed">任务已完成</string>
     <string name="message_list_deleted">清单已删除，其中的任务已移入收件箱</string>
     <string name="message_add_subtask_failed">无法添加子任务</string>
+
+    <!-- 专注（番茄钟） -->
+    <string name="focus_title">专注</string>
+    <string name="focus_mode_stopwatch">正向计时</string>
+    <string name="focus_mode_countdown">倒计时</string>
+    <string name="focus_mode_pomodoro">番茄钟</string>
+    <string name="focus_minutes_choice">%1$d 分钟</string>
+    <string name="focus_pomodoro_plan">默认 %1$d 分钟专注、%2$d 分钟短休息，每 %3$d 个番茄后长休息 %4$d 分钟。休息时间不计入专注统计。</string>
+    <string name="focus_stopwatch_hint">正向计时从零开始累计，由你决定什么时候结束。</string>
+    <string name="focus_task_none">未关联任务</string>
+    <string name="focus_link_task">关联任务</string>
+    <string name="focus_dialog_pick_task_title">选择要专注的任务</string>
+    <string name="focus_action_start">开始专注</string>
+    <string name="focus_action_pause">暂停</string>
+    <string name="focus_action_resume">继续</string>
+    <string name="focus_action_finish">结束</string>
+    <string name="focus_action_interrupt">提前结束</string>
+    <string name="focus_running_label">专注中</string>
+    <string name="focus_paused_label">已暂停</string>
+    <string name="focus_status_completed">已完成</string>
+    <string name="focus_status_interrupted">中断</string>
+    <string name="focus_stats_today">今日 %1$s</string>
+    <string name="focus_stats_pomodoros">番茄 %1$d 个</string>
+    <string name="focus_stats_week">本周 %1$s</string>
+    <string name="focus_history_title">专注记录</string>
+    <string name="focus_history_empty">还没有专注记录</string>
+    <string name="focus_session_subtitle">%1$s · %2$s · %3$s</string>
+    <string name="focus_duration_seconds">%1$d 秒</string>
+    <string name="focus_duration_minutes">%1$d 分钟</string>
+    <string name="focus_duration_minutes_seconds">%1$d 分 %2$d 秒</string>
 </resources>

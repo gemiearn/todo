@@ -1,6 +1,8 @@
 package com.personal.todo.data.db
 
 import androidx.room.TypeConverter
+import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.Priority
 import com.personal.todo.model.TaskEventType
 import java.time.LocalDate
@@ -28,6 +30,18 @@ class Converters {
 
     @TypeConverter
     fun eventTypeFromStored(value: String): TaskEventType = TaskEventType.valueOf(value)
+
+    @TypeConverter
+    fun focusModeToStored(mode: FocusMode): String = mode.name
+
+    @TypeConverter
+    fun focusModeFromStored(value: String): FocusMode = FocusMode.valueOf(value)
+
+    @TypeConverter
+    fun focusStatusToStored(status: FocusStatus): String = status.name
+
+    @TypeConverter
+    fun focusStatusFromStored(value: String): FocusStatus = FocusStatus.valueOf(value)
 
     @TypeConverter
     fun localDateToStored(date: LocalDate?): String? = date?.toString()
