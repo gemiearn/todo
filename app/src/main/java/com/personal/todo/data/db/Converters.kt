@@ -3,10 +3,17 @@ package com.personal.todo.data.db
 import androidx.room.TypeConverter
 import com.personal.todo.model.Priority
 import com.personal.todo.model.TaskEventType
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
  * Enums are stored by name on purpose: adding or reordering enum values later
  * must not silently change the meaning of already stored rows.
+ *
+ * Dates are stored as `YYYY-MM-DD` and times as `HH:mm` (spec section 4.1):
+ * a pure date must never be converted to UTC first, otherwise a task could
+ * slide to the neighbouring day when the device changes time zone.
  */
 class Converters {
 
@@ -21,4 +28,20 @@ class Converters {
 
     @TypeConverter
     fun eventTypeFromStored(value: String): TaskEventType = TaskEventType.valueOf(value)
+
+    @TypeConverter
+    fun localDateToStored(date: LocalDate?): String? = date?.toString()
+
+    @TypeConverter
+    fun localDateFromStored(value: String?): LocalDate? = value?.let(LocalDate::parse)
+
+    @TypeConverter
+    fun localTimeToStored(time: LocalTime?): String? = time?.format(HourMinute)
+
+    @TypeConverter
+    fun localTimeFromStored(value: String?): LocalTime? = value?.let(LocalTime::parse)
+
+    private companion object {
+        val HourMinute: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+    }
 }

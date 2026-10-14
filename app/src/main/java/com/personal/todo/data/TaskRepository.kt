@@ -6,12 +6,16 @@ import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.Priority
+import com.personal.todo.model.Schedule
 import com.personal.todo.model.TaskEventType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 
 /**
  * All task operations of phase 1 live here.
@@ -30,12 +34,14 @@ import kotlinx.coroutines.flow.map
  * Every operation is a suspend function that runs off the main thread, and
  * every read that the UI observes is exposed as a [Flow].
  *
- * [now] is injectable so tests can use a deterministic clock.
+ * [now] is injectable so tests can use a deterministic clock, and [zone] so the
+ * date boundary of section 4.1 can be tested across time zones.
  */
 class TaskRepository(
     private val db: TodoDatabase,
     private val inboxName: String,
-    private val now: () -> Long = System::currentTimeMillis
+    private val now: () -> Long = System::currentTimeMillis,
+    private val zone: ZoneId = ZoneId.systemDefault()
 ) {
 
     private val listDao = db.taskListDao()
@@ -146,6 +152,39 @@ class TaskRepository(
 
     fun observeDeletedTasks(): Flow<List<Task>> = taskDao.observeDeletedTasks()
 
+    // ----------------------------------------------------------- smart views
+    //
+    // 今日 / 未来 / 逾期 of spec section 4.1. They are queries over the dates,
+    // never rewrites: an overdue task keeps its original date until the user
+    // deliberately reschedules it.
+
+    /** The local date "today" is resolved in the device's time zone. */
+    fun today(): LocalDate = Schedule.todayOf(now(), zone)
+
+    /** Open tasks planned for today or due today - each task appears once. */
+    fun observeTodayTasks(): Flow<List<Task>> = taskDao.observeOpenTasksOnDate(today())
+
+    /** Open tasks planned for today (the calendar day list of the same day). */
+    fun observeOpenTasksOn(date: LocalDate): Flow<List<Task>> = taskDao.observeOpenTasksOnDate(date)
+
+    /** Open tasks dated after today, planned or due. */
+    fun observeFutureTasks(): Flow<List<Task>> = taskDao.observeOpenTasksAfterDate(today())
+
+    /**
+     * Open tasks past their due moment. Only the due date can make a task
+     * overdue, and a due date with a time is not overdue until that moment, so
+     * the exact rule is applied here rather than in SQL.
+     */
+    fun observeOverdueTasks(): Flow<List<Task>> =
+        taskDao.observeOpenTasksDueNotAfter(today()).map { rows -> rows.filter(::isOverdue) }
+
+    /** Every open top level task, whatever its dates - the quadrant view. */
+    fun observeAllOpenTasks(): Flow<List<Task>> = taskDao.observeAllOpenTasks()
+
+    /** True when this task is past its due moment. */
+    fun isOverdue(task: Task): Boolean =
+        Schedule.isOverdue(now(), task.dueDate, task.dueTime, zone)
+
     fun observeSubtasks(parentTaskId: Long): Flow<List<Task>> =
         taskDao.observeSubtasks(parentTaskId)
 
@@ -166,16 +205,24 @@ class TaskRepository(
      * Creates a task or a subtask. Titles are mandatory and trimmed; notes are
      * optional. Subtasks may only be created under a top level task of the same
      * list (one level only, spec section 4.3).
+     *
+     * Dates are optional and independent of each other: a planned date never
+     * becomes a due date and vice versa (spec section 4.1). A due time without
+     * a due date is refused, because there would be no day to attach it to.
      */
     suspend fun createTask(
         title: String,
         listId: Long,
         notes: String? = null,
         priority: Priority = Priority.NORMAL,
-        parentTaskId: Long? = null
+        parentTaskId: Long? = null,
+        plannedDate: LocalDate? = null,
+        dueDate: LocalDate? = null,
+        dueTime: LocalTime? = null
     ): Long {
         val trimmedTitle = title.trim()
         require(trimmedTitle.isNotEmpty()) { "任务标题不能为空" }
+        require(dueTime == null || dueDate != null) { "截止时间必须依附于截止日期" }
         val list = listDao.getById(listId) ?: throw IllegalArgumentException("清单不存在: $listId")
 
         if (parentTaskId != null) {
@@ -196,7 +243,10 @@ class TaskRepository(
                     parentTaskId = parentTaskId,
                     priority = priority,
                     createdAt = time,
-                    updatedAt = time
+                    updatedAt = time,
+                    plannedDate = plannedDate,
+                    dueDate = dueDate,
+                    dueTime = dueTime
                 )
             )
             recordEvent(taskId, TaskEventType.CREATED, trimmedTitle, time)
@@ -215,16 +265,23 @@ class TaskRepository(
      * the user has to reopen it explicitly (spec section 4.2). Renaming is not
      * a history event - the history keeps the historical titles it already
      * stored.
+     *
+     * Passing null for a date clears it. Changing a date is always an explicit
+     * user action; nothing here shifts a date on its own.
      */
     suspend fun updateTask(
         taskId: Long,
         title: String,
         notes: String?,
         priority: Priority,
-        listId: Long
+        listId: Long,
+        plannedDate: LocalDate? = null,
+        dueDate: LocalDate? = null,
+        dueTime: LocalTime? = null
     ) {
         val trimmedTitle = title.trim()
         require(trimmedTitle.isNotEmpty()) { "任务标题不能为空" }
+        require(dueTime == null || dueDate != null) { "截止时间必须依附于截止日期" }
         val task = taskDao.getById(taskId) ?: throw IllegalArgumentException("任务不存在: $taskId")
         // A subtask lives in the same list as its parent; only top level tasks
         // can be moved between lists.
@@ -237,7 +294,10 @@ class TaskRepository(
                 notes = notes?.trim()?.ifEmpty { null },
                 priority = priority,
                 listId = targetListId,
-                updatedAt = now()
+                updatedAt = now(),
+                plannedDate = plannedDate,
+                dueDate = dueDate,
+                dueTime = dueTime
             )
         )
     }

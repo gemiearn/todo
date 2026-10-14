@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 
 /** Number of live subtasks of one parent task, keyed by the parent task id. */
 data class TaskSubtaskCount(val taskId: Long, val subtaskCount: Int)
@@ -98,6 +99,69 @@ interface TaskDao {
         """
     )
     fun observeTaskCountsByList(): Flow<List<ListTaskCount>>
+
+    // -------------------------------------------------------- smart views
+    //
+    // 今日 / 未来 / 逾期 (spec section 4.1). They only read dates - no query
+    // here ever rewrites a date, so an overdue task can never be postponed
+    // automatically. "逾期" itself needs the current time (a due date with a
+    // time is not overdue before that moment), so these queries narrow the
+    // rows and the repository applies the exact rule in Kotlin.
+
+    /**
+     * Open top level tasks planned for [date] or due on [date]. One query with
+     * `OR`, so a task with both dates set on the same day is returned once -
+     * the "今日" view can never show a task twice (spec section 4.1).
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NULL
+          AND (plannedDate = :date OR dueDate = :date)
+        """
+    )
+    fun observeOpenTasksOnDate(date: LocalDate): Flow<List<Task>>
+
+    /** Open top level tasks dated after [date] (planned or due). */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NULL
+          AND (plannedDate > :date OR dueDate > :date)
+        """
+    )
+    fun observeOpenTasksAfterDate(date: LocalDate): Flow<List<Task>>
+
+    /**
+     * Open top level tasks whose due date is not after [date]: the candidate
+     * set for the overdue view before the exact moment is taken into account.
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NULL
+          AND dueDate IS NOT NULL
+          AND dueDate <= :date
+        """
+    )
+    fun observeOpenTasksDueNotAfter(date: LocalDate): Flow<List<Task>>
+
+    /** Every open top level task, whatever its dates - the quadrant view. */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NULL
+        """
+    )
+    fun observeAllOpenTasks(): Flow<List<Task>>
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getById(id: Long): Task?

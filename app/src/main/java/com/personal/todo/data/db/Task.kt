@@ -5,6 +5,8 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.personal.todo.model.Priority
+import java.time.LocalDate
+import java.time.LocalTime
 
 /**
  * A single task row (spec section 7.3).
@@ -17,9 +19,11 @@ import com.personal.todo.model.Priority
  * sub-subtasks: the UI and [com.personal.todo.data.TaskRepository] both refuse
  * to create a subtask of a subtask.
  *
- * Dates (planned date / due date) belong to phase 2 and reminder time to phase
- * 4; they are deliberately not part of schema version 1 yet, so those phases
- * add them through a real Room migration with a migration test.
+ * Dates follow spec section 7.3 and are deliberately stored in a way that
+ * cannot drift across time zones: [plannedDate] and [dueDate] are pure local
+ * dates kept as `YYYY-MM-DD` text, and [dueTime] is a local time kept as
+ * `HH:mm` text. A null [dueTime] means "due at the end of [dueDate]". Reminder
+ * time stays in phase 4 and will be added by a later migration.
  */
 @Entity(
     tableName = "tasks",
@@ -51,5 +55,11 @@ data class Task(
     /** Kept for manual ordering; phase 1 sorts by creation time. */
     val sortOrder: Int = 0,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    /** Local date the user plans to work on it; purely informational. */
+    val plannedDate: LocalDate? = null,
+    /** Local date it is due; the only field that can make a task overdue. */
+    val dueDate: LocalDate? = null,
+    /** Local time it is due; null means "at the end of [dueDate]". */
+    val dueTime: LocalTime? = null
 )

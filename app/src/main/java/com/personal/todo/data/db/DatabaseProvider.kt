@@ -26,6 +26,7 @@ object DatabaseProvider {
     /** Builds the database exactly as the app does, without caching it. */
     internal fun create(context: Context): TodoDatabase =
         Room.databaseBuilder(context, TodoDatabase::class.java, TodoDatabase.DATABASE_NAME)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
             .addCallback(SeedInboxCallback(context.getString(R.string.list_inbox_name)))
             .build()
 
