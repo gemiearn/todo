@@ -159,6 +159,14 @@ class TaskRepository(
     fun observeCompletedInboxTasks(): Flow<List<Task>> =
         flow { emit(ensureInbox()) }.flatMapLatest { taskDao.observeCompletedTasksInList(it) }
 
+    /**
+     * Completed tasks dated [date] - the folded group of the 今日 view and of a
+     * calendar day. A finished task keeps the date it was given, so it stays in
+     * the day it belongs to instead of moving to the day it was finished.
+     */
+    fun observeCompletedTasksOn(date: LocalDate): Flow<List<Task>> =
+        taskDao.observeCompletedTasksOn(date)
+
     fun observeDeletedTasks(): Flow<List<Task>> = taskDao.observeDeletedTasks()
 
     // ----------------------------------------------------------- smart views
@@ -189,6 +197,13 @@ class TaskRepository(
 
     /** Every open top level task, whatever its dates - the quadrant view. */
     fun observeAllOpenTasks(): Flow<List<Task>> = taskDao.observeAllOpenTasks()
+
+    /**
+     * Open tasks dated inside [start]..[end] (planned or due) - the task dots of
+     * one calendar month. Read only: it never shifts a date.
+     */
+    fun observeOpenTasksInRange(start: LocalDate, end: LocalDate): Flow<List<Task>> =
+        taskDao.observeOpenTasksInRange(start, end)
 
     /** True when this task is past its due moment. */
     fun isOverdue(task: Task): Boolean =

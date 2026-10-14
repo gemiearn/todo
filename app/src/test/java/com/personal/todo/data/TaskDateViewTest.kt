@@ -218,6 +218,90 @@ class TaskDateViewTest {
         )
     }
 
+    // --------------------------------------------------- 日历页的日期区间
+
+    @Test
+    fun theCalendarRangeQueryReturnsEachTaskOnceAndIgnoresDatesOutsideTheRange() = runBlocking {
+        val plannedInside = repository.createTask("计划在本月", inboxId, plannedDate = LocalDate.of(2026, 10, 3))
+        val dueInside = repository.createTask("截止在本月", inboxId, dueDate = LocalDate.of(2026, 10, 20))
+        val insideTwice = repository.createTask(
+            "同月两个日期",
+            inboxId,
+            plannedDate = LocalDate.of(2026, 10, 10),
+            dueDate = LocalDate.of(2026, 10, 25)
+        )
+        repository.createTask("上个月", inboxId, plannedDate = LocalDate.of(2026, 9, 30))
+        repository.createTask("下个月", inboxId, dueDate = LocalDate.of(2026, 11, 1))
+        repository.createTask("没有日期", inboxId)
+
+        val inOctober = repository
+            .observeOpenTasksInRange(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
+            .first()
+
+        assertEquals(
+            "一个任务即使两个日期都落在本月也只返回一次",
+            setOf(plannedInside, dueInside, insideTwice),
+            inOctober.map { it.id }.toSet()
+        )
+    }
+
+    @Test
+    fun theCalendarRangeQueryLeavesOutFinishedAndDeletedTasks() = runBlocking {
+        val open = repository.createTask("未完成", inboxId, plannedDate = LocalDate.of(2026, 10, 5))
+        val completed = repository.createTask("已完成", inboxId, plannedDate = LocalDate.of(2026, 10, 6))
+        val deleted = repository.createTask("已删除", inboxId, plannedDate = LocalDate.of(2026, 10, 7))
+        repository.completeTask(completed)
+        repository.deleteTask(deleted)
+
+        val range = repository
+            .observeOpenTasksInRange(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
+            .first()
+
+        assertEquals(listOf(open), range.map { it.id })
+    }
+
+    @Test
+    fun theCalendarRangeQueryIncludesBothRangeEnds() = runBlocking {
+        val firstDay = repository.createTask("月初", inboxId, plannedDate = LocalDate.of(2026, 10, 1))
+        val lastDay = repository.createTask("月末", inboxId, dueDate = LocalDate.of(2026, 10, 31))
+
+        val range = repository
+            .observeOpenTasksInRange(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
+            .first()
+
+        assertEquals(setOf(firstDay, lastDay), range.map { it.id }.toSet())
+    }
+
+    // --------------------------------------------------- 某日已完成分组
+
+    @Test
+    fun completedTasksOfADayKeepTheDayTheyWereGiven() = runBlocking {
+        val doneToday = repository.createTask("今天完成", inboxId, plannedDate = today)
+        val doneByDueDate = repository.createTask("今天截止", inboxId, dueDate = today)
+        val doneOtherDay = repository.createTask("明天完成", inboxId, plannedDate = today.plusDays(1))
+        val finishedWithoutADate = repository.createTask("没有日期", inboxId)
+        listOf(doneToday, doneByDueDate, doneOtherDay, finishedWithoutADate)
+            .forEach { repository.completeTask(it) }
+
+        val completedToday = repository.observeCompletedTasksOn(today).first()
+
+        assertEquals(
+            "完成时间不影响归属的那一天",
+            setOf(doneToday, doneByDueDate),
+            completedToday.map { it.id }.toSet()
+        )
+    }
+
+    @Test
+    fun aTaskStillOpenDoesNotShowUpInTheCompletedGroupOfItsDay() = runBlocking {
+        repository.createTask("还没做", inboxId, plannedDate = today)
+        val deleted = repository.createTask("已完成又被删除", inboxId, plannedDate = today)
+        repository.completeTask(deleted)
+        repository.deleteTask(deleted)
+
+        assertTrue(repository.observeCompletedTasksOn(today).first().isEmpty())
+    }
+
     // ------------------------------------------------------------- 存储格式
 
     @Test

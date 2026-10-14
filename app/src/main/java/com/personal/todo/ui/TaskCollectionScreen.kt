@@ -64,7 +64,17 @@ fun TaskCollectionContent(
     onRestore: (Task) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val foldsCompleted = collection is TaskCollection.Inbox || collection is TaskCollection.ListDetail
+    val foldsCompleted = when (collection) {
+        TaskCollection.Inbox,
+        is TaskCollection.ListDetail,
+        TaskCollection.Today,
+        is TaskCollection.DayView -> true
+
+        TaskCollection.Completed,
+        TaskCollection.Trash,
+        TaskCollection.Future,
+        TaskCollection.Overdue -> false
+    }
 
     if (tasks.isEmpty() && !(foldsCompleted && completedTasks.isNotEmpty())) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

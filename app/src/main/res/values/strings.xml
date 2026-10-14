@@ -5,6 +5,12 @@
     <!-- 清单与视图 -->
     <string name="list_inbox_name">收件箱</string>
     <string name="drawer_title">清单</string>
+    <string name="nav_today">今天</string>
+    <string name="nav_calendar">日历</string>
+    <string name="nav_quadrant">四象限</string>
+    <string name="nav_more">更多</string>
+    <string name="nav_future">未来</string>
+    <string name="nav_overdue">逾期</string>
     <string name="nav_completed">已完成</string>
     <string name="nav_trash">回收站</string>
     <string name="list_task_count">%1$d 个未完成任务</string>
@@ -48,6 +54,39 @@
     <string name="countdown_hours">剩 %1$d 小时</string>
     <string name="countdown_days">剩 %1$d 天</string>
 
+    <!-- 日历页 -->
+    <string name="calendar_year">%1$d 年</string>
+    <string name="month_1">一月</string>
+    <string name="month_2">二月</string>
+    <string name="month_3">三月</string>
+    <string name="month_4">四月</string>
+    <string name="month_5">五月</string>
+    <string name="month_6">六月</string>
+    <string name="month_7">七月</string>
+    <string name="month_8">八月</string>
+    <string name="month_9">九月</string>
+    <string name="month_10">十月</string>
+    <string name="month_11">十一月</string>
+    <string name="month_12">十二月</string>
+    <!-- 月历表头的单字星期，与截图一致 -->
+    <string name="weekday_narrow_mon">一</string>
+    <string name="weekday_narrow_tue">二</string>
+    <string name="weekday_narrow_wed">三</string>
+    <string name="weekday_narrow_thu">四</string>
+    <string name="weekday_narrow_fri">五</string>
+    <string name="weekday_narrow_sat">六</string>
+    <string name="weekday_narrow_sun">日</string>
+
+    <!-- 四象限 -->
+    <string name="quadrant_numeral_1">I</string>
+    <string name="quadrant_numeral_2">II</string>
+    <string name="quadrant_numeral_3">III</string>
+    <string name="quadrant_numeral_4">IV</string>
+    <string name="quadrant_important_urgent">重要且紧急</string>
+    <string name="quadrant_important_not_urgent">重要不紧急</string>
+    <string name="quadrant_not_important_urgent">不重要但紧急</string>
+    <string name="quadrant_not_important_not_urgent">不重要不紧急</string>
+
     <!-- 任务字段 -->
     <string name="task_title_label">标题</string>
     <string name="task_title_required">标题不能为空</string>
@@ -84,6 +123,11 @@
     <!-- 空状态 -->
     <string name="empty_inbox">收件箱还没有任务，点右下角的按钮新建一个</string>
     <string name="empty_list">这个清单还没有任务</string>
+    <string name="empty_today">今天没有任务</string>
+    <string name="empty_future">还没有未来的任务</string>
+    <string name="empty_overdue">没有逾期任务</string>
+    <string name="empty_day">这一天没有任务</string>
+    <string name="empty_quadrant">没有任务</string>
     <string name="empty_completed">还没有已完成的任务</string>
     <string name="empty_trash">回收站是空的</string>
     <string name="empty_subtasks">还没有子任务</string>

@@ -1,9 +1,15 @@
 package com.personal.todo.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -11,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
@@ -34,6 +41,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +50,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -51,12 +60,13 @@ import com.personal.todo.R
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
+import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.AppShellViewModel
 import com.personal.todo.viewmodel.TaskCollection
 import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import com.personal.todo.viewmodel.TaskEditorViewModel
-import java.time.ZoneId
+import java.time.LocalDate
 import kotlinx.coroutines.launch
 
 // ---------------------------------------------------------------- routes
@@ -64,11 +74,16 @@ import kotlinx.coroutines.launch
 // Phase 1 uses simple state based navigation (allowed by the spec) instead of
 // pulling in a navigation library: the route is a string and a small stack is
 // kept in saveable state, so rotation does not lose the current screen.
+//
+// The four bottom bar tabs are the roots of the app (see [HomeTab]); every
+// other route below is pushed on top of the tab the user came from.
 
 private const val ROUTE_INBOX = "inbox"
 private const val ROUTE_COMPLETED = "completed"
 private const val ROUTE_TRASH = "trash"
 private const val ROUTE_LIST = "list"
+private const val ROUTE_FUTURE = "future"
+private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_TASK = "task"
 private const val ROUTE_NEW = "new"
 private const val ROUTE_EDIT = "edit"
@@ -106,7 +121,7 @@ private val NavStackSaver: Saver<SnapshotStateList<String>, ArrayList<String>> =
 
 @Composable
 private fun rememberNavStack(): NavStack {
-    val routes = rememberSaveable(saver = NavStackSaver) { mutableStateListOf(ROUTE_INBOX) }
+    val routes = rememberSaveable(saver = NavStackSaver) { mutableStateListOf(HomeTab.Today.route) }
     return remember(routes) { NavStack(routes) }
 }
 
@@ -119,16 +134,17 @@ fun TodoApp(repository: TaskRepository) {
     val kind = route.substringBefore('/')
     val argument = route.substringAfter('/', "").toLongOrNull()
 
-    val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
-    val lists by shellViewModel.lists.collectAsStateWithLifecycle()
-    val openTaskCounts by shellViewModel.openTaskCounts.collectAsStateWithLifecycle()
-    val taskCounts by shellViewModel.taskCounts.collectAsStateWithLifecycle()
+    // The day the calendar page is showing. It lives above the screens so
+    // opening a task from that day and coming back lands on the same day again.
+    var selectedEpochDay by rememberSaveable { mutableLongStateOf(repository.today().toEpochDay()) }
 
     BackHandler(enabled = nav.canPop()) { nav.pop() }
 
     when (kind) {
         ROUTE_TASK -> {
             val taskId = requireNotNull(argument) { "任务路由缺少任务 id: $route" }
+            val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
+            val lists by shellViewModel.lists.collectAsStateWithLifecycle()
             val detailViewModel: TaskDetailViewModel = viewModel(
                 key = "detail-$taskId",
                 factory = TaskDetailViewModel.factory(repository, taskId)
@@ -169,41 +185,33 @@ fun TodoApp(repository: TaskRepository) {
             )
         }
 
-        else -> {
-            val collection = when (kind) {
-                ROUTE_LIST -> TaskCollection.ListDetail(requireNotNull(argument) { "清单路由缺少清单 id: $route" })
-                ROUTE_COMPLETED -> TaskCollection.Completed
-                ROUTE_TRASH -> TaskCollection.Trash
-                else -> TaskCollection.Inbox
-            }
-            val collectionViewModel: TaskCollectionViewModel = viewModel(
-                key = "collection-$route",
-                factory = TaskCollectionViewModel.factory(repository, collection)
-            )
-            val tasks by collectionViewModel.tasks.collectAsStateWithLifecycle()
-            val completedTasks by collectionViewModel.completedTasks.collectAsStateWithLifecycle()
-            val subtaskCounts by collectionViewModel.subtaskCounts.collectAsStateWithLifecycle()
-
-            MainScreen(
-                nav = nav,
-                route = route,
-                shellViewModel = shellViewModel,
-                lists = lists,
-                openTaskCounts = openTaskCounts,
-                taskCounts = taskCounts,
-                collection = collection,
-                tasks = tasks,
-                completedTasks = completedTasks,
-                subtaskCounts = subtaskCounts,
-                zone = repository.zone,
-                onOpenTask = { nav.push(taskRoute(it)) },
-                onComplete = { collectionViewModel.complete(it.id) },
-                onReopen = { collectionViewModel.reopen(it.id) },
-                onDelete = { collectionViewModel.delete(it.id) },
-                onRestore = { collectionViewModel.restore(it.id) }
-            )
-        }
+        else -> MainScreen(
+            repository = repository,
+            nav = nav,
+            route = route,
+            kind = kind,
+            argument = argument,
+            selectedDate = LocalDate.ofEpochDay(selectedEpochDay),
+            onSelectDate = { selectedEpochDay = it.toEpochDay() }
+        )
     }
+}
+
+/** The view a route shows, or null for the routes that have a screen of their own. */
+private fun collectionFor(
+    kind: String,
+    argument: Long?,
+    selectedDate: LocalDate
+): TaskCollection? = when (kind) {
+    ROUTE_INBOX -> TaskCollection.Inbox
+    ROUTE_LIST -> TaskCollection.ListDetail(requireNotNull(argument) { "清单路由缺少清单 id" })
+    ROUTE_COMPLETED -> TaskCollection.Completed
+    ROUTE_TRASH -> TaskCollection.Trash
+    ROUTE_FUTURE -> TaskCollection.Future
+    ROUTE_OVERDUE -> TaskCollection.Overdue
+    HomeTab.Today.route -> TaskCollection.Today
+    HomeTab.Calendar.route -> TaskCollection.DayView(selectedDate)
+    else -> null
 }
 
 // ------------------------------------------------------------- main screen
@@ -211,26 +219,43 @@ fun TodoApp(repository: TaskRepository) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreen(
+    repository: TaskRepository,
     nav: NavStack,
     route: String,
-    shellViewModel: AppShellViewModel,
-    lists: List<TaskList>,
-    openTaskCounts: Map<Long, Int>,
-    taskCounts: Map<Long, Int>,
-    collection: TaskCollection,
-    tasks: List<Task>,
-    completedTasks: List<Task>,
-    subtaskCounts: Map<Long, Int>,
-    zone: ZoneId,
-    onOpenTask: (Long) -> Unit,
-    onComplete: (Task) -> Unit,
-    onReopen: (Task) -> Unit,
-    onDelete: (Task) -> Unit,
-    onRestore: (Task) -> Unit
+    kind: String,
+    argument: Long?,
+    selectedDate: LocalDate,
+    onSelectDate: (LocalDate) -> Unit
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
+    val lists by shellViewModel.lists.collectAsStateWithLifecycle()
+    val openTaskCounts by shellViewModel.openTaskCounts.collectAsStateWithLifecycle()
+    val taskCounts by shellViewModel.taskCounts.collectAsStateWithLifecycle()
+
+    // The day the app opened on. It decides which tasks are 今日 and which are
+    // 逾期; both are read-only views, so nothing here ever moves a due date.
+    val today = remember { repository.today() }
+
+    // The view of this route. The calendar day is part of the key, so swiping to
+    // another month loads that day instead of reusing the old query.
+    val collection = collectionFor(kind, argument, selectedDate)
+    val collectionKey = when (collection) {
+        null -> null
+        is TaskCollection.DayView -> "collection-day-${collection.date.toEpochDay()}"
+        else -> "collection-$route"
+    }
+    val collectionViewModel: TaskCollectionViewModel? = if (collectionKey != null && collection != null) {
+        viewModel(key = collectionKey, factory = TaskCollectionViewModel.factory(repository, collection))
+    } else {
+        null
+    }
+    val tasks = collectionViewModel?.tasks?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val completedTasks = collectionViewModel?.completedTasks?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val subtaskCounts = collectionViewModel?.subtaskCounts?.collectAsStateWithLifecycle()?.value.orEmpty()
 
     var showNewListDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<TaskList?>(null) }
@@ -246,46 +271,69 @@ private fun MainScreen(
     // still have subtasks ask once before, because the subtasks go to the trash
     // with them (spec section 4.3).
     val deleteTaskWithUndo: (Task) -> Unit = { task ->
-        onDelete(task)
+        collectionViewModel?.delete(task.id)
         scope.launch {
             val result = snackbarHostState.showSnackbar(deletedMessage, actionLabel = undoLabel)
-            if (result == SnackbarResult.ActionPerformed) onRestore(task)
+            if (result == SnackbarResult.ActionPerformed) collectionViewModel?.restore(task.id)
         }
     }
 
     // Finishing a task by the checkbox or by a swipe offers undo as well, and
     // that undo is an explicit reopen - nothing reopens a task on its own.
     val completeWithUndo: (Task) -> Unit = { task ->
-        onComplete(task)
+        collectionViewModel?.complete(task.id)
         scope.launch {
             val result = snackbarHostState.showSnackbar(completedMessage, actionLabel = undoLabel)
-            if (result == SnackbarResult.ActionPerformed) onReopen(task)
+            if (result == SnackbarResult.ActionPerformed) collectionViewModel?.reopen(task.id)
         }
     }
 
-    val targetListId: Long? = when (collection) {
-        TaskCollection.Inbox -> shellViewModel.inboxId
-        is TaskCollection.ListDetail -> collection.listId
-        else -> null
+    val onOpenTask: (Long) -> Unit = { taskId -> nav.push(taskRoute(taskId)) }
+    val onReopen: (Task) -> Unit = { collectionViewModel?.reopen(it.id) }
+    val onRestore: (Task) -> Unit = { collectionViewModel?.restore(it.id) }
+    val requestDelete: (Task) -> Unit = { task ->
+        if ((subtaskCounts[task.id] ?: 0) > 0) pendingTaskDelete = task else deleteTaskWithUndo(task)
     }
+
+    // The inbox is pinned first, so only user lists can be reordered.
     val currentList = (collection as? TaskCollection.ListDetail)
         ?.let { detail -> lists.firstOrNull { it.id == detail.listId } }
-    // The inbox is pinned first, so only user lists can be reordered.
     val userLists = lists.filter { !it.isInbox }
     val currentUserListIndex = currentList?.let { list -> userLists.indexOfFirst { it.id == list.id } } ?: -1
 
-    val title = when (collection) {
-        TaskCollection.Inbox -> stringResource(R.string.list_inbox_name)
-        is TaskCollection.ListDetail -> currentList?.name.orEmpty()
-        TaskCollection.Completed -> stringResource(R.string.nav_completed)
-        TaskCollection.Trash -> stringResource(R.string.nav_trash)
+    val title = when (kind) {
+        ROUTE_INBOX -> stringResource(R.string.list_inbox_name)
+        ROUTE_LIST -> currentList?.name.orEmpty()
+        ROUTE_COMPLETED -> stringResource(R.string.nav_completed)
+        ROUTE_TRASH -> stringResource(R.string.nav_trash)
+        ROUTE_FUTURE -> stringResource(R.string.nav_future)
+        ROUTE_OVERDUE -> stringResource(R.string.nav_overdue)
+        HomeTab.Today.route -> stringResource(R.string.nav_today)
+        HomeTab.Quadrant.route -> stringResource(R.string.nav_quadrant)
+        else -> stringResource(R.string.nav_more)
     }
-    val emptyText = when (collection) {
-        TaskCollection.Inbox -> stringResource(R.string.empty_inbox)
-        is TaskCollection.ListDetail -> stringResource(R.string.empty_list)
-        TaskCollection.Completed -> stringResource(R.string.empty_completed)
-        TaskCollection.Trash -> stringResource(R.string.empty_trash)
+    val emptyTextRes = when (kind) {
+        ROUTE_INBOX -> R.string.empty_inbox
+        ROUTE_LIST -> R.string.empty_list
+        ROUTE_COMPLETED -> R.string.empty_completed
+        ROUTE_TRASH -> R.string.empty_trash
+        ROUTE_FUTURE -> R.string.empty_future
+        ROUTE_OVERDUE -> R.string.empty_overdue
+        HomeTab.Today.route -> R.string.empty_today
+        else -> R.string.empty_day
     }
+    val emptyText = stringResource(emptyTextRes)
+
+    // New tasks go to the inbox from the smart views, and to the list whose page
+    // is open. The 更多 page has no list context, so it offers no floating button.
+    val targetListId: Long? = when (kind) {
+        ROUTE_INBOX -> shellViewModel.inboxId
+        ROUTE_LIST -> argument
+        HomeTab.Today.route, HomeTab.Calendar.route, HomeTab.Quadrant.route -> shellViewModel.inboxId
+        else -> null
+    }
+    val selectedTab = HomeTab.entries.firstOrNull { it.route == kind }
+    val showsCalendarHeader = kind == HomeTab.Calendar.route
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -306,53 +354,63 @@ private fun MainScreen(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(title) },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(
-                                imageVector = Icons.Default.Menu,
-                                contentDescription = stringResource(R.string.action_open_lists)
-                            )
-                        }
-                    },
-                    actions = {
-                        if (currentList != null && !currentList.isInbox) {
-                            if (currentUserListIndex > 0) {
-                                IconButton(onClick = { shellViewModel.moveList(currentList.id, -1) }) {
+                if (!showsCalendarHeader) {
+                    TopAppBar(
+                        title = { Text(title) },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = stringResource(R.string.action_open_lists)
+                                )
+                            }
+                        },
+                        actions = {
+                            if (currentList != null && !currentList.isInbox) {
+                                if (currentUserListIndex > 0) {
+                                    IconButton(onClick = { shellViewModel.moveList(currentList.id, -1) }) {
+                                        Icon(
+                                            imageVector = Icons.Default.KeyboardArrowUp,
+                                            contentDescription = stringResource(R.string.action_move_up)
+                                        )
+                                    }
+                                }
+                                if (currentUserListIndex in 0 until userLists.lastIndex) {
+                                    IconButton(onClick = { shellViewModel.moveList(currentList.id, 1) }) {
+                                        Icon(
+                                            imageVector = Icons.Default.KeyboardArrowDown,
+                                            contentDescription = stringResource(R.string.action_move_down)
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { renameTarget = currentList }) {
                                     Icon(
-                                        imageVector = Icons.Default.KeyboardArrowUp,
-                                        contentDescription = stringResource(R.string.action_move_up)
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = stringResource(R.string.action_rename)
+                                    )
+                                }
+                                IconButton(onClick = { deleteTarget = currentList }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = stringResource(R.string.action_delete_list)
                                     )
                                 }
                             }
-                            if (currentUserListIndex in 0 until userLists.lastIndex) {
-                                IconButton(onClick = { shellViewModel.moveList(currentList.id, 1) }) {
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowDown,
-                                        contentDescription = stringResource(R.string.action_move_down)
-                                    )
-                                }
-                            }
-                            IconButton(onClick = { renameTarget = currentList }) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = stringResource(R.string.action_rename)
-                                )
-                            }
-                            IconButton(onClick = { deleteTarget = currentList }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = stringResource(R.string.action_delete_list)
-                                )
-                            }
                         }
-                    }
+                    )
+                }
+            },
+            bottomBar = {
+                TodoBottomBar(
+                    selected = selectedTab,
+                    todayDayOfMonth = today.dayOfMonth,
+                    onSelect = { nav.resetTo(it.route) }
                 )
             },
             floatingActionButton = {
-                if (targetListId != null) {
-                    FloatingActionButton(onClick = { nav.push(newTaskRoute(targetListId)) }) {
+                val listId = targetListId
+                if (listId != null) {
+                    FloatingActionButton(onClick = { nav.push(newTaskRoute(listId)) }) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = stringResource(R.string.action_new_task)
@@ -362,26 +420,68 @@ private fun MainScreen(
             },
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { innerPadding ->
-            TaskCollectionContent(
-                collection = collection,
-                tasks = tasks,
-                completedTasks = completedTasks,
-                subtaskCounts = subtaskCounts,
-                emptyText = emptyText,
-                zone = zone,
-                onOpenTask = onOpenTask,
-                onComplete = completeWithUndo,
-                onReopen = onReopen,
-                onDelete = { task ->
-                    if ((subtaskCounts[task.id] ?: 0) > 0) {
-                        pendingTaskDelete = task
-                    } else {
-                        deleteTaskWithUndo(task)
-                    }
-                },
-                onRestore = onRestore,
-                modifier = Modifier.padding(innerPadding)
-            )
+            when (kind) {
+                HomeTab.Calendar.route -> Column(
+                    modifier = Modifier
+                        .padding(innerPadding)
+                        .fillMaxSize()
+                ) {
+                    CalendarScreen(
+                        selectedDate = selectedDate,
+                        today = today,
+                        tasksInRange = { start, end -> repository.observeOpenTasksInRange(start, end) },
+                        onSelectDate = onSelectDate,
+                        onOpenLists = { scope.launch { drawerState.open() } }
+                    )
+                    TaskCollectionContent(
+                        collection = requireNotNull(collection),
+                        tasks = tasks,
+                        completedTasks = completedTasks,
+                        subtaskCounts = subtaskCounts,
+                        emptyText = emptyText,
+                        zone = repository.zone,
+                        onOpenTask = onOpenTask,
+                        onComplete = completeWithUndo,
+                        onReopen = onReopen,
+                        onDelete = requestDelete,
+                        onRestore = onRestore,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                HomeTab.Quadrant.route -> QuadrantScreen(
+                    openTasks = remember { repository.observeAllOpenTasks() },
+                    completedTasks = remember { repository.observeCompletedTasks() },
+                    zone = repository.zone,
+                    onOpenTask = onOpenTask,
+                    onComplete = completeWithUndo,
+                    onReopen = onReopen,
+                    modifier = Modifier.padding(innerPadding)
+                )
+
+                HomeTab.More.route -> MoreScreen(
+                    lists = lists,
+                    openTaskCounts = openTaskCounts,
+                    onOpen = { nav.resetTo(it) },
+                    onNewList = { showNewListDialog = true },
+                    modifier = Modifier.padding(innerPadding)
+                )
+
+                else -> TaskCollectionContent(
+                    collection = requireNotNull(collection),
+                    tasks = tasks,
+                    completedTasks = completedTasks,
+                    subtaskCounts = subtaskCounts,
+                    emptyText = emptyText,
+                    zone = repository.zone,
+                    onOpenTask = onOpenTask,
+                    onComplete = completeWithUndo,
+                    onReopen = onReopen,
+                    onDelete = requestDelete,
+                    onRestore = onRestore,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
         }
     }
 
@@ -453,6 +553,92 @@ private fun MainScreen(
     }
 }
 
+// --------------------------------------------------------------- 更多 page
+
+/**
+ * The 更多 tab: everything that does not need a tab of its own. It lists the
+ * finished tasks, the trash and every 清单 with its open task count, and it can
+ * create a new 清单 - the same entries the drawer offers, for the tabs that do
+ * not open the drawer.
+ */
+@Composable
+private fun MoreScreen(
+    lists: List<TaskList>,
+    openTaskCounts: Map<Long, Int>,
+    onOpen: (String) -> Unit,
+    onNewList: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxSize()) {
+        MoreEntry(
+            label = stringResource(R.string.nav_completed),
+            onClick = { onOpen(ROUTE_COMPLETED) }
+        )
+        MoreEntry(
+            label = stringResource(R.string.nav_trash),
+            onClick = { onOpen(ROUTE_TRASH) }
+        )
+
+        SectionHeader(stringResource(R.string.drawer_title))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(lists, key = { it.id }) { list ->
+                MoreEntry(
+                    label = list.name,
+                    trailing = openTaskCounts[list.id] ?: 0,
+                    onClick = { onOpen(listRoute(list.id)) }
+                )
+            }
+        }
+
+        TextButton(onClick = onNewList, modifier = Modifier.padding(horizontal = 12.dp)) {
+            Text(stringResource(R.string.action_new_list))
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = LocalTodoColors.current.dateMuted,
+        modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun MoreEntry(label: String, trailing: Int? = null, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+        )
+        if (trailing != null && trailing > 0) {
+            Text(
+                text = trailing.toString(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = LocalTodoColors.current.dateMuted
+            )
+            Spacer(Modifier.width(6.dp))
+        }
+        Icon(
+            imageVector = Icons.Default.KeyboardArrowRight,
+            contentDescription = null,
+            tint = LocalTodoColors.current.dateMuted
+        )
+    }
+}
+
+// ---------------------------------------------------------------- the drawer
+
 @Composable
 private fun ListsDrawer(
     lists: List<TaskList>,
@@ -473,6 +659,29 @@ private fun ListsDrawer(
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp)
         )
+
+        // 智能清单: the date driven views of spec section 4.1. They are queries,
+        // not folders - nothing here moves a task or a date.
+        SmartListEntry(
+            labelRes = R.string.nav_today,
+            route = HomeTab.Today.route,
+            currentRoute = currentRoute,
+            onSelect = onSelect
+        )
+        SmartListEntry(
+            labelRes = R.string.nav_future,
+            route = ROUTE_FUTURE,
+            currentRoute = currentRoute,
+            onSelect = onSelect
+        )
+        SmartListEntry(
+            labelRes = R.string.nav_overdue,
+            route = ROUTE_OVERDUE,
+            currentRoute = currentRoute,
+            onSelect = onSelect
+        )
+
+        Spacer(Modifier.height(8.dp))
 
         LazyColumn(modifier = Modifier.weight(1f)) {
             item(key = ROUTE_INBOX) {
@@ -511,6 +720,21 @@ private fun ListsDrawer(
             Text(stringResource(R.string.action_new_list))
         }
     }
+}
+
+@Composable
+private fun SmartListEntry(
+    labelRes: Int,
+    route: String,
+    currentRoute: String,
+    onSelect: (String) -> Unit
+) {
+    NavigationDrawerItem(
+        label = { Text(stringResource(labelRes)) },
+        selected = currentRoute == route,
+        onClick = { onSelect(route) },
+        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+    )
 }
 
 @Composable

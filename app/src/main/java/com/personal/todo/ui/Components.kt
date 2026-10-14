@@ -145,6 +145,36 @@ private fun weekdayRes(dayOfWeek: DayOfWeek): Int = when (dayOfWeek) {
 }
 
 /**
+ * The date a task shows next to its title: the due date when it has one (with
+ * its overdue state), otherwise the planned date, otherwise the day it was
+ * finished. Returns the text together with the colour of that state, so the
+ * card and the quadrant row draw the same date the same way.
+ */
+@Composable
+internal fun taskDateLabel(task: Task, nowMillis: Long, zone: ZoneId): Pair<String?, Color> {
+    val colors = LocalTodoColors.current
+    val completed = task.completedAt != null
+    val overdue = !completed && Schedule.isOverdue(nowMillis, task.dueDate, task.dueTime, zone)
+
+    val label = when {
+        task.dueDate != null ->
+            Schedule.dueLabel(nowMillis, task.dueDate, task.dueTime, zone)
+
+        else -> Schedule.dateLabel(task.plannedDate, Schedule.todayOf(nowMillis, zone))
+    }
+    // A finished task that never had a date still shows when it was finished.
+    val text = dateLabelText(label)
+        ?: task.completedAt?.let { completedAtText(it, zone) }
+    val color = when {
+        completed -> colors.doneInk
+        overdue -> colors.dateOverdue
+        label == DateLabel.Today -> colors.dateToday
+        else -> colors.dateMuted
+    }
+    return text to color
+}
+
+/**
  * One task as the screenshots show it: a white rounded card with a coloured bar
  * on its left edge, a square checkbox, the title, and on the right the date the
  * task belongs to - blue when that date is today, grey otherwise, red once it is
@@ -169,23 +199,8 @@ fun TaskCard(
 ) {
     val colors = LocalTodoColors.current
     val completed = task.completedAt != null
-    val overdue = !completed && Schedule.isOverdue(nowMillis, task.dueDate, task.dueTime, zone)
 
-    val dateLabel = when {
-        task.dueDate != null ->
-            Schedule.dueLabel(nowMillis, task.dueDate, task.dueTime, zone)
-
-        else -> Schedule.dateLabel(task.plannedDate, Schedule.todayOf(nowMillis, zone))
-    }
-    // A finished task that never had a date still shows when it was finished.
-    val dateText = dateLabelText(dateLabel)
-        ?: task.completedAt?.let { completedAtText(it, zone) }
-    val dateColor = when {
-        completed -> colors.doneInk
-        overdue -> colors.dateOverdue
-        dateLabel == DateLabel.Today -> colors.dateToday
-        else -> colors.dateMuted
-    }
+    val (dateText, dateColor) = taskDateLabel(task, nowMillis, zone)
 
     val countdown = if (completed) {
         Countdown.None

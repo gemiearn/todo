@@ -68,6 +68,23 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC, id DESC")
     fun observeDeletedTasks(): Flow<List<Task>>
 
+    /**
+     * Completed top level tasks dated [date]: the "已完成 N" group of the 今日
+     * view and of one calendar day. Like every date query here it only reads
+     * the stored dates.
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NOT NULL
+          AND (plannedDate = :date OR dueDate = :date)
+        ORDER BY completedAt DESC, id DESC
+        """
+    )
+    fun observeCompletedTasksOn(date: LocalDate): Flow<List<Task>>
+
     @Query(
         """
         SELECT * FROM tasks
@@ -179,6 +196,21 @@ interface TaskDao {
         """
     )
     fun observeAllOpenTasks(): Flow<List<Task>>
+
+    /**
+     * Open top level tasks dated inside [start]..[end], planned or due. The
+     * calendar draws the task dots of a month from this; it only reads dates.
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NULL
+          AND ((plannedDate BETWEEN :start AND :end) OR (dueDate BETWEEN :start AND :end))
+        """
+    )
+    fun observeOpenTasksInRange(start: LocalDate, end: LocalDate): Flow<List<Task>>
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getById(id: Long): Task?
