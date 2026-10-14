@@ -363,4 +363,64 @@ class TaskDateViewTest {
         assertEquals(Priority.HIGH, task.priority)
         assertEquals("备注", task.notes)
     }
+
+    // ----------------------------------------------------- 编辑器的日期字段
+
+    @Test
+    fun editingOneDateKeepsTheOthersAndCanClearTheTimeOnItsOwn() = runBlocking {
+        val taskId = repository.createTask(
+            title = "带日期",
+            listId = inboxId,
+            plannedDate = today,
+            dueDate = today.plusDays(1),
+            dueTime = LocalTime.of(18, 30)
+        )
+
+        repository.updateTask(
+            taskId = taskId,
+            title = "带日期",
+            notes = null,
+            priority = Priority.NORMAL,
+            listId = inboxId,
+            plannedDate = today.plusDays(3),
+            dueDate = today.plusDays(1),
+            dueTime = null
+        )
+
+        val task = requireNotNull(repository.getTask(taskId))
+        assertEquals("计划日期可以单独改", today.plusDays(3), task.plannedDate)
+        assertEquals("截止日期不受影响", today.plusDays(1), task.dueDate)
+        assertNull("只清掉截止时间，日期还在", task.dueTime)
+    }
+
+    @Test
+    fun aRefusedUpdateLeavesTheStoredTaskUntouched() = runBlocking {
+        val taskId = repository.createTask(
+            title = "带日期",
+            listId = inboxId,
+            dueDate = today,
+            dueTime = LocalTime.of(8, 0)
+        )
+
+        val rejected = try {
+            repository.updateTask(
+                taskId = taskId,
+                title = "带日期",
+                notes = null,
+                priority = Priority.NORMAL,
+                listId = inboxId,
+                plannedDate = today,
+                dueDate = null,
+                dueTime = LocalTime.of(9, 0)
+            )
+            false
+        } catch (error: IllegalArgumentException) {
+            true
+        }
+
+        assertTrue("截止时间不能脱离截止日期存在", rejected)
+        val task = requireNotNull(repository.getTask(taskId))
+        assertEquals("被拒绝的编辑不能改动已保存的数据", today, task.dueDate)
+        assertEquals(LocalTime.of(8, 0), task.dueTime)
+    }
 }

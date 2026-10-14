@@ -45,6 +45,8 @@ import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.viewmodel.TaskDetailViewModel
+import java.time.Instant
+import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.launch
 
@@ -129,6 +131,8 @@ fun TaskDetailScreen(
                 TaskHeader(
                     task = current,
                     lists = lists,
+                    nowMillis = nowMillis,
+                    zone = zone,
                     onComplete = { viewModel.complete() },
                     onReopen = { viewModel.reopen() },
                     onRestore = { viewModel.restore() },
@@ -200,12 +204,15 @@ fun TaskDetailScreen(
 private fun TaskHeader(
     task: Task,
     lists: List<TaskList>,
+    nowMillis: Long,
+    zone: ZoneId,
     onComplete: () -> Unit,
     onReopen: () -> Unit,
     onRestore: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
         Text(task.title, style = MaterialTheme.typography.headlineSmall)
         task.notes?.takeIf { it.isNotBlank() }?.let { notes ->
@@ -238,6 +245,26 @@ private fun TaskHeader(
             ),
             style = MaterialTheme.typography.bodySmall
         )
+        // The dates of spec section 4.1, as the editor set them. Nothing here is
+        // derived: an overdue task keeps the day the user chose.
+        task.plannedDate?.let { date ->
+            Text(
+                text = stringResource(R.string.task_planned_date_value, calendarDateText(date, today)),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        task.dueDate?.let { date ->
+            Text(
+                text = stringResource(R.string.task_due_date_value, calendarDateText(date, today)),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        task.dueTime?.let { time ->
+            Text(
+                text = stringResource(R.string.task_due_time_value, detailTimeText(time)),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -264,6 +291,9 @@ private fun SectionTitle(text: String) {
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
     )
 }
+
+/** The due time as `HH:mm`, the same shape the editor stores. */
+private fun detailTimeText(time: LocalTime): String = "%02d:%02d".format(time.hour, time.minute)
 
 @Composable
 private fun InfoText(text: String) {

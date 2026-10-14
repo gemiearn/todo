@@ -11,6 +11,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Priority
+import java.time.LocalDate
+import java.time.LocalTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +47,23 @@ class TaskEditorViewModel(
     var listId by mutableLongStateOf(defaultListId)
         private set
 
+    /**
+     * Dates follow spec section 4.1: the planned date and the due date are
+     * independent, and a due time only exists on a day - clearing the due date
+     * therefore clears the time with it.
+     */
+    var plannedDate by mutableStateOf<LocalDate?>(null)
+        private set
+
+    var dueDate by mutableStateOf<LocalDate?>(null)
+        private set
+
+    var dueTime by mutableStateOf<LocalTime?>(null)
+        private set
+
+    /** The day the pickers open on and the day 今天 / 明天 are measured from. */
+    val today: LocalDate = repository.today()
+
     var titleHasError by mutableStateOf(false)
         private set
 
@@ -59,6 +78,9 @@ class TaskEditorViewModel(
                 notes = task.notes.orEmpty()
                 priority = task.priority
                 listId = task.listId
+                plannedDate = task.plannedDate
+                dueDate = task.dueDate
+                dueTime = task.dueTime
             }
         }
     }
@@ -80,6 +102,20 @@ class TaskEditorViewModel(
         listId = value
     }
 
+    fun onPlannedDateChange(value: LocalDate?) {
+        plannedDate = value
+    }
+
+    /** Clearing the due date takes the due time with it: a time needs a day. */
+    fun onDueDateChange(value: LocalDate?) {
+        dueDate = value
+        if (value == null) dueTime = null
+    }
+
+    fun onDueTimeChange(value: LocalTime?) {
+        dueTime = value
+    }
+
     fun save() {
         val trimmedTitle = title.trim()
         if (trimmedTitle.isEmpty()) {
@@ -92,7 +128,10 @@ class TaskEditorViewModel(
                     title = trimmedTitle,
                     listId = listId,
                     notes = notes,
-                    priority = priority
+                    priority = priority,
+                    plannedDate = plannedDate,
+                    dueDate = dueDate,
+                    dueTime = dueTime
                 )
             } else {
                 repository.updateTask(
@@ -100,7 +139,10 @@ class TaskEditorViewModel(
                     title = trimmedTitle,
                     notes = notes,
                     priority = priority,
-                    listId = listId
+                    listId = listId,
+                    plannedDate = plannedDate,
+                    dueDate = dueDate,
+                    dueTime = dueTime
                 )
             }
             _saved.value = true

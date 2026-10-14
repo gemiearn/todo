@@ -58,6 +58,7 @@ import com.personal.todo.model.TaskEventType
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.DayOfWeek
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
@@ -172,6 +173,18 @@ internal fun taskDateLabel(task: Task, nowMillis: Long, zone: ZoneId): Pair<Stri
         else -> colors.dateMuted
     }
     return text to color
+}
+
+/**
+ * One plain date as it reads on the editor and the detail screen: 今天 / 明天 /
+ * 昨天 when it is close to the given day, otherwise the month and day.
+ */
+@Composable
+internal fun calendarDateText(date: LocalDate, today: LocalDate): String = when (date) {
+    today -> stringResource(R.string.date_today)
+    today.plusDays(1) -> stringResource(R.string.date_tomorrow)
+    today.minusDays(1) -> stringResource(R.string.date_yesterday)
+    else -> stringResource(R.string.date_month_day, date.monthValue, date.dayOfMonth)
 }
 
 /**

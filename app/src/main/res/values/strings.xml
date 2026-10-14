@@ -35,6 +35,11 @@
     <string name="action_move_down">下移</string>
     <string name="action_show_completed">展开已完成任务</string>
     <string name="action_hide_completed">收起已完成任务</string>
+    <string name="action_pick">选择</string>
+    <string name="action_clear">清除</string>
+    <string name="action_confirm">确定</string>
+    <string name="date_not_set">未设置</string>
+    <string name="due_time_needs_date">先设置截止日期</string>
 
     <!-- 搜索与排序 -->
     <string name="action_search">搜索</string>
@@ -102,6 +107,11 @@
     <string name="task_notes_label">备注（可选）</string>
     <string name="task_priority_label">优先级</string>
     <string name="task_list_label">所属清单</string>
+    <string name="task_date_label">日期与时间</string>
+    <string name="task_planned_date_label">计划日期</string>
+    <string name="task_due_date_label">截止日期</string>
+    <string name="task_due_time_label">截止时间</string>
+    <string name="dialog_time_picker_title">选择截止时间</string>
     <string name="priority_normal">普通</string>
     <string name="priority_high">高</string>
     <string name="priority_urgent">紧急</string>
@@ -112,6 +122,9 @@
     <string name="task_status_completed">已完成</string>
     <string name="task_priority_value">优先级：%1$s</string>
     <string name="task_list_value">所属清单：%1$s</string>
+    <string name="task_planned_date_value">计划日期：%1$s</string>
+    <string name="task_due_date_value">截止日期：%1$s</string>
+    <string name="task_due_time_value">截止时间：%1$s</string>
     <string name="task_completed_at">完成时间：%1$s</string>
     <string name="task_subtasks_title">子任务</string>
     <string name="task_add_subtask_hint">添加子任务</string>
