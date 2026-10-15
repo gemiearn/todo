@@ -31,6 +31,14 @@ sealed interface TaskCollection {
 
     /** One day of the calendar; the month grid selects which one. */
     data class DayView(val date: LocalDate) : TaskCollection
+
+    /**
+     * No collection at all: the routes that only show the shell (更多) or their
+     * own screen (四象限). It exists so the shell can create its view model
+     * unconditionally - a conditionally created view model would shift the
+     * composition slot table and crash the next rememberSaveable.
+     */
+    data object None : TaskCollection
 }
 
 class TaskCollectionViewModel(
@@ -47,6 +55,7 @@ class TaskCollectionViewModel(
         TaskCollection.Future -> repository.observeFutureTasks()
         TaskCollection.Overdue -> repository.observeOverdueTasks()
         is TaskCollection.DayView -> repository.observeOpenTasksOn(collection.date)
+        TaskCollection.None -> flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val subtaskCounts: StateFlow<Map<Long, Int>> = repository.observeSubtaskCounts()
@@ -66,7 +75,8 @@ class TaskCollectionViewModel(
         TaskCollection.Completed,
         TaskCollection.Trash,
         TaskCollection.Future,
-        TaskCollection.Overdue -> flowOf(emptyList())
+        TaskCollection.Overdue,
+        TaskCollection.None -> flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun complete(taskId: Long) {

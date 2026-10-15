@@ -315,20 +315,23 @@ internal fun MainScreen(
 
     // The view of this route. The calendar day is part of the key, so swiping to
     // another month loads that day instead of reusing the old query.
-    val collection = collectionFor(kind, argument, selectedDate)
+    //
+    // Every composable call below runs for EVERY route, even on the routes that
+    // have no collection of their own (更多 / 四象限). A @Composable call that is
+    // taken on one route and skipped on another shifts the composition slot
+    // table, and the next rememberSaveable then reads a slot that belongs to
+    // another call - which is the crash the phone reported:
+    // "LifecycleRegistry cannot be cast to SaveableHolder" in rememberSaveable.
+    val collection = collectionFor(kind, argument, selectedDate) ?: TaskCollection.None
     val collectionKey = when (collection) {
-        null -> null
         is TaskCollection.DayView -> "collection-day-${collection.date.toEpochDay()}"
         else -> "collection-$route"
     }
-    val collectionViewModel: TaskCollectionViewModel? = if (collectionKey != null && collection != null) {
+    val collectionViewModel: TaskCollectionViewModel =
         viewModel(key = collectionKey, factory = TaskCollectionViewModel.factory(repository, collection))
-    } else {
-        null
-    }
-    val tasks = collectionViewModel?.tasks?.collectAsStateWithLifecycle()?.value.orEmpty()
-    val completedTasks = collectionViewModel?.completedTasks?.collectAsStateWithLifecycle()?.value.orEmpty()
-    val subtaskCounts = collectionViewModel?.subtaskCounts?.collectAsStateWithLifecycle()?.value.orEmpty()
+    val tasks by collectionViewModel.tasks.collectAsStateWithLifecycle()
+    val completedTasks by collectionViewModel.completedTasks.collectAsStateWithLifecycle()
+    val subtaskCounts by collectionViewModel.subtaskCounts.collectAsStateWithLifecycle()
 
     // 搜索与排序 (spec section 4.4). Both are pure views over the rows the
     // collection already returned, so the filter of the current view and the
@@ -584,7 +587,7 @@ internal fun MainScreen(
                         onOpenLists = { scope.launch { drawerState.open() } }
                     )
                     TaskCollectionContent(
-                        collection = requireNotNull(collection),
+                        collection = collection,
                         tasks = visibleTasks,
                         completedTasks = visibleCompletedTasks,
                         subtaskCounts = subtaskCounts,
@@ -627,7 +630,7 @@ internal fun MainScreen(
                 )
 
                 else -> TaskCollectionContent(
-                    collection = requireNotNull(collection),
+                    collection = collection,
                     tasks = visibleTasks,
                     completedTasks = visibleCompletedTasks,
                     subtaskCounts = subtaskCounts,

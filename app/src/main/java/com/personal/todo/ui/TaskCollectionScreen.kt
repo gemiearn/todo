@@ -73,7 +73,8 @@ fun TaskCollectionContent(
         TaskCollection.Completed,
         TaskCollection.Trash,
         TaskCollection.Future,
-        TaskCollection.Overdue -> false
+        TaskCollection.Overdue,
+        TaskCollection.None -> false
     }
 
     if (tasks.isEmpty() && !(foldsCompleted && completedTasks.isNotEmpty())) {
