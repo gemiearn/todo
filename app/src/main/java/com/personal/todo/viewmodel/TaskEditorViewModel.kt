@@ -55,6 +55,10 @@ class TaskEditorViewModel(
     var plannedDate by mutableStateOf<LocalDate?>(null)
         private set
 
+    /** The moment work is meant to start; it needs a planned date to hang on. */
+    var plannedTime by mutableStateOf<LocalTime?>(null)
+        private set
+
     var dueDate by mutableStateOf<LocalDate?>(null)
         private set
 
@@ -79,6 +83,7 @@ class TaskEditorViewModel(
                 priority = task.priority
                 listId = task.listId
                 plannedDate = task.plannedDate
+                plannedTime = task.plannedTime
                 dueDate = task.dueDate
                 dueTime = task.dueTime
             }
@@ -102,8 +107,14 @@ class TaskEditorViewModel(
         listId = value
     }
 
+    /** Clearing the planned date takes the planned time with it: a time needs a day. */
     fun onPlannedDateChange(value: LocalDate?) {
         plannedDate = value
+        if (value == null) plannedTime = null
+    }
+
+    fun onPlannedTimeChange(value: LocalTime?) {
+        plannedTime = value
     }
 
     /** Clearing the due date takes the due time with it: a time needs a day. */
@@ -139,6 +150,7 @@ class TaskEditorViewModel(
                     notes = notes,
                     priority = priority,
                     plannedDate = plannedDate,
+                    plannedTime = plannedTime,
                     dueDate = dueDate,
                     dueTime = dueTime
                 )
@@ -150,6 +162,7 @@ class TaskEditorViewModel(
                     priority = priority,
                     listId = listId,
                     plannedDate = plannedDate,
+                    plannedTime = plannedTime,
                     dueDate = dueDate,
                     dueTime = dueTime
                 )

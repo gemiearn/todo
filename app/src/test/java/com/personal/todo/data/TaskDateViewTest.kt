@@ -448,6 +448,52 @@ class TaskDateViewTest {
         assertEquals(LocalDate.of(2026, 11, 3), task.dueDate)
     }
 
+    // ----------------------------------------------------------- 计划时间
+
+    @Test
+    fun aPlannedTimeNeedsAPlannedDate() = runBlocking {
+        val rejected = try {
+            repository.createTask("只有时间", inboxId, plannedTime = LocalTime.of(9, 0))
+            false
+        } catch (error: IllegalArgumentException) {
+            true
+        }
+
+        assertTrue("计划时间不能脱离计划日期存在", rejected)
+    }
+
+    @Test
+    fun thePlannedTimeIsKeptSeparateFromTheDueTime() = runBlocking {
+        val taskId = repository.createTask(
+            title = "上午写报告",
+            listId = inboxId,
+            plannedDate = today,
+            plannedTime = LocalTime.of(9, 0),
+            dueDate = today.plusDays(1),
+            dueTime = LocalTime.of(18, 0)
+        )
+
+        val task = requireNotNull(repository.getTask(taskId))
+        assertEquals("开始做的时间", LocalTime.of(9, 0), task.plannedTime)
+        assertEquals("最晚完成的时间", LocalTime.of(18, 0), task.dueTime)
+
+        repository.updateTask(
+            taskId = taskId,
+            title = "上午写报告",
+            notes = null,
+            priority = Priority.NORMAL,
+            listId = inboxId,
+            plannedDate = null,
+            plannedTime = null,
+            dueDate = today.plusDays(1),
+            dueTime = LocalTime.of(18, 0)
+        )
+
+        val updated = requireNotNull(repository.getTask(taskId))
+        assertNull("清掉计划日期时计划时间一并清掉", updated.plannedTime)
+        assertEquals("截止时间不受影响", LocalTime.of(18, 0), updated.dueTime)
+    }
+
     // ----------------------------------------------------- 编辑器的日期字段
 
     @Test

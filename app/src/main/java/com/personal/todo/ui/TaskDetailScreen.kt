@@ -253,6 +253,12 @@ private fun TaskHeader(
                 style = MaterialTheme.typography.bodySmall
             )
         }
+        task.plannedTime?.let { time ->
+            Text(
+                text = stringResource(R.string.task_planned_time_value, detailTimeText(time)),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
         task.dueDate?.let { date ->
             Text(
                 text = stringResource(R.string.task_due_date_value, calendarDateText(date, today)),

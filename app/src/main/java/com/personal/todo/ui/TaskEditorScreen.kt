@@ -74,6 +74,7 @@ fun TaskEditorScreen(
     val saved by viewModel.saved.collectAsStateWithLifecycle()
 
     var plannedPickerOpen by remember { mutableStateOf(false) }
+    var plannedTimePickerOpen by remember { mutableStateOf(false) }
     var duePickerOpen by remember { mutableStateOf(false) }
     var timePickerOpen by remember { mutableStateOf(false) }
 
@@ -164,6 +165,17 @@ fun TaskEditorScreen(
                 onClear = { viewModel.onPlannedDateChange(null) }
             )
             DateValueRow(
+                label = stringResource(R.string.task_planned_time_label),
+                valueText = viewModel.plannedTime?.let { timeText(it) }
+                    ?: stringResource(
+                        if (viewModel.plannedDate == null) R.string.planned_time_needs_date else R.string.date_not_set
+                    ),
+                isSet = viewModel.plannedTime != null,
+                pickEnabled = viewModel.plannedDate != null,
+                onPick = { plannedTimePickerOpen = true },
+                onClear = { viewModel.onPlannedTimeChange(null) }
+            )
+            DateValueRow(
                 label = stringResource(R.string.task_due_date_label),
                 valueText = viewModel.dueDate?.let { calendarDateText(it, viewModel.today) }
                     ?: stringResource(R.string.date_not_set),
@@ -248,6 +260,35 @@ fun TaskEditorScreen(
         }
     }
 
+    if (plannedTimePickerOpen) {
+        val start = viewModel.plannedTime ?: DefaultDueTime
+        val timeState = rememberTimePickerState(
+            initialHour = start.hour,
+            initialMinute = start.minute,
+            is24Hour = true
+        )
+        AlertDialog(
+            onDismissRequest = { plannedTimePickerOpen = false },
+            title = { Text(stringResource(R.string.dialog_planned_time_picker_title)) },
+            text = { TimeInput(state = timeState) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.onPlannedTimeChange(LocalTime.of(timeState.hour, timeState.minute))
+                        plannedTimePickerOpen = false
+                    }
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { plannedTimePickerOpen = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
     if (timePickerOpen) {
         val start = viewModel.dueTime ?: DefaultDueTime
         val timeState = rememberTimePickerState(
@@ -278,7 +319,7 @@ fun TaskEditorScreen(
     }
 }
 
-/** The hour the time picker starts on when the task has no due time yet. */
+/** The hour a time picker starts on when the task has no time there yet. */
 private val DefaultDueTime: LocalTime = LocalTime.of(9, 0)
 
 /** One row of the date section: label, current value, pick and clear. */

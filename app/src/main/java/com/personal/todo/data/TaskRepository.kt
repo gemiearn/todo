@@ -246,11 +246,13 @@ class TaskRepository(
         priority: Priority = Priority.NORMAL,
         parentTaskId: Long? = null,
         plannedDate: LocalDate? = null,
+        plannedTime: LocalTime? = null,
         dueDate: LocalDate? = null,
         dueTime: LocalTime? = null
     ): Long {
         val trimmedTitle = title.trim()
         require(trimmedTitle.isNotEmpty()) { "任务标题不能为空" }
+        require(plannedTime == null || plannedDate != null) { "计划时间必须依附于计划日期" }
         require(dueTime == null || dueDate != null) { "截止时间必须依附于截止日期" }
         val list = listDao.getById(listId) ?: throw IllegalArgumentException("清单不存在: $listId")
 
@@ -274,6 +276,7 @@ class TaskRepository(
                     createdAt = time,
                     updatedAt = time,
                     plannedDate = plannedDate,
+                    plannedTime = plannedTime,
                     dueDate = dueDate,
                     dueTime = dueTime
                 )
@@ -305,11 +308,13 @@ class TaskRepository(
         priority: Priority,
         listId: Long,
         plannedDate: LocalDate? = null,
+        plannedTime: LocalTime? = null,
         dueDate: LocalDate? = null,
         dueTime: LocalTime? = null
     ) {
         val trimmedTitle = title.trim()
         require(trimmedTitle.isNotEmpty()) { "任务标题不能为空" }
+        require(plannedTime == null || plannedDate != null) { "计划时间必须依附于计划日期" }
         require(dueTime == null || dueDate != null) { "截止时间必须依附于截止日期" }
         val task = taskDao.getById(taskId) ?: throw IllegalArgumentException("任务不存在: $taskId")
         // A subtask lives in the same list as its parent; only top level tasks
@@ -325,6 +330,7 @@ class TaskRepository(
                 listId = targetListId,
                 updatedAt = now(),
                 plannedDate = plannedDate,
+                plannedTime = plannedTime,
                 dueDate = dueDate,
                 dueTime = dueTime
             )

@@ -113,6 +113,9 @@
     <string name="task_list_label">所属清单</string>
     <string name="task_date_label">日期与时间</string>
     <string name="task_planned_date_label">计划日期</string>
+    <string name="task_planned_time_label">计划时间</string>
+    <string name="planned_time_needs_date">先设置计划日期</string>
+    <string name="dialog_planned_time_picker_title">选择计划时间</string>
     <string name="task_due_date_label">截止日期</string>
     <string name="task_due_time_label">截止时间</string>
     <string name="dialog_time_picker_title">选择截止时间</string>
@@ -127,6 +130,7 @@
     <string name="task_priority_value">优先级：%1$s</string>
     <string name="task_list_value">所属清单：%1$s</string>
     <string name="task_planned_date_value">计划日期：%1$s</string>
+    <string name="task_planned_time_value">计划时间：%1$s</string>
     <string name="task_due_date_value">截止日期：%1$s</string>
     <string name="task_due_time_value">截止时间：%1$s</string>
     <string name="task_completed_at">完成时间：%1$s</string>
