@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -59,11 +63,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.todo.R
+import com.personal.todo.data.CrashLog
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
@@ -110,7 +116,14 @@ private fun newTaskRoute(listId: Long) = "$ROUTE_NEW/$listId"
 
 private fun editTaskRoute(taskId: Long) = "$ROUTE_EDIT/$taskId"
 
-private class NavStack(private val routes: SnapshotStateList<String>) {
+/**
+ * The pushed-on-top stack of routes.
+ *
+ * `internal` on purpose: the smoke tests compose the shell directly, and a
+ * screen that is only reachable through a chain of private calls can never be
+ * composed in a test.
+ */
+internal class NavStack(private val routes: SnapshotStateList<String>) {
     val current: String get() = routes.last()
 
     fun push(route: String) = routes.add(route)
@@ -134,7 +147,7 @@ private val NavStackSaver: Saver<SnapshotStateList<String>, ArrayList<String>> =
 )
 
 @Composable
-private fun rememberNavStack(): NavStack {
+internal fun rememberNavStack(): NavStack {
     val routes = rememberSaveable(saver = NavStackSaver) { mutableStateListOf(HomeTab.Today.route) }
     return remember(routes) { NavStack(routes) }
 }
@@ -147,6 +160,42 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
     val route = nav.current
     val kind = route.substringBefore('/')
     val argument = route.substringAfter('/', "").toLongOrNull()
+
+    // A crash that happened on a screen the app can no longer open would be
+    // unreachable through the UI, so it is shown right here instead: the next
+    // launch reports it, and the user can copy it out and dismiss it.
+    val context = LocalContext.current
+    var crashText by remember { mutableStateOf(CrashLog.read(context)) }
+    crashText?.let { text ->
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(stringResource(R.string.crash_log_title)) },
+            text = {
+                SelectionContainer(
+                    modifier = Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(text = text, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        CrashLog.clear(context)
+                        crashText = null
+                    }
+                ) {
+                    Text(stringResource(R.string.crash_log_clear))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { crashText = null }) {
+                    Text(stringResource(R.string.action_close))
+                }
+            }
+        )
+    }
 
     // The day the calendar page is showing. It lives above the screens so
     // opening a task from that day and coming back lands on the same day again.
@@ -242,7 +291,7 @@ private fun collectionFor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainScreen(
+internal fun MainScreen(
     repository: TaskRepository,
     nav: NavStack,
     route: String,
@@ -672,7 +721,7 @@ private fun MainScreen(
  * not open the drawer.
  */
 @Composable
-private fun MoreScreen(
+internal fun MoreScreen(
     lists: List<TaskList>,
     openTaskCounts: Map<Long, Int>,
     onOpen: (String) -> Unit,

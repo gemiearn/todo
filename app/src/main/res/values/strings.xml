@@ -38,6 +38,7 @@
     <string name="action_pick">选择</string>
     <string name="action_clear">清除</string>
     <string name="action_confirm">确定</string>
+    <string name="action_close">关闭</string>
     <string name="date_not_set">未设置</string>
     <string name="due_time_needs_date">先设置截止日期</string>
 
