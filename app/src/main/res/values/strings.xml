@@ -207,7 +207,17 @@
     <string name="focus_task_required">先选一个要专注的任务</string>
     <string name="focus_task_picker_empty">没有可专注的任务，先新建一个任务吧</string>
     <string name="focus_pomodoro_index">今日第 %1$d 个番茄</string>
-    <string name="focus_link_task">关联任务</string>
+    <string name="focus_link_task">专注任务</string>
+    <string name="focus_task_list">所属清单 · %1$s</string>
+    <!-- 圆环里的提示：改时长、休息口径、正向计时的自由度 -->
+    <string name="focus_slider_hint">拖动下面的进度条可调整时长</string>
+    <string name="focus_ring_break_hint">休息不计入专注统计</string>
+    <string name="focus_ring_stopwatch_hint">由你决定何时结束</string>
+    <string name="focus_length_selected">已选 %1$s</string>
+    <string name="focus_action_add_minutes">增加 5 分钟</string>
+    <string name="focus_action_subtract_minutes">减少 5 分钟</string>
+    <string name="focus_duration_hours">%1$d 小时</string>
+    <string name="focus_duration_hours_minutes">%1$d 小时 %2$d 分</string>
     <string name="focus_dialog_pick_task_title">选择要专注的任务</string>
     <string name="focus_action_start">开始专注</string>
     <string name="focus_action_pause">暂停</string>

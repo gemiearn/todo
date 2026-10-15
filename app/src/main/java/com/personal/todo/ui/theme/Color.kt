@@ -37,6 +37,18 @@ private val Amber = Color(0xFFF5A623)
 private val Green = Color(0xFF3DBE7B)
 
 /**
+ * The 专注（番茄钟）页的番茄红, taken from the focus screen the user supplied:
+ * the ring, the selected mode, the ± buttons and the start button are this
+ * colour, while every other page keeps the blue accent. It is a page of its own
+ * on purpose - a timer reads better in tomato than in the app's blue.
+ */
+private val Tomato = Color(0xFFF0665B)
+private val TomatoTrackLight = Color(0xFFF8DBD5)
+private val TomatoTrackDark = Color(0xFF4A2E2A)
+private val TomatoSurfaceLight = Color(0xFFFDE2DA)
+private val TomatoSurfaceDark = Color(0xFF3A2622)
+
+/**
  * The colors material3's [androidx.compose.material3.ColorScheme] has no slot
  * for: the two surfaces of the design, the priority bar of a card and the
  * states a date can be in. Read them through [LocalTodoColors].
@@ -58,7 +70,13 @@ data class TodoColors(
     val doneInk: Color,
     val barNormal: Color,
     val barHigh: Color,
-    val barUrgent: Color
+    val barUrgent: Color,
+    /** 专注页的番茄红: the ring, the ± buttons and the focus page's selections. */
+    val focusAccent: Color,
+    /** The unfilled part of the focus ring. */
+    val focusTrack: Color,
+    /** The tint behind the linked task of a focus session. */
+    val focusSurface: Color
 )
 
 internal val LightTodoColors = TodoColors(
@@ -72,7 +90,10 @@ internal val LightTodoColors = TodoColors(
     doneInk = DoneInkLight,
     barNormal = Green,
     barHigh = Amber,
-    barUrgent = Red
+    barUrgent = Red,
+    focusAccent = Tomato,
+    focusTrack = TomatoTrackLight,
+    focusSurface = TomatoSurfaceLight
 )
 
 val LocalTodoColors = staticCompositionLocalOf { LightTodoColors }
@@ -84,7 +105,9 @@ internal val DarkTodoColors = LightTodoColors.copy(
     accent = BlueDark,
     dateToday = BlueDark,
     dateMuted = MutedDark,
-    doneInk = DoneInkDark
+    doneInk = DoneInkDark,
+    focusTrack = TomatoTrackDark,
+    focusSurface = TomatoSurfaceDark
 )
 
 /**

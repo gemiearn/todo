@@ -18,6 +18,7 @@ import com.personal.todo.viewmodel.FocusViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -130,6 +131,52 @@ class FocusScreenSmokeTest {
         compose.onNodeWithText("收件箱").assertExists()
         compose.onNodeWithText("工作").assertExists()
         compose.onNodeWithText("整理周报").assertExists()
+    }
+
+    /**
+     * 倒计时：四个快捷档之外还有一条 5–300 分钟（最多 5 小时）的滑条，圆环两旁的 ±
+     * 钮按 5 分钟一档改时长，改过的值真的进了这次计时。
+     */
+    @Test
+    fun theCountdownLengthCanBeSetByHand() {
+        launchFocus()
+        compose.onNodeWithTag(focusModeTag(FocusMode.COUNTDOWN)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(FocusMinutesSliderTag).assertExists()
+        compose.onNodeWithText("15:00").assertExists()
+
+        compose.onNodeWithTag(FocusPlusTag).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("20:00").assertExists()
+
+        compose.onNodeWithTag(FocusMinusTag).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("15:00").assertExists()
+
+        compose.onNodeWithTag(FocusPlusTag).performClick()
+        compose.waitForIdle()
+
+        pickTask("写季度报告")
+        compose.onNodeWithTag(FocusStartTag).performClick()
+        compose.waitUntilNodeCount(hasText("专注中"), 1, TimeoutMillis)
+
+        assertEquals(1_200, runBlocking { focus.observeActiveTimer().first()?.plannedSeconds })
+    }
+
+    /** 番茄钟的 25 分钟是规格里的默认值，滑条因此只在倒计时出现。 */
+    @Test
+    fun onlyTheCountdownHasALengthSlider() {
+        launchFocus()
+
+        compose.onNodeWithTag(FocusMinutesSliderTag).assertDoesNotExist()
+        // 圆环里是番茄钟的长度，设置状态也看得见。
+        compose.onNodeWithText("25:00").assertExists()
+
+        compose.onNodeWithTag(focusModeTag(FocusMode.COUNTDOWN)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(FocusMinutesSliderTag).assertExists()
     }
 
     @Test

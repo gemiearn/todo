@@ -42,6 +42,15 @@ object FocusDurations {
 
     /** The choices the 倒计时 mode offers. */
     val CountdownChoices = listOf(5, 15, 25, 45)
+
+    /**
+     * The range the 倒计时 slider covers: five minutes up to five hours, in five
+     * minute steps. The presets above are the common lengths; the slider is how a
+     * user picks anything else, without typing.
+     */
+    const val MinMinutes = 5
+    const val MaxMinutes = 5 * 60
+    const val MinuteStep = 5
 }
 
 /**
@@ -114,7 +123,12 @@ class FocusViewModel(
     }
 
     fun selectMinutes(minutes: Int) {
-        plannedMinutes = minutes
+        plannedMinutes = minutes.coerceIn(FocusDurations.MinMinutes, FocusDurations.MaxMinutes)
+    }
+
+    /** Nudges the length by [delta] minutes - the ± buttons beside the ring. */
+    fun stepMinutes(delta: Int) {
+        selectMinutes(plannedMinutes + delta)
     }
 
     /**

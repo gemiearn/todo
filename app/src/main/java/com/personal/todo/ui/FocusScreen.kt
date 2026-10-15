@@ -2,6 +2,7 @@ package com.personal.todo.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,17 +18,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -47,6 +53,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,12 +77,21 @@ import com.personal.todo.viewmodel.FocusViewModel
 import java.time.Instant
 import java.time.ZoneId
 
-private val RingSize = 220.dp
-private val RingStroke = 14.dp
+private val RingSize = 240.dp
+private val RingStroke = 20.dp
+
+/** The two round ± buttons that sit beside the ring. */
+private val StepButtonSize = 44.dp
+
+/** Even the shortest countdown fills this much of the setup ring, so it never reads as broken. */
+private const val MinVisibleArc = 0.12f
 
 /** Tags the smoke tests use to drive the focus screen; the controls carry no text of their own. */
 internal const val FocusStartTag = "focus-start"
 internal const val FocusTaskRowTag = "focus-task-row"
+internal const val FocusMinutesSliderTag = "focus-minutes-slider"
+internal const val FocusPlusTag = "focus-plus"
+internal const val FocusMinusTag = "focus-minus"
 
 internal fun focusModeTag(mode: FocusMode): String = "focus-mode-${mode.name.lowercase()}"
 
@@ -99,6 +116,13 @@ fun FocusScreen(
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val openTasks by viewModel.openTasks.collectAsStateWithLifecycle()
+
+    // Two tasks in two lists can carry the same title, so the focus card names the
+    // list the linked task lives in as well.
+    val linkedListName = remember(viewModel.linkedTaskId, openTasks, lists) {
+        openTasks.firstOrNull { it.id == viewModel.linkedTaskId }
+            ?.let { task -> lists.firstOrNull { it.id == task.listId }?.name }
+    }
 
     var taskPickerOpen by remember { mutableStateOf(false) }
     val colors = LocalTodoColors.current
@@ -150,7 +174,7 @@ fun FocusScreen(
             if (active == null) {
                 SetupPanel(
                     viewModel = viewModel,
-                    colors = colors,
+                    linkedListName = linkedListName,
                     onPickTask = { taskPickerOpen = true }
                 )
             } else {
@@ -252,19 +276,36 @@ private fun StatCell(text: String, modifier: Modifier) {
 
 // ---------------------------------------------------------------- the setup
 
-/** No session running: pick a mode, a length and the task to focus on. */
+/** No session running: pick a mode, a task, a length - and read it off the ring. */
 @Composable
 private fun SetupPanel(
     viewModel: FocusViewModel,
-    colors: com.personal.todo.ui.theme.TodoColors,
+    linkedListName: String?,
     onPickTask: () -> Unit
 ) {
+    val colors = LocalTodoColors.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
     ) {
         ModeSegments(selected = viewModel.mode, onSelect = viewModel::selectMode)
+
+        Spacer(Modifier.height(12.dp))
+
+        FocusTaskRow(
+            title = viewModel.linkedTaskTitle,
+            listName = linkedListName,
+            onPick = onPickTask
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        PlannedRing(
+            mode = viewModel.mode,
+            minutes = viewModel.plannedMinutes,
+            onStep = viewModel::stepMinutes
+        )
 
         Spacer(Modifier.height(12.dp))
 
@@ -281,15 +322,10 @@ private fun SetupPanel(
                 color = colors.dateMuted
             )
 
-            FocusMode.COUNTDOWN -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FocusDurations.CountdownChoices.forEach { minutes ->
-                    FilterChip(
-                        selected = viewModel.plannedMinutes == minutes,
-                        onClick = { viewModel.selectMinutes(minutes) },
-                        label = { Text(stringResource(R.string.focus_minutes_choice, minutes)) }
-                    )
-                }
-            }
+            FocusMode.COUNTDOWN -> CountdownLengthPicker(
+                minutes = viewModel.plannedMinutes,
+                onSelect = viewModel::selectMinutes
+            )
 
             FocusMode.STOPWATCH -> Text(
                 text = stringResource(R.string.focus_stopwatch_hint),
@@ -300,15 +336,12 @@ private fun SetupPanel(
 
         Spacer(Modifier.height(16.dp))
 
-        TaskRow(title = viewModel.linkedTaskTitle, onPick = onPickTask)
-
-        Spacer(Modifier.height(12.dp))
-
         // 计时必须绑在一个真实任务上：没有一个任务，就没有可统计的对象，所以
         // 选任务之前这个按钮根本点不动。
         Button(
             onClick = viewModel::start,
             enabled = viewModel.linkedTaskId != null,
+            colors = ButtonDefaults.buttonColors(containerColor = colors.focusAccent),
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(FocusStartTag)
@@ -318,7 +351,7 @@ private fun SetupPanel(
     }
 }
 
-/** The three timers as one segmented control, the shape the reference apps use. */
+/** The three timers as one segmented control, the shape the reference app uses. */
 @Composable
 private fun ModeSegments(
     selected: FocusMode,
@@ -340,7 +373,7 @@ private fun ModeSegments(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (isSelected) colors.accent else Color.Transparent)
+                    .background(if (isSelected) colors.focusAccent else Color.Transparent)
                     .clickable { onSelect(mode) }
                     .testTag(focusModeTag(mode))
                     .padding(vertical = 10.dp),
@@ -357,43 +390,254 @@ private fun ModeSegments(
 }
 
 /**
- * The task this session works on. It is the first thing the screen asks for, and
- * [title] stays null until one is picked - there is no "none" to fall back on.
+ * The task this session works on, with the list it lives in - two tasks in two
+ * lists can carry the same title, so the list is named next to it.
+ *
+ * [title] stays null until one is picked: there is no "none" to fall back on,
+ * because a session always runs on a real task.
  */
 @Composable
-private fun TaskRow(title: String?, onPick: () -> Unit) {
+private fun FocusTaskRow(
+    title: String?,
+    listName: String?,
+    onPick: () -> Unit
+) {
     val colors = LocalTodoColors.current
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(colors.card)
             .clickable(onClick = onPick)
             .testTag(FocusTaskRowTag)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = stringResource(R.string.focus_link_task),
                 style = MaterialTheme.typography.labelMedium,
-                color = colors.dateMuted
+                color = colors.dateMuted,
+                modifier = Modifier.weight(1f)
             )
             Text(
-                text = title ?: stringResource(R.string.focus_task_required),
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (title == null) colors.dateMuted else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                text = stringResource(if (title == null) R.string.action_pick else R.string.action_change),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.focusAccent
             )
         }
+
+        Spacer(Modifier.height(6.dp))
+
+        if (title == null) {
+            Text(
+                text = stringResource(R.string.focus_task_required),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.dateMuted
+            )
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.focusAccent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .clip(RoundedCornerShape(50))
+                        .background(colors.focusSurface)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+                listName?.let { name ->
+                    Text(
+                        text = stringResource(R.string.focus_task_list, name),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.dateMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 10.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The ring before a session starts: it shows the length that is picked, and a
+ * countdown carries the ± buttons beside it because that length is the one the
+ * user sets. 番茄钟 is a fixed 25 minutes and 正向计时 has no target at all, so
+ * neither of them gets the buttons.
+ */
+@Composable
+private fun PlannedRing(
+    mode: FocusMode,
+    minutes: Int,
+    onStep: (Int) -> Unit
+) {
+    val colors = LocalTodoColors.current
+    val steppable = mode == FocusMode.COUNTDOWN
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        if (steppable) {
+            StepButton(
+                symbol = "−",
+                description = stringResource(R.string.focus_action_subtract_minutes),
+                tag = FocusMinusTag,
+                enabled = minutes > FocusDurations.MinMinutes,
+                onClick = { onStep(-FocusDurations.MinuteStep) }
+            )
+            Spacer(Modifier.width(8.dp))
+        }
+
+        FocusRing(fraction = plannedFraction(mode, minutes), tint = colors.focusAccent) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = clockText(minutes * 60, showHours = minutes >= 60),
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = stringResource(plannedHintRes(mode)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.dateMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 36.dp)
+                )
+            }
+        }
+
+        if (steppable) {
+            Spacer(Modifier.width(8.dp))
+            StepButton(
+                symbol = "+",
+                description = stringResource(R.string.focus_action_add_minutes),
+                tag = FocusPlusTag,
+                enabled = minutes < FocusDurations.MaxMinutes,
+                onClick = { onStep(FocusDurations.MinuteStep) }
+            )
+        }
+    }
+}
+
+/** One of the two round ± buttons beside the ring. */
+@Composable
+private fun StepButton(
+    symbol: String,
+    description: String,
+    tag: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Box(
+        modifier = Modifier
+            .size(StepButtonSize)
+            .clip(CircleShape)
+            .background(colors.card)
+            .border(1.dp, colors.focusTrack, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .testTag(tag)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center
+    ) {
         Text(
-            text = stringResource(if (title == null) R.string.action_pick else R.string.action_change),
-            style = MaterialTheme.typography.labelLarge,
-            color = colors.accent
+            text = symbol,
+            style = MaterialTheme.typography.titleLarge,
+            color = if (enabled) colors.focusAccent else colors.dateMuted
         )
     }
 }
+
+/** The presets plus the slider that reaches anything up to five hours. */
+@Composable
+private fun CountdownLengthPicker(
+    minutes: Int,
+    onSelect: (Int) -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FocusDurations.CountdownChoices.forEach { choice ->
+                FilterChip(
+                    selected = minutes == choice,
+                    onClick = { onSelect(choice) },
+                    label = { Text(stringResource(R.string.focus_minutes_choice, choice)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = colors.focusSurface,
+                        selectedLabelColor = colors.focusAccent
+                    )
+                )
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+        Slider(
+            value = minutes.toFloat(),
+            onValueChange = { raw -> onSelect(roundToStep(raw)) },
+            valueRange = FocusDurations.MinMinutes.toFloat()..FocusDurations.MaxMinutes.toFloat(),
+            steps = (FocusDurations.MaxMinutes - FocusDurations.MinMinutes) / FocusDurations.MinuteStep - 1,
+            colors = SliderDefaults.colors(
+                thumbColor = colors.focusAccent,
+                activeTrackColor = colors.focusAccent,
+                inactiveTrackColor = colors.focusTrack
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(FocusMinutesSliderTag)
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.focus_minutes_choice, FocusDurations.MinMinutes),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.dateMuted
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.focus_length_selected, lengthText(minutes)),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.focusAccent
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.focus_duration_hours, FocusDurations.MaxMinutes / 60),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.dateMuted
+            )
+        }
+    }
+}
+
+/** How much of the ring is filled before the session starts. */
+private fun plannedFraction(mode: FocusMode, minutes: Int): Float = when (mode) {
+    // A pomodoro is one whole block, so its ring is whole.
+    FocusMode.POMODORO -> 1f
+
+    // The countdown draws how much of the slider's five hours this session is, so
+    // dragging the slider visibly grows the ring. Even the shortest session keeps a
+    // visible stub instead of an apparently broken empty ring.
+    FocusMode.COUNTDOWN ->
+        (minutes.toFloat() / FocusDurations.MaxMinutes).coerceAtLeast(MinVisibleArc)
+
+    // 正向计时 has no target to be a fraction of.
+    FocusMode.STOPWATCH -> 0f
+}
+
+private fun plannedHintRes(mode: FocusMode): Int = when (mode) {
+    FocusMode.POMODORO -> R.string.focus_ring_break_hint
+    FocusMode.COUNTDOWN -> R.string.focus_slider_hint
+    FocusMode.STOPWATCH -> R.string.focus_ring_stopwatch_hint
+}
+
+/** Snaps a slider reading to the nearest step, so the value is always a real choice. */
+private fun roundToStep(raw: Float): Int =
+    (Math.round(raw / FocusDurations.MinuteStep) * FocusDurations.MinuteStep)
+        .coerceIn(FocusDurations.MinMinutes, FocusDurations.MaxMinutes)
 
 // -------------------------------------------------------------- the running
 
@@ -419,8 +663,10 @@ private fun RunningPanel(
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            ProgressRing(fraction = fraction, color = if (timer.running) colors.accent else colors.dateMuted)
+        FocusRing(
+            fraction = fraction,
+            tint = if (timer.running) colors.focusAccent else colors.dateMuted
+        ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = clockText(display, showHours = !timer.mode.timed || display >= 3600),
@@ -438,7 +684,7 @@ private fun RunningPanel(
                     Text(
                         text = stringResource(R.string.focus_pomodoro_index, index),
                         style = MaterialTheme.typography.labelMedium,
-                        color = colors.accent
+                        color = colors.focusAccent
                     )
                 }
                 timer.taskTitleSnapshot?.let { title ->
@@ -484,33 +730,50 @@ private fun ringFraction(timer: ActiveTimer, focusSeconds: Int): Float = when {
     else -> (focusSeconds % 60) / 60f
 }
 
+/**
+ * The ring the page is built around: the tomato track with the filled part drawn
+ * over it, and whatever the state has to say inside.
+ *
+ * The same ring is drawn before a session starts (showing the length that was
+ * picked, so dragging the slider visibly grows it) and while one runs (showing the
+ * time going by). Starting a session therefore does not move the page under the
+ * user's eyes.
+ */
 @Composable
-private fun ProgressRing(fraction: Float, color: Color) {
+private fun FocusRing(
+    fraction: Float,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
     val colors = LocalTodoColors.current
-    Canvas(modifier = Modifier.size(RingSize)) {
-        val stroke = RingStroke.toPx()
-        val inset = stroke / 2
-        val arcSize = Size(size.width - stroke, size.height - stroke)
-        drawArc(
-            color = colors.groupHeader,
-            startAngle = -90f,
-            sweepAngle = 360f,
-            useCenter = false,
-            topLeft = Offset(inset, inset),
-            size = arcSize,
-            style = Stroke(width = stroke)
-        )
-        if (fraction > 0f) {
+    Box(modifier = modifier.size(RingSize), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val stroke = RingStroke.toPx()
+            val inset = stroke / 2
+            val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
-                color = color,
+                color = colors.focusTrack,
                 startAngle = -90f,
-                sweepAngle = 360f * fraction,
+                sweepAngle = 360f,
                 useCenter = false,
                 topLeft = Offset(inset, inset),
                 size = arcSize,
-                style = Stroke(width = stroke, cap = StrokeCap.Round)
+                style = Stroke(width = stroke)
             )
+            if (fraction > 0f) {
+                drawArc(
+                    color = tint,
+                    startAngle = -90f,
+                    sweepAngle = 360f * fraction.coerceIn(0f, 1f),
+                    useCenter = false,
+                    topLeft = Offset(inset, inset),
+                    size = arcSize,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                )
+            }
         }
+        content()
     }
 }
 
@@ -677,4 +940,16 @@ private fun durationText(seconds: Int): String = when {
     seconds < 60 -> stringResource(R.string.focus_duration_seconds, seconds)
     seconds % 60 == 0 -> stringResource(R.string.focus_duration_minutes, seconds / 60)
     else -> stringResource(R.string.focus_duration_minutes_seconds, seconds / 60, seconds % 60)
+}
+
+/** A session length in words: 「45 分钟」/「2 小时」/「2 小时 15 分」. */
+@Composable
+private fun lengthText(minutes: Int): String {
+    val hours = minutes / 60
+    val rest = minutes % 60
+    return when {
+        hours == 0 -> stringResource(R.string.focus_duration_minutes, rest)
+        rest == 0 -> stringResource(R.string.focus_duration_hours, hours)
+        else -> stringResource(R.string.focus_duration_hours_minutes, hours, rest)
+    }
 }
