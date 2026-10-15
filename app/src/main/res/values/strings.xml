@@ -94,6 +94,19 @@
     <string name="weekday_narrow_fri">五</string>
     <string name="weekday_narrow_sat">六</string>
     <string name="weekday_narrow_sun">日</string>
+    <!-- 日历的四种视图，与用户给的截图一致 -->
+    <string name="calendar_view_year">年</string>
+    <string name="calendar_view_month">月</string>
+    <string name="calendar_view_week">周</string>
+    <string name="calendar_view_three_day">三日</string>
+    <string name="calendar_range">%1$s – %2$s</string>
+    <string name="action_switch_view">切换视图</string>
+    <string name="action_timeline_on">按时间线显示</string>
+    <string name="action_timeline_off">按列表显示</string>
+    <string name="calendar_all_day">全天</string>
+    <!-- 单日时间线的空态，与截图一致 -->
+    <string name="empty_day_timeline">你这一天没有任务</string>
+    <string name="empty_day_timeline_hint">放松一下吧</string>
 
     <!-- 四象限 -->
     <string name="quadrant_numeral_1">I</string>

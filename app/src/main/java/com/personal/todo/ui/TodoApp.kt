@@ -362,6 +362,12 @@ internal fun MainScreen(
     var sort by rememberSaveable { mutableStateOf(TaskSort.DEFAULT) }
     var sortMenuOpen by remember { mutableStateOf(false) }
 
+    // 日历 shows time in four ways and can lay a single day out as a timeline.
+    // Both are ways of looking at the same rows, so they are remembered here and
+    // never touch a task.
+    var calendarView by rememberSaveable { mutableStateOf(CalendarView.MONTH) }
+    var timelineOn by rememberSaveable { mutableStateOf(false) }
+
     val visibleTasks = remember(tasks, searchQuery, sort) {
         sortTasks(filterTasks(tasks, searchQuery), sort)
     }
@@ -603,24 +609,49 @@ internal fun MainScreen(
                     CalendarScreen(
                         selectedDate = selectedDate,
                         today = today,
+                        view = calendarView,
+                        onSelectView = { calendarView = it },
+                        timelineOn = timelineOn,
+                        onToggleTimeline = { timelineOn = !timelineOn },
                         tasksInRange = { start, end -> repository.observeOpenTasksSpanning(start, end) },
                         onSelectDate = onSelectDate,
-                        onOpenLists = { scope.launch { drawerState.open() } }
-                    )
-                    TaskCollectionContent(
-                        collection = collection,
-                        tasks = visibleTasks,
-                        completedTasks = visibleCompletedTasks,
-                        subtaskCounts = subtaskCounts,
-                        emptyText = emptyText,
-                        zone = repository.zone,
+                        onOpenLists = { scope.launch { drawerState.open() } },
                         onOpenTask = onOpenTask,
-                        onComplete = completeWithUndo,
-                        onReopen = onReopen,
-                        onDelete = requestDelete,
-                        onRestore = onRestore,
-                        modifier = Modifier.weight(1f)
+                        // Only the month view leaves room under the grid for a day
+                        // panel; the 周 / 三日 views carry their entries themselves.
+                        modifier = if (calendarView == CalendarView.MONTH) Modifier else Modifier.weight(1f)
                     )
+                    if (calendarView == CalendarView.MONTH) {
+                        // The toggle picks how the selected day is laid out - the
+                        // plain list, or the same tasks on a time axis.
+                        if (timelineOn) {
+                            DayTimelineScreen(
+                                tasks = visibleTasks,
+                                subtaskCounts = subtaskCounts,
+                                zone = repository.zone,
+                                onOpenTask = onOpenTask,
+                                onComplete = completeWithUndo,
+                                onReopen = onReopen,
+                                onDelete = requestDelete,
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            TaskCollectionContent(
+                                collection = collection,
+                                tasks = visibleTasks,
+                                completedTasks = visibleCompletedTasks,
+                                subtaskCounts = subtaskCounts,
+                                emptyText = emptyText,
+                                zone = repository.zone,
+                                onOpenTask = onOpenTask,
+                                onComplete = completeWithUndo,
+                                onReopen = onReopen,
+                                onDelete = requestDelete,
+                                onRestore = onRestore,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
                 }
 
                 HomeTab.Quadrant.route -> QuadrantScreen(

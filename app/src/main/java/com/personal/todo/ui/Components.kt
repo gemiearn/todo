@@ -59,6 +59,7 @@ import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
@@ -76,6 +77,12 @@ private const val NowRefreshMillis = 30_000L
 
 fun formatTimestamp(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(TimestampFormatter)
+
+/**
+ * A stored time of day as `HH:mm`, the same shape the editor and the detail
+ * screen write. Used by the calendar views that put a time next to a task.
+ */
+internal fun clockTimeText(time: LocalTime): String = "%02d:%02d".format(time.hour, time.minute)
 
 /**
  * The current moment, refreshed while the screen is shown, so the relative

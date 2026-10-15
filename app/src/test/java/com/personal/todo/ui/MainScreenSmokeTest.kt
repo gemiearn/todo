@@ -4,11 +4,14 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.ui.theme.TodoPomodoroTheme
+import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -94,6 +97,69 @@ class MainScreenSmokeTest {
 
         // The calendar page replaces the top bar with the month and year header.
         assertSomewhereOnScreen("年")
+    }
+
+    /**
+     * 年 / 月 / 周 / 三日 are four ways to lay out the same rows. Each one has to
+     * compose, and the switch has to come back to the month it started on.
+     */
+    @Test
+    fun theCalendarSwitchesThroughEveryView() {
+        launch(HomeTab.Calendar.route, HomeTab.Calendar.route)
+
+        compose.onNodeWithTag(calendarBodyTag(CalendarView.MONTH)).assertExists()
+
+        listOf(
+            CalendarView.WEEK,
+            CalendarView.THREE_DAY,
+            CalendarView.YEAR,
+            CalendarView.MONTH
+        ).forEach { view ->
+            compose.onNodeWithTag(CalendarViewSwitchTag).performClick()
+            compose.onNodeWithTag(calendarViewOptionTag(view)).performClick()
+            compose.waitForIdle()
+            compose.onNodeWithTag(calendarBodyTag(view)).assertExists()
+        }
+    }
+
+    /** The 时间线 toggle swaps the day panel of the month view for the time axis. */
+    @Test
+    fun theTimelineToggleSwitchesTheDayPanel() {
+        launch(HomeTab.Calendar.route, HomeTab.Calendar.route)
+
+        compose.onNodeWithTag(DayTimelineTag).assertDoesNotExist()
+
+        compose.onNodeWithTag(CalendarTimelineTag).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(DayTimelineTag).assertExists()
+        // The task of setUp has no planned time, so it sits in the 全天 block.
+        assertSomewhereOnScreen("全天")
+
+        compose.onNodeWithTag(CalendarTimelineTag).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(DayTimelineTag).assertDoesNotExist()
+    }
+
+    /** An empty day reads the way the reference screenshot has it. */
+    @Test
+    fun theEmptyTimelineSaysThereIsNothingToDo() {
+        compose.setContent {
+            TodoPomodoroTheme {
+                DayTimelineScreen(
+                    tasks = emptyList(),
+                    subtaskCounts = emptyMap(),
+                    zone = ZoneId.systemDefault(),
+                    onOpenTask = {},
+                    onComplete = {},
+                    onReopen = {},
+                    onDelete = {}
+                )
+            }
+        }
+
+        assertSomewhereOnScreen("你这一天没有任务")
+        assertSomewhereOnScreen("放松一下吧")
     }
 
     @Test
