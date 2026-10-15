@@ -1,6 +1,10 @@
 package com.personal.todo.ui
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -63,14 +67,17 @@ class MainScreenSmokeTest {
         val nav = NavStack(mutableStateListOf(route))
         compose.setContent {
             TodoPomodoroTheme {
+                // The selected day is live, the way the shell keeps it: a view that
+                // silently ignores the day it is given hides whole classes of bug.
+                var selectedDate by remember { mutableStateOf(tasks.today()) }
                 MainScreen(
                     repository = tasks,
                     nav = nav,
                     route = route,
                     kind = kind,
                     argument = argument,
-                    selectedDate = tasks.today(),
-                    onSelectDate = {}
+                    selectedDate = selectedDate,
+                    onSelectDate = { selectedDate = it }
                 )
             }
         }
@@ -120,6 +127,28 @@ class MainScreenSmokeTest {
             compose.waitForIdle()
             compose.onNodeWithTag(calendarBodyTag(view)).assertExists()
         }
+    }
+
+    /**
+     * 三日 is anchored on the window it was opened with: picking the last day of it
+     * must select that day, not slide the three days out from under the finger.
+     */
+    @Test
+    fun theThreeDayWindowStaysPutWhenADayIsPicked() {
+        launch(HomeTab.Calendar.route, HomeTab.Calendar.route)
+
+        compose.onNodeWithTag(CalendarViewSwitchTag).performClick()
+        compose.onNodeWithTag(calendarViewOptionTag(CalendarView.THREE_DAY)).performClick()
+        compose.waitForIdle()
+
+        val today = tasks.today()
+        compose.onNodeWithTag(calendarDayColumnTag(today)).assertExists()
+
+        compose.onNodeWithTag(calendarDayColumnTag(today.plusDays(2))).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(calendarDayColumnTag(today)).assertExists()
+        compose.onNodeWithTag(calendarDayColumnTag(today.plusDays(1))).assertExists()
     }
 
     /** The 时间线 toggle swaps the day panel of the month view for the time axis. */

@@ -103,6 +103,29 @@ class TodoAppSmokeTest {
         }
     }
 
+    /**
+     * The month grid used to jump five years ahead on every visit to the tab: the
+     * pager was scrolled to a page that had been counted twice, and the settle then
+     * dragged the selected day along with it. Opening the tab again has to land on
+     * the selected month, with that day's task under the grid.
+     */
+    @Test
+    fun theCalendarComesBackToTheSelectedMonth() {
+        launchApp()
+        val yearLabel = "${tasks.today().year} 年"
+
+        repeat(2) {
+            compose.onNodeWithTag(tabTag(HomeTab.Calendar)).performClick()
+            compose.waitForIdle()
+
+            compose.onNodeWithText(yearLabel, substring = true).assertExists()
+            compose.onNodeWithText("写季度报告").assertExists()
+
+            compose.onNodeWithTag(tabTag(HomeTab.Today)).performClick()
+            compose.waitForIdle()
+        }
+    }
+
     @Test
     fun openingTheMoreTabRepeatedlyKeepsTheShellStable() {
         launchApp()

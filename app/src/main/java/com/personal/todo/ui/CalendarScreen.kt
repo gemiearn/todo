@@ -35,8 +35,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +85,9 @@ internal fun calendarBodyTag(view: CalendarView): String = "calendar-body-${view
 
 internal fun calendarViewOptionTag(view: CalendarView): String = "calendar-view-option-${view.name.lowercase()}"
 
+/** The header of one day column of the 周 / 三日 views. */
+internal fun calendarDayColumnTag(date: LocalDate): String = "calendar-day-column-${date.toEpochDay()}"
+
 /** How many months can be swiped before and after the month the screen opens on. */
 private const val MonthsAround = 60
 
@@ -100,6 +105,9 @@ private val DotSize = 5.dp
 private const val DaysPerWeek = 7
 private const val YearColumns = 3
 private const val YearRows = 4
+
+/** The day circle of one mini month of the year view. */
+private val MiniDaySize = 18.dp
 
 /**
  * The 日历 page: a header that names the period and carries the 时间线 toggle and
@@ -125,10 +133,33 @@ fun CalendarScreen(
     modifier: Modifier = Modifier
 ) {
     // The pager state lives here rather than inside the month view, because the
-    // header shows the year of the month the grid is currently on.
-    val startMonth = remember { YearMonth.from(selectedDate).minusMonths(MonthsAround.toLong()) }
+    // header shows the year of the month the grid is currently on. Both halves of
+    // "which month is the grid on" have to come back together: the page is a
+    // saveable reading, so the anchor it is counted against is saved too, or a
+    // return to the tab would show a month nobody selected for a frame. The anchor
+    // is kept as the epoch day of its first day - a plain Long, which is the shape
+    // rememberSaveable saves without a second thought.
+    val anchorEpochDay by rememberSaveable {
+        mutableLongStateOf(YearMonth.from(selectedDate).minusMonths(MonthsAround.toLong()).atDay(1).toEpochDay())
+    }
+    val startMonth = remember(anchorEpochDay) { YearMonth.from(LocalDate.ofEpochDay(anchorEpochDay)) }
     val pagerState = rememberPagerState(initialPage = MonthsAround, pageCount = { MonthsAround * 2 + 1 })
     val visibleMonth = startMonth.plusMonths(pagerState.currentPage.toLong())
+
+    // 三日 keeps the window it was opened on: tapping a day inside it must not
+    // slide the three days out from under the finger. It only re-anchors when the
+    // day the rest of the app has selected falls outside the window.
+    var threeDayStartEpoch by rememberSaveable { mutableLongStateOf(selectedDate.toEpochDay()) }
+    val threeDayStart = LocalDate.ofEpochDay(threeDayStartEpoch)
+    LaunchedEffect(selectedDate, view) {
+        if (view == CalendarView.THREE_DAY && (
+                selectedDate.isBefore(threeDayStart) ||
+                    selectedDate.isAfter(threeDayStart.plusDays(2))
+                )
+        ) {
+            threeDayStartEpoch = selectedDate.toEpochDay()
+        }
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         CalendarHeader(
@@ -168,7 +199,7 @@ fun CalendarScreen(
 
             CalendarView.THREE_DAY -> DayColumnsView(
                 view = CalendarView.THREE_DAY,
-                days = (0L..2L).map { selectedDate.plusDays(it) },
+                days = (0L..2L).map { threeDayStart.plusDays(it) },
                 selectedDate = selectedDate,
                 today = today,
                 tasksInRange = tasksInRange,
@@ -370,9 +401,12 @@ private fun MonthView(
 ) {
     // Coming back from the week / three day / year view with another day in hand
     // scrolls the grid to that day's month instead of leaving the user on a month
-    // they no longer have selected.
+    // they no longer have selected. [startMonth] is already the selected month
+    // minus [MonthsAround], so the page of the selected month is exactly the
+    // distance between the two - adding the offset a second time threw the grid
+    // five years ahead every time the tab was opened.
     LaunchedEffect(selectedDate) {
-        val target = (MonthsAround + ChronoUnit.MONTHS.between(startMonth, YearMonth.from(selectedDate)))
+        val target = ChronoUnit.MONTHS.between(startMonth, YearMonth.from(selectedDate))
             .toInt()
             .coerceIn(0, MonthsAround * 2)
         if (pagerState.currentPage != target) pagerState.scrollToPage(target)
@@ -551,6 +585,7 @@ private fun DayColumnsView(
                         .weight(1f)
                         .clip(RoundedCornerShape(10.dp))
                         .clickable { onSelectDate(date) }
+                        .testTag(calendarDayColumnTag(date))
                         .padding(vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -718,7 +753,7 @@ private fun MiniMonth(
                         inMonth = YearMonth.from(date) == month,
                         selected = date == selectedDate,
                         today = date == today,
-                        hasTasks = YearMonth.from(date) == month && tasksByDay.containsKey(date),
+                        hasTasks = tasksByDay.containsKey(date),
                         onClick = { onPickDate(date) },
                         modifier = Modifier.weight(1f)
                     )
@@ -739,13 +774,27 @@ private fun MiniDay(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
+    // A day of a neighbouring month only keeps the grid in shape: it carries no
+    // circle and is not clickable, which holds the year view - twelve months at
+    // once - down to the nodes it actually needs.
+    if (!inMonth) {
+        Box(modifier = modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Text(
+                text = date.dayOfMonth.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.dateMuted
+            )
+        }
+        return
+    }
+
     Box(
         modifier = modifier.fillMaxHeight().clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .size(18.dp)
+                .size(MiniDaySize)
                 .clip(CircleShape)
                 .background(if (selected) colors.accent else Color.Transparent)
                 .then(
@@ -758,7 +807,6 @@ private fun MiniDay(
                 style = MaterialTheme.typography.labelSmall,
                 color = when {
                     selected -> Color.White
-                    !inMonth -> colors.dateMuted
                     today || hasTasks -> colors.accent
                     else -> MaterialTheme.colorScheme.onSurface
                 }
