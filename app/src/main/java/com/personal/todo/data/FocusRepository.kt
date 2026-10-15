@@ -6,9 +6,12 @@ import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusPhase
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTiming
+import com.personal.todo.model.Schedule
 import com.personal.todo.model.TimerState
+import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 
@@ -94,6 +97,49 @@ class FocusRepository(
     }
 
     /**
+     * Starts the break that follows a pomodoro (说明文档 5.1). Refused while any
+     * timer is active, exactly like [startTimer], so the app can only ever have one
+     * thing counting. A break carries the task with it, so the ring keeps saying
+     * what the session is about.
+     */
+    suspend fun startBreak(
+        phase: FocusPhase,
+        plannedSeconds: Int,
+        taskId: Long? = null,
+        taskTitleSnapshot: String? = null
+    ): Boolean = db.withTransaction {
+        require(phase.isBreak) { "休息阶段必须是短休息或长休息" }
+        if (focusDao.getActiveTimer() != null) return@withTransaction false
+        val time = now()
+        focusDao.upsertActiveTimer(
+            ActiveTimer(
+                mode = FocusMode.POMODORO,
+                phase = phase,
+                taskId = taskId,
+                taskTitleSnapshot = taskTitleSnapshot,
+                plannedSeconds = plannedSeconds.coerceAtLeast(MinTimedSeconds),
+                startedAt = time,
+                lastResumeAtElapsed = elapsed(),
+                accumulatedFocusSeconds = 0,
+                running = true,
+                updatedAt = time
+            )
+        )
+        true
+    }
+
+    /**
+     * 番茄钟 sessions of [date] that ran to the end. This is the number the break
+     * cycle counts: after every N-th completed pomodoro comes a long break.
+     */
+    suspend fun completedPomodorosOn(date: LocalDate): Int =
+        focusDao.getSessions().count { session ->
+            session.mode == FocusMode.POMODORO &&
+                session.status == FocusStatus.COMPLETED &&
+                Schedule.todayOf(session.startedAt, zone) == date
+        }
+
+    /**
      * Pauses the session. The time focused so far is banked first, so the paused
      * span itself is never counted as focus time (spec section 5.2).
      */
@@ -162,19 +208,23 @@ class FocusRepository(
 
     private suspend fun endTimer(status: FocusStatus): Boolean = db.withTransaction {
         val timer = focusDao.getActiveTimer() ?: return@withTransaction false
-        val elapsedNow = elapsed()
-        focusDao.insertSession(
-            FocusSession(
-                taskId = timer.taskId,
-                taskTitleSnapshot = timer.taskTitleSnapshot,
-                mode = timer.mode,
-                startedAt = timer.startedAt,
-                endedAt = now(),
-                plannedSeconds = timer.plannedSeconds,
-                actualFocusSeconds = FocusTiming.recordedFocusSeconds(stateOf(timer), elapsedNow),
-                status = status
+        // A break is not focus: it ends without a session, which is how 休息时间
+        // 不计入专注统计 stays true no matter how a break ends (reaching zero, or
+        // being skipped).
+        if (!timer.phase.isBreak) {
+            focusDao.insertSession(
+                FocusSession(
+                    taskId = timer.taskId,
+                    taskTitleSnapshot = timer.taskTitleSnapshot,
+                    mode = timer.mode,
+                    startedAt = timer.startedAt,
+                    endedAt = now(),
+                    plannedSeconds = timer.plannedSeconds,
+                    actualFocusSeconds = FocusTiming.recordedFocusSeconds(stateOf(timer), elapsed()),
+                    status = status
+                )
             )
-        )
+        }
         focusDao.clearActiveTimer()
         true
     }

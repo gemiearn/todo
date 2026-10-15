@@ -9,11 +9,15 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.personal.todo.data.FocusRepository
+import com.personal.todo.data.FocusSettings
+import com.personal.todo.data.FocusSettingsStore
+import com.personal.todo.data.FocusSound
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.Task
 import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusPhase
 import com.personal.todo.model.FocusStats
 import com.personal.todo.model.FocusTiming
 import com.personal.todo.model.TaskSort
@@ -51,6 +55,10 @@ object FocusDurations {
     const val MinMinutes = 5
     const val MaxMinutes = 5 * 60
     const val MinuteStep = 5
+
+    /** The range a 番茄钟 focus block may be nudged to; the four presets sit inside it. */
+    const val MinPomodoroMinutes = 5
+    const val MaxPomodoroMinutes = 90
 }
 
 /**
@@ -65,7 +73,8 @@ object FocusDurations {
  */
 class FocusViewModel(
     private val focusRepository: FocusRepository,
-    taskRepository: TaskRepository
+    taskRepository: TaskRepository,
+    private val settingsStore: FocusSettingsStore
 ) : ViewModel() {
 
     val zone: ZoneId = focusRepository.zone
@@ -112,6 +121,14 @@ class FocusViewModel(
     var linkedTaskTitle by mutableStateOf<String?>(null)
         private set
 
+    /** 番茄钟的四个参数与背景音：改了立刻生效，也记进偏好，下次进来还是这些值。 */
+    var settings by mutableStateOf(settingsStore.read())
+        private set
+
+    /** The length the current mode runs for: 番茄钟 from the settings, 倒计时 from the picker. */
+    val plannedLengthMinutes: Int
+        get() = if (mode == FocusMode.POMODORO) settings.focusMinutes else plannedMinutes
+
     /** Switching mode resets the length to that mode's usual value. */
     fun selectMode(value: FocusMode) {
         mode = value
@@ -128,7 +145,44 @@ class FocusViewModel(
 
     /** Nudges the length by [delta] minutes - the ± buttons beside the ring. */
     fun stepMinutes(delta: Int) {
-        selectMinutes(plannedMinutes + delta)
+        when (mode) {
+            FocusMode.POMODORO -> updateSettings {
+                it.copy(
+                    focusMinutes = (it.focusMinutes + delta)
+                        .coerceIn(FocusDurations.MinPomodoroMinutes, FocusDurations.MaxPomodoroMinutes)
+                )
+            }
+
+            FocusMode.COUNTDOWN -> selectMinutes(plannedMinutes + delta)
+
+            FocusMode.STOPWATCH -> Unit
+        }
+    }
+
+    fun selectFocusMinutes(minutes: Int) {
+        updateSettings { it.copy(focusMinutes = minutes) }
+    }
+
+    fun selectShortBreakMinutes(minutes: Int) {
+        updateSettings { it.copy(shortBreakMinutes = minutes) }
+    }
+
+    fun selectLongBreakMinutes(minutes: Int) {
+        updateSettings { it.copy(longBreakMinutes = minutes) }
+    }
+
+    fun selectLongBreakEvery(count: Int) {
+        updateSettings { it.copy(longBreakEvery = count) }
+    }
+
+    fun selectSound(sound: FocusSound) {
+        updateSettings { it.copy(sound = sound) }
+    }
+
+    private fun updateSettings(change: (FocusSettings) -> FocusSettings) {
+        val updated = change(settings)
+        settings = updated
+        settingsStore.write(updated)
     }
 
     /**
@@ -154,8 +208,8 @@ class FocusViewModel(
     fun start() {
         val taskId = linkedTaskId ?: return
         val title = linkedTaskTitle
+        val target = if (mode.timed) plannedLengthMinutes * 60 else 0
         viewModelScope.launch {
-            val target = if (mode.timed) plannedMinutes * 60 else 0
             focusRepository.startTimer(
                 mode = mode,
                 plannedSeconds = target,
@@ -173,9 +227,40 @@ class FocusViewModel(
         viewModelScope.launch { focusRepository.resumeTimer() }
     }
 
-    /** Ends the session as 已完成. */
+    /**
+     * Ends the session as 已完成. A 番茄钟 that reached its end is followed by its
+     * break, which is the promise the screen makes: 25 分钟专注之后是 5 分钟休息,
+     * 每几个番茄之后是长休息.
+     */
     fun finish() {
-        viewModelScope.launch { focusRepository.finishTimer() }
+        viewModelScope.launch { finishAndMaybeBreak() }
+    }
+
+    /**
+     * Writes the finished focus session, then starts the break that follows it.
+     *
+     * The break is another *phase of the same timer*, never a session: 休息时间
+     * 不计入专注统计. Ending a break (reaching zero, or 跳过休息) simply clears the
+     * timer, and the next 番茄 is a fresh start.
+     */
+    private suspend fun finishAndMaybeBreak() {
+        val active = timer.value ?: return
+        val finishedAFocusPomodoro = active.mode == FocusMode.POMODORO && !active.phase.isBreak
+        if (!focusRepository.finishTimer()) return
+        if (!finishedAFocusPomodoro) return
+
+        val doneToday = focusRepository.completedPomodorosOn(LocalDate.now(zone))
+        val longBreak = doneToday > 0 && doneToday % settings.longBreakEvery == 0
+        focusRepository.startBreak(
+            phase = if (longBreak) FocusPhase.LONG_BREAK else FocusPhase.SHORT_BREAK,
+            plannedSeconds = (if (longBreak) {
+                settings.longBreakMinutes
+            } else {
+                settings.shortBreakMinutes
+            }) * 60,
+            taskId = active.taskId,
+            taskTitleSnapshot = active.taskTitleSnapshot
+        )
     }
 
     /** Ends the session early as 中断, keeping its real focus seconds. */
@@ -203,7 +288,7 @@ class FocusViewModel(
                 if (active != null && active.running &&
                     FocusTiming.reachedTarget(focusRepository.stateOf(active), nowElapsed)
                 ) {
-                    focusRepository.finishTimer()
+                    finishAndMaybeBreak()
                 }
                 delay(TickMillis)
             }
@@ -213,8 +298,12 @@ class FocusViewModel(
     companion object {
         private const val TickMillis = 1_000L
 
-        fun factory(focusRepository: FocusRepository, taskRepository: TaskRepository) = viewModelFactory {
-            initializer { FocusViewModel(focusRepository, taskRepository) }
+        fun factory(
+            focusRepository: FocusRepository,
+            taskRepository: TaskRepository,
+            settingsStore: FocusSettingsStore
+        ) = viewModelFactory {
+            initializer { FocusViewModel(focusRepository, taskRepository, settingsStore) }
         }
     }
 }

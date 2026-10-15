@@ -6,17 +6,22 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
+import com.personal.todo.data.FocusSettingsStore
+import com.personal.todo.data.FocusSound
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusPhase
 import com.personal.todo.ui.theme.TodoPomodoroTheme
 import com.personal.todo.viewmodel.FocusViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -71,7 +76,10 @@ class FocusScreenSmokeTest {
     }
 
     /** The view model lives outside the composition, as the app creates it. */
-    private fun launchFocus(viewModel: FocusViewModel = FocusViewModel(focus, tasks)) {
+    private fun launchFocus(
+        viewModel: FocusViewModel =
+            FocusViewModel(focus, tasks, FocusSettingsStore(RuntimeEnvironment.getApplication()))
+    ) {
         compose.setContent {
             TodoPomodoroTheme {
                 FocusScreen(viewModel = viewModel, lists = lists, onBack = {})
@@ -84,6 +92,12 @@ class FocusScreenSmokeTest {
         compose.onNodeWithTag(FocusTaskRowTag).performClick()
         compose.waitForIdle()
         compose.onNodeWithText(title).performClick()
+        compose.waitForIdle()
+    }
+
+    /** The page scrolls as one column, so a history row has to be reached before it renders. */
+    private fun scrollHistoryTo(text: String) {
+        compose.onNodeWithTag(FocusListTag).performScrollToNode(hasText(text, substring = true))
         compose.waitForIdle()
     }
 
@@ -179,6 +193,79 @@ class FocusScreenSmokeTest {
         compose.onNodeWithTag(FocusMinutesSliderTag).assertExists()
     }
 
+    /**
+     * 一次跑完的番茄钟之后自动进入短休息。休息是同一个计时器的另一个阶段，绝不会
+     * 变成一条专注记录 —— 休息时间不计入专注统计。
+     */
+    @Test
+    fun aFinishedPomodoroCarriesIntoItsBreak() {
+        val viewModel = FocusViewModel(
+            focus,
+            tasks,
+            FocusSettingsStore(RuntimeEnvironment.getApplication())
+        )
+        val task = runBlocking {
+            tasks.observeAllOpenTasks().first().first { it.title == "写季度报告" }
+        }
+        runBlocking {
+            focus.startTimer(
+                mode = FocusMode.POMODORO,
+                plannedSeconds = 1_500,
+                taskId = task.id,
+                taskTitleSnapshot = task.title
+            )
+        }
+        launchFocus(viewModel)
+        compose.waitUntilNodeCount(hasText("专注中"), 1, TimeoutMillis)
+
+        // The focus block ends (reaching zero ends it the same way) and the break starts.
+        compose.runOnIdle { viewModel.finish() }
+        compose.waitUntilNodeCount(hasText("短休息中"), 1, TimeoutMillis)
+
+        val onBreak = runBlocking {
+            withTimeout(TimeoutMillis) {
+                focus.observeActiveTimer().first { it?.phase?.isBreak == true }
+            }
+        }
+        assertEquals(FocusPhase.SHORT_BREAK, requireNotNull(onBreak).phase)
+        assertEquals(5 * 60, onBreak.plannedSeconds)
+        assertEquals("休息不该写成一条专注记录", 1, runBlocking { focus.observeSessions().first().size })
+
+        // 跳过休息：计时器清空，历史里仍然只有那一条番茄钟记录。
+        compose.onNodeWithText("跳过休息").performClick()
+        runBlocking { withTimeout(TimeoutMillis) { focus.observeActiveTimer().first { it == null } } }
+        assertEquals(1, runBlocking { focus.observeSessions().first().size })
+        compose.waitUntilNodeCount(hasText("开始专注"), 1, TimeoutMillis)
+    }
+
+    /** 番茄钟的四个参数可调，并且记进偏好，下次进来还是这些值。 */
+    @Test
+    fun thePomodoroParametersAreAdjustableAndSaved() {
+        val store = FocusSettingsStore(RuntimeEnvironment.getApplication())
+        launchFocus(FocusViewModel(focus, tasks, store))
+
+        compose.onNodeWithText("专注时长").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("45 分钟").performClick()
+        compose.waitForIdle()
+
+        assertEquals(45, store.read().focusMinutes)
+        // 圆环跟着变：45 分钟就是 45:00。
+        compose.onNodeWithText("45:00").assertExists()
+    }
+
+    /** 背景白噪音的选择同样记进偏好。 */
+    @Test
+    fun theAmbienceChoiceIsSaved() {
+        val store = FocusSettingsStore(RuntimeEnvironment.getApplication())
+        launchFocus(FocusViewModel(focus, tasks, store))
+
+        compose.onNodeWithText("雨声").performClick()
+        compose.waitForIdle()
+
+        assertEquals(FocusSound.RAIN, store.read().sound)
+    }
+
     @Test
     fun theRunningTimerComposesAndCanBeStoppedEarly() {
         launchFocus()
@@ -191,21 +278,28 @@ class FocusScreenSmokeTest {
 
         compose.onNodeWithText("提前结束").performClick()
         compose.waitUntilNodeCount(hasText("开始专注"), 1, TimeoutMillis)
+        scrollHistoryTo("中断")
         compose.onNodeWithText("中断", substring = true).assertExists()
     }
 
     @Test
     fun aFinishedSessionShowsUpInTheHistory() {
-        val viewModel = FocusViewModel(focus, tasks)
+        val viewModel = FocusViewModel(
+            focus,
+            tasks,
+            FocusSettingsStore(RuntimeEnvironment.getApplication())
+        )
         runBlocking {
             focus.startTimer(FocusMode.POMODORO, 1_500)
             focus.abandonTimer()
         }
         launchFocus(viewModel)
 
+        scrollHistoryTo("中断")
         compose.onNodeWithText("已完成", substring = true).assertDoesNotExist()
         compose.onNodeWithText("中断", substring = true).assertExists()
         // The history is grouped by the day it happened.
+        scrollHistoryTo("今天")
         compose.onNodeWithText("今天").assertExists()
     }
 }

@@ -1,5 +1,6 @@
 package com.personal.todo.ui
 
+import android.media.MediaPlayer
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -7,9 +8,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +29,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -32,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -51,6 +58,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -64,11 +72,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
+import com.personal.todo.data.FocusSettings
+import com.personal.todo.data.FocusSound
 import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusPhase
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.Schedule
 import com.personal.todo.ui.theme.LocalTodoColors
@@ -93,6 +104,9 @@ internal const val FocusMinutesSliderTag = "focus-minutes-slider"
 internal const val FocusPlusTag = "focus-plus"
 internal const val FocusMinusTag = "focus-minus"
 
+/** The scrolling column of the focus page: the tests use it to reach the history. */
+internal const val FocusListTag = "focus-list"
+
 internal fun focusModeTag(mode: FocusMode): String = "focus-mode-${mode.name.lowercase()}"
 
 /**
@@ -102,13 +116,18 @@ internal fun focusModeTag(mode: FocusMode): String = "focus-mode-${mode.name.low
  * The screen only paints what the timer holds; the state machine itself lives in
  * [FocusViewModel] and [com.personal.todo.data.FocusRepository], which never let
  * unverified background time turn into a finished pomodoro.
+ *
+ * [onBack] null means this screen *is* a root of the bottom bar: the shell already
+ * draws the top bar and the tab strip around it, so this screen draws neither and
+ * only fills the space it is given.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FocusScreen(
     viewModel: FocusViewModel,
     lists: List<TaskList>,
-    onBack: () -> Unit
+    onBack: (() -> Unit)?,
+    modifier: Modifier = Modifier
 ) {
     val timer by viewModel.timer.collectAsStateWithLifecycle()
     val focusSeconds by viewModel.focusSeconds.collectAsStateWithLifecycle()
@@ -138,93 +157,121 @@ fun FocusScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // The ambience is part of the session, not of the screen: it starts and stops
+    // with the timer itself.
+    AmbientSound(sound = viewModel.settings.sound, playing = timer?.running == true)
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.focus_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back)
-                        )
+            if (onBack != null) {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.focus_title)) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back)
+                            )
+                        }
                     }
-                }
-            )
-        }
+                )
+            }
+        },
+        // As a tab root this screen sits inside the shell's Scaffold: taking the
+        // window insets a second time would push everything down again.
+        contentWindowInsets = if (onBack == null) {
+            WindowInsets(0.dp, 0.dp, 0.dp, 0.dp)
+        } else {
+            ScaffoldDefaults.contentWindowInsets
+        },
+        modifier = modifier
     ) { innerPadding ->
-        Column(
+        // The ring, the controls and the history scroll as one column: they are taller
+        // than a phone screen now, and a list nested inside a Column would both fight
+        // it for the height and hide the history completely.
+        val active = timer
+        val today = Schedule.todayOf(System.currentTimeMillis(), viewModel.zone)
+        val historyByDay = sessions.groupBy { Schedule.todayOf(it.startedAt, viewModel.zone) }
+
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .testTag(FocusListTag),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            StatsHeader(
-                todayText = stringResource(
-                    R.string.focus_stats_today,
-                    durationText(stats.todayFocusSeconds)
-                ),
-                pomodoroText = stringResource(R.string.focus_stats_pomodoros, stats.todayPomodoroCount),
-                weekText = stringResource(
-                    R.string.focus_stats_week,
-                    durationText(stats.weekFocusSeconds)
-                )
-            )
-
-            val active = timer
-            if (active == null) {
-                SetupPanel(
-                    viewModel = viewModel,
-                    linkedListName = linkedListName,
-                    onPickTask = { taskPickerOpen = true }
-                )
-            } else {
-                RunningPanel(
-                    timer = active,
-                    focusSeconds = focusSeconds,
-                    remaining = remaining,
-                    // A pomodoro counts where it is in the day's run of them.
-                    pomodoroIndex = if (active.mode == FocusMode.POMODORO) {
-                        stats.todayPomodoroCount + 1
-                    } else {
-                        null
-                    },
-                    colors = colors,
-                    onPause = viewModel::pause,
-                    onResume = viewModel::resume,
-                    onFinish = viewModel::finish,
-                    onInterrupt = viewModel::abandon
+            item(key = "stats") {
+                StatsHeader(
+                    todayText = stringResource(
+                        R.string.focus_stats_today,
+                        durationText(stats.todayFocusSeconds)
+                    ),
+                    pomodoroText = stringResource(
+                        R.string.focus_stats_pomodoros,
+                        stats.todayPomodoroCount
+                    ),
+                    weekText = stringResource(
+                        R.string.focus_stats_week,
+                        durationText(stats.weekFocusSeconds)
+                    )
                 )
             }
 
-            Text(
-                text = stringResource(R.string.focus_history_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp)
-            )
+            item(key = "panel") {
+                if (active == null) {
+                    SetupPanel(
+                        viewModel = viewModel,
+                        linkedListName = linkedListName,
+                        onPickTask = { taskPickerOpen = true }
+                    )
+                } else {
+                    RunningPanel(
+                        timer = active,
+                        focusSeconds = focusSeconds,
+                        remaining = remaining,
+                        // A pomodoro counts where it is in the day's run of them; a
+                        // break is not one of them.
+                        pomodoroIndex = if (active.mode == FocusMode.POMODORO && !active.phase.isBreak) {
+                            stats.todayPomodoroCount + 1
+                        } else {
+                            null
+                        },
+                        colors = colors,
+                        onPause = viewModel::pause,
+                        onResume = viewModel::resume,
+                        onFinish = viewModel::finish,
+                        onInterrupt = viewModel::abandon
+                    )
+                }
+            }
 
-            if (sessions.isEmpty()) {
+            item(key = "history-title") {
                 Text(
-                    text = stringResource(R.string.focus_history_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.dateMuted,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    text = stringResource(R.string.focus_history_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp)
                 )
+            }
+
+            if (historyByDay.isEmpty()) {
+                item(key = "history-empty") {
+                    Text(
+                        text = stringResource(R.string.focus_history_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.dateMuted,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                    )
+                }
             } else {
                 // The history is the day's work, so it is grouped by the day it
                 // happened: a flat list of clock times is hard to read back.
-                val today = Schedule.todayOf(System.currentTimeMillis(), viewModel.zone)
-                val byDay = sessions.groupBy { Schedule.todayOf(it.startedAt, viewModel.zone) }
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    byDay.forEach { (date, ofDay) ->
-                        item(key = "history-day-${date.toEpochDay()}") {
-                            HistoryDayHeader(label = calendarDateText(date, today))
-                        }
-                        items(ofDay, key = { it.id }) { session ->
-                            SessionRow(session = session, zone = viewModel.zone)
-                        }
+                historyByDay.forEach { (date, ofDay) ->
+                    item(key = "history-day-${date.toEpochDay()}") {
+                        HistoryDayHeader(label = calendarDateText(date, today))
+                    }
+                    items(ofDay, key = { it.id }) { session ->
+                        SessionRow(session = session, zone = viewModel.zone)
                     }
                 }
             }
@@ -303,23 +350,20 @@ private fun SetupPanel(
 
         PlannedRing(
             mode = viewModel.mode,
-            minutes = viewModel.plannedMinutes,
+            minutes = viewModel.plannedLengthMinutes,
             onStep = viewModel::stepMinutes
         )
 
         Spacer(Modifier.height(12.dp))
 
         when (viewModel.mode) {
-            FocusMode.POMODORO -> Text(
-                text = stringResource(
-                    R.string.focus_pomodoro_plan,
-                    FocusDurations.FocusMinutes,
-                    FocusDurations.ShortBreakMinutes,
-                    FocusMode.POMODORO_PER_CYCLE,
-                    FocusDurations.LongBreakMinutes
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.dateMuted
+            // 番茄钟的四个参数就是说明文档 5.1 的那四个数，现在可以调（照 ui-5）。
+            FocusMode.POMODORO -> PomodoroParameters(
+                settings = viewModel.settings,
+                onFocusMinutes = viewModel::selectFocusMinutes,
+                onShortBreak = viewModel::selectShortBreakMinutes,
+                onLongBreak = viewModel::selectLongBreakMinutes,
+                onCycle = viewModel::selectLongBreakEvery
             )
 
             FocusMode.COUNTDOWN -> CountdownLengthPicker(
@@ -333,6 +377,10 @@ private fun SetupPanel(
                 color = colors.dateMuted
             )
         }
+
+        Spacer(Modifier.height(12.dp))
+
+        SoundPicker(selected = viewModel.settings.sound, onSelect = viewModel::selectSound)
 
         Spacer(Modifier.height(16.dp))
 
@@ -464,10 +512,9 @@ private fun FocusTaskRow(
 }
 
 /**
- * The ring before a session starts: it shows the length that is picked, and a
- * countdown carries the ± buttons beside it because that length is the one the
- * user sets. 番茄钟 is a fixed 25 minutes and 正向计时 has no target at all, so
- * neither of them gets the buttons.
+ * The ring before a session starts: it shows the length that is picked, and the two
+ * timed modes carry ± buttons beside it because those lengths are the ones the user
+ * sets (倒计时 anywhere in 5–300 分钟, 番茄钟's focus block in 5–90).
  */
 @Composable
 private fun PlannedRing(
@@ -476,19 +523,19 @@ private fun PlannedRing(
     onStep: (Int) -> Unit
 ) {
     val colors = LocalTodoColors.current
-    val steppable = mode == FocusMode.COUNTDOWN
+    val bounds = stepBounds(mode)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        if (steppable) {
+        if (bounds != null) {
             StepButton(
                 symbol = "−",
                 description = stringResource(R.string.focus_action_subtract_minutes),
                 tag = FocusMinusTag,
-                enabled = minutes > FocusDurations.MinMinutes,
+                enabled = minutes > bounds.first,
                 onClick = { onStep(-FocusDurations.MinuteStep) }
             )
             Spacer(Modifier.width(8.dp))
@@ -511,17 +558,24 @@ private fun PlannedRing(
             }
         }
 
-        if (steppable) {
+        if (bounds != null) {
             Spacer(Modifier.width(8.dp))
             StepButton(
                 symbol = "+",
                 description = stringResource(R.string.focus_action_add_minutes),
                 tag = FocusPlusTag,
-                enabled = minutes < FocusDurations.MaxMinutes,
+                enabled = minutes < bounds.last,
                 onClick = { onStep(FocusDurations.MinuteStep) }
             )
         }
     }
+}
+
+/** The range a mode's length may be nudged to; null when the mode has no target. */
+private fun stepBounds(mode: FocusMode): IntRange? = when (mode) {
+    FocusMode.POMODORO -> FocusDurations.MinPomodoroMinutes..FocusDurations.MaxPomodoroMinutes
+    FocusMode.COUNTDOWN -> FocusDurations.MinMinutes..FocusDurations.MaxMinutes
+    FocusMode.STOPWATCH -> null
 }
 
 /** One of the two round ± buttons beside the ring. */
@@ -613,14 +667,175 @@ private fun CountdownLengthPicker(
     }
 }
 
+/** 番茄钟的四个参数，每个一张卡片、各自一组选项（照 ui-5）。 */
+@Composable
+private fun PomodoroParameters(
+    settings: FocusSettings,
+    onFocusMinutes: (Int) -> Unit,
+    onShortBreak: (Int) -> Unit,
+    onLongBreak: (Int) -> Unit,
+    onCycle: (Int) -> Unit
+) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ParameterCard(
+            label = stringResource(R.string.focus_param_focus),
+            value = stringResource(R.string.focus_minutes_choice, settings.focusMinutes),
+            choices = FocusSettings.FocusMinuteChoices,
+            onSelect = onFocusMinutes,
+            choiceText = { stringResource(R.string.focus_minutes_choice, it) },
+            modifier = Modifier.weight(1f)
+        )
+        ParameterCard(
+            label = stringResource(R.string.focus_param_short_break),
+            value = stringResource(R.string.focus_minutes_choice, settings.shortBreakMinutes),
+            choices = FocusSettings.ShortBreakChoices,
+            onSelect = onShortBreak,
+            choiceText = { stringResource(R.string.focus_minutes_choice, it) },
+            modifier = Modifier.weight(1f)
+        )
+        ParameterCard(
+            label = stringResource(R.string.focus_param_long_break),
+            value = stringResource(R.string.focus_minutes_choice, settings.longBreakMinutes),
+            choices = FocusSettings.LongBreakChoices,
+            onSelect = onLongBreak,
+            choiceText = { stringResource(R.string.focus_minutes_choice, it) },
+            modifier = Modifier.weight(1f)
+        )
+        ParameterCard(
+            label = stringResource(R.string.focus_param_cycle),
+            value = stringResource(R.string.focus_cycle_value, settings.longBreakEvery),
+            choices = FocusSettings.LongBreakEveryChoices,
+            onSelect = onCycle,
+            choiceText = { stringResource(R.string.focus_cycle_value, it) },
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+/** One parameter card: its name, the current value, and its own little menu. */
+@Composable
+private fun ParameterCard(
+    label: String,
+    value: String,
+    choices: List<Int>,
+    choiceText: @Composable (Int) -> String,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    var open by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(colors.card)
+                .clickable { open = true }
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.dateMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "▾",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.dateMuted
+                )
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            choices.forEach { choice ->
+                DropdownMenuItem(
+                    text = { Text(choiceText(choice)) },
+                    onClick = {
+                        onSelect(choice)
+                        open = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** The ambient loops a session can play; 关闭 means silence. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SoundPicker(selected: FocusSound, onSelect: (FocusSound) -> Unit) {
+    val colors = LocalTodoColors.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.focus_sound_title),
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.dateMuted
+        )
+        Spacer(Modifier.height(6.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FocusSound.entries.forEach { sound ->
+                FilterChip(
+                    selected = sound == selected,
+                    onClick = { onSelect(sound) },
+                    label = { Text(stringResource(sound.labelRes)) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = colors.focusSurface,
+                        selectedLabelColor = colors.focusAccent
+                    )
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Loops the chosen ambience while a session runs.
+ *
+ * The player lives in a [DisposableEffect]: it is created with the sound and the
+ * running flag, and released the moment either changes - so a paused timer is
+ * silent and nothing keeps playing once the user leaves.
+ */
+@Composable
+private fun AmbientSound(sound: FocusSound, playing: Boolean) {
+    val context = LocalContext.current
+    DisposableEffect(sound, playing) {
+        val player = if (playing && sound.soundRes != 0) {
+            MediaPlayer.create(context, sound.soundRes)?.apply {
+                isLooping = true
+                setVolume(AmbienceVolume, AmbienceVolume)
+                start()
+            }
+        } else {
+            null
+        }
+        onDispose {
+            val loopingPlayer = player ?: return@onDispose
+            runCatching { if (loopingPlayer.isPlaying) loopingPlayer.stop() }
+            loopingPlayer.release()
+        }
+    }
+}
+
+/** Ambience sits behind the timer, never in front of it. */
+private const val AmbienceVolume = 0.35f
+
 /** How much of the ring is filled before the session starts. */
 private fun plannedFraction(mode: FocusMode, minutes: Int): Float = when (mode) {
-    // A pomodoro is one whole block, so its ring is whole.
-    FocusMode.POMODORO -> 1f
+    // Both timed modes draw how much of their own range this session is, so the ±
+    // buttons and the slider visibly grow or shrink the ring. Even the shortest
+    // session keeps a visible stub instead of an apparently broken empty ring.
+    FocusMode.POMODORO ->
+        (minutes.toFloat() / FocusDurations.MaxPomodoroMinutes).coerceAtLeast(MinVisibleArc)
 
-    // The countdown draws how much of the slider's five hours this session is, so
-    // dragging the slider visibly grows the ring. Even the shortest session keeps a
-    // visible stub instead of an apparently broken empty ring.
     FocusMode.COUNTDOWN ->
         (minutes.toFloat() / FocusDurations.MaxMinutes).coerceAtLeast(MinVisibleArc)
 
@@ -674,12 +889,29 @@ private fun RunningPanel(
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = stringResource(
-                        if (timer.running) R.string.focus_running_label else R.string.focus_paused_label
-                    ),
+                    text = if (timer.phase.isBreak) {
+                        stringResource(
+                            if (timer.phase == FocusPhase.LONG_BREAK) {
+                                R.string.focus_break_long_running
+                            } else {
+                                R.string.focus_break_short_running
+                            }
+                        )
+                    } else {
+                        stringResource(
+                            if (timer.running) R.string.focus_running_label else R.string.focus_paused_label
+                        )
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = colors.dateMuted
                 )
+                if (timer.phase.isBreak && !timer.running) {
+                    Text(
+                        text = stringResource(R.string.focus_paused_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.dateMuted
+                    )
+                }
                 pomodoroIndex?.let { index ->
                     Text(
                         text = stringResource(R.string.focus_pomodoro_index, index),
@@ -709,7 +941,11 @@ private fun RunningPanel(
                 TextButton(onClick = onResume) { Text(stringResource(R.string.focus_action_resume)) }
             }
 
-            if (timer.mode.timed && remaining != null && remaining > 0) {
+            if (timer.phase.isBreak) {
+                // A break is never counted and never looks like a session: skipping it
+                // just clears the timer, so the next 番茄 starts fresh.
+                TextButton(onClick = onInterrupt) { Text(stringResource(R.string.focus_action_skip_break)) }
+            } else if (timer.mode.timed && remaining != null && remaining > 0) {
                 // Ending a timed session before zero is 中断, and says so.
                 TextButton(onClick = onInterrupt) { Text(stringResource(R.string.focus_action_interrupt)) }
             } else {

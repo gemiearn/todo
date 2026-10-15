@@ -73,6 +73,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.todo.R
 import com.personal.todo.data.CrashLog
 import com.personal.todo.data.FocusRepository
+import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
@@ -225,6 +226,15 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
     val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
     val lists by shellViewModel.lists.collectAsStateWithLifecycle()
 
+    // 专注 is reachable both from 更多 (pushed, with a back arrow) and from its own
+    // bottom bar tab, so its view model and its settings live here - once, for every
+    // route - instead of being created inside one of the two branches.
+    val focusSettings = remember(context) { FocusSettingsStore(context) }
+    val focusViewModel: FocusViewModel = viewModel(
+        key = ROUTE_FOCUS,
+        factory = FocusViewModel.factory(focusRepository, repository, focusSettings)
+    )
+
     when (kind) {
         ROUTE_TASK -> {
             val taskId = requireNotNull(argument) { "任务路由缺少任务 id: $route" }
@@ -268,22 +278,17 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
             )
         }
 
-        ROUTE_FOCUS -> {
-            val focusViewModel: FocusViewModel = viewModel(
-                key = ROUTE_FOCUS,
-                factory = FocusViewModel.factory(focusRepository, repository)
-            )
-            FocusScreen(
-                viewModel = focusViewModel,
-                lists = lists,
-                onBack = { nav.pop() }
-            )
-        }
+        ROUTE_FOCUS -> FocusScreen(
+            viewModel = focusViewModel,
+            lists = lists,
+            onBack = { nav.pop() }
+        )
 
         ROUTE_CRASH -> CrashLogScreen(onBack = { nav.pop() })
 
         else -> MainScreen(
             repository = repository,
+            focusViewModel = focusViewModel,
             nav = nav,
             route = route,
             kind = kind,
@@ -317,6 +322,7 @@ private fun collectionFor(
 @Composable
 internal fun MainScreen(
     repository: TaskRepository,
+    focusViewModel: FocusViewModel,
     nav: NavStack,
     route: String,
     kind: String,
@@ -445,6 +451,7 @@ internal fun MainScreen(
         ROUTE_OVERDUE -> stringResource(R.string.nav_overdue)
         HomeTab.Today.route -> stringResource(R.string.nav_today)
         HomeTab.Quadrant.route -> stringResource(R.string.nav_quadrant)
+        HomeTab.Focus.route -> stringResource(R.string.focus_title)
         else -> stringResource(R.string.nav_more)
     }
     val emptyTextRes = when (kind) {
@@ -474,6 +481,9 @@ internal fun MainScreen(
     }
     val selectedTab = HomeTab.entries.firstOrNull { it.route == kind }
     val showsCalendarHeader = kind == HomeTab.Calendar.route
+    // 专注 is a page of its own: the shell gives it a title, but not the search /
+    // sort / list actions that belong to the task screens.
+    val showsFocusChrome = kind == HomeTab.Focus.route
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -497,7 +507,7 @@ internal fun MainScreen(
                 if (!showsCalendarHeader) {
                     TopAppBar(
                         title = {
-                            if (searchActive) {
+                            if (searchActive && !showsFocusChrome) {
                                 OutlinedTextField(
                                     value = searchQuery,
                                     onValueChange = { searchQuery = it },
@@ -510,7 +520,7 @@ internal fun MainScreen(
                             }
                         },
                         navigationIcon = {
-                            if (searchActive) {
+                            if (searchActive && !showsFocusChrome) {
                                 IconButton(
                                     onClick = {
                                         searchActive = false
@@ -533,7 +543,7 @@ internal fun MainScreen(
                         },
                         actions = {
                             // While the search field is open it owns the whole bar.
-                            if (!searchActive) {
+                            if (!searchActive && !showsFocusChrome) {
                                 IconButton(onClick = { searchActive = true }) {
                                     Icon(
                                         imageVector = Icons.Default.Search,
@@ -563,7 +573,7 @@ internal fun MainScreen(
                                     }
                                 }
                             }
-                            if (!searchActive && currentList != null && !currentList.isInbox) {
+                            if (!searchActive && !showsFocusChrome && currentList != null && !currentList.isInbox) {
                                 if (currentUserListIndex > 0) {
                                     IconButton(onClick = { shellViewModel.moveList(currentList.id, -1) }) {
                                         Icon(
@@ -670,6 +680,14 @@ internal fun MainScreen(
                         }
                     }
                 }
+
+                HomeTab.Focus.route -> FocusScreen(
+                    viewModel = focusViewModel,
+                    lists = lists,
+                    // A tab root: the shell draws the top bar and the tab strip.
+                    onBack = null,
+                    modifier = Modifier.padding(innerPadding)
+                )
 
                 HomeTab.Quadrant.route -> QuadrantScreen(
                     openTasks = remember { repository.observeAllOpenTasks() },

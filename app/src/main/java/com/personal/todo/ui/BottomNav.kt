@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -45,6 +46,8 @@ enum class HomeTab(val route: String, @StringRes val labelRes: Int) {
     Today("today", R.string.nav_today),
     Calendar("calendar", R.string.nav_calendar),
     Quadrant("quadrant", R.string.nav_quadrant),
+    /** 专注（番茄钟）: a root of its own, so the timer is always one tap away. */
+    Focus("focus", R.string.focus_title),
     More("more", R.string.nav_more)
 }
 
@@ -115,6 +118,7 @@ private fun TabIcon(
             HomeTab.Today -> CheckTabIcon(tint)
             HomeTab.Calendar -> CalendarTabIcon(tint, todayDayOfMonth)
             HomeTab.Quadrant -> QuadrantTabIcon(tint)
+            HomeTab.Focus -> FocusTabIcon(tint)
             HomeTab.More -> MoreTabIcon(tint)
         }
     }
@@ -172,6 +176,27 @@ private fun QuadrantTabIcon(color: Color) {
                 .clip(CircleShape)
                 .background(color)
         )
+    }
+}
+
+/** 专注: a tomato - a round body under a little stem, the shape of a pomodoro. */
+@Composable
+private fun FocusTabIcon(color: Color) {
+    Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .size(width = 7.dp, height = 3.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(color)
+            )
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+        }
     }
 }
 

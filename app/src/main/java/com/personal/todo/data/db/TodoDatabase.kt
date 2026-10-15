@@ -25,6 +25,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * Version 4 adds `tasks.plannedTime` (the moment work is meant to start, which
  * the day timeline orders by) and the tag tables `tags` / `task_tags`. The new
  * column is nullable and the two tables are new, so again nothing is rewritten.
+ *
+ * Version 5 adds `active_timer.phase`, so a pomodoro can carry the break that
+ * follows it (说明文档 5.1). The column is `NOT NULL DEFAULT 'FOCUS'`: a timer
+ * stored before it existed was a focus block, which is exactly that default.
  */
 @Database(
     entities = [
@@ -36,7 +40,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Tag::class,
         TaskTag::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -149,7 +153,22 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 -> v5: which phase the single active timer is counting. SQLite needs a
+         * default when a NOT NULL column is added to a table that may already hold a
+         * row, and that row is a focus block - so `FOCUS` is both the requirement and
+         * the truth. Nothing else on the table is rewritten.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `active_timer` ADD COLUMN `phase` TEXT NOT NULL DEFAULT 'FOCUS'"
+                )
+            }
+        }
+
         /** Every migration the app ships, in order. */
-        val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        val ALL_MIGRATIONS: Array<Migration> =
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
     }
 }

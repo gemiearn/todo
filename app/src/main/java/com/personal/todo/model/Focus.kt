@@ -28,6 +28,21 @@ enum class FocusMode(val timed: Boolean) {
 enum class FocusStatus { COMPLETED, INTERRUPTED }
 
 /**
+ * What the single active timer is counting right now: a focus block, or the break
+ * that follows one (说明文档 5.1: 每轮专注之后有短休息，每几个番茄之后是长休息).
+ *
+ * A break is never written into the history: 休息时间不计入专注统计, so only a
+ * [FOCUS] phase ends with a session row.
+ */
+enum class FocusPhase {
+    FOCUS,
+    SHORT_BREAK,
+    LONG_BREAK;
+
+    val isBreak: Boolean get() = this != FOCUS
+}
+
+/**
  * The state of the single active session, as it is persisted between app runs
  * (spec section 5.2).
  *

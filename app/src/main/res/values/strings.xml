@@ -202,7 +202,6 @@
     <string name="focus_mode_countdown">倒计时</string>
     <string name="focus_mode_pomodoro">番茄钟</string>
     <string name="focus_minutes_choice">%1$d 分钟</string>
-    <string name="focus_pomodoro_plan">默认 %1$d 分钟专注、%2$d 分钟短休息，每 %3$d 个番茄后长休息 %4$d 分钟。休息时间不计入专注统计。</string>
     <string name="focus_stopwatch_hint">正向计时从零开始累计，由你决定什么时候结束。</string>
     <string name="focus_task_required">先选一个要专注的任务</string>
     <string name="focus_task_picker_empty">没有可专注的任务，先新建一个任务吧</string>
@@ -214,6 +213,23 @@
     <string name="focus_ring_break_hint">休息不计入专注统计</string>
     <string name="focus_ring_stopwatch_hint">由你决定何时结束</string>
     <string name="focus_length_selected">已选 %1$s</string>
+    <!-- 番茄钟的四个参数卡片（照 ui-5） -->
+    <string name="focus_param_focus">专注时长</string>
+    <string name="focus_param_short_break">短休息</string>
+    <string name="focus_param_long_break">长休息</string>
+    <string name="focus_param_cycle">长休息间隔</string>
+    <string name="focus_cycle_value">%1$d 个番茄</string>
+    <!-- 休息阶段：不计入专注统计，所以文案与「专注中」分开 -->
+    <string name="focus_break_short_running">短休息中</string>
+    <string name="focus_break_long_running">长休息中</string>
+    <string name="focus_action_skip_break">跳过休息</string>
+    <!-- 背景白噪音 -->
+    <string name="focus_sound_title">背景白噪音</string>
+    <string name="focus_sound_none">关闭</string>
+    <string name="focus_sound_rain">雨声</string>
+    <string name="focus_sound_waves">海浪</string>
+    <string name="focus_sound_cafe">咖啡馆</string>
+    <string name="focus_sound_fire">柴火</string>
     <string name="focus_action_add_minutes">增加 5 分钟</string>
     <string name="focus_action_subtract_minutes">减少 5 分钟</string>
     <string name="focus_duration_hours">%1$d 小时</string>

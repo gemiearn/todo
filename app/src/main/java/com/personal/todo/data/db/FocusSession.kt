@@ -1,10 +1,12 @@
 package com.personal.todo.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusPhase
 import com.personal.todo.model.FocusStatus
 
 /**
@@ -61,6 +63,11 @@ data class FocusSession(
 data class ActiveTimer(
     @PrimaryKey val id: Int = SingleTimerId,
     val mode: FocusMode,
+    /**
+     * A focus block, or the break after it. The default is written into the schema
+     * so a timer stored before this column existed comes back as a focus block.
+     */
+    @ColumnInfo(defaultValue = "FOCUS") val phase: FocusPhase = FocusPhase.FOCUS,
     val taskId: Long? = null,
     val taskTitleSnapshot: String? = null,
     /** Target of a timed mode, 0 for 正向计时. */

@@ -13,10 +13,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
+import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.ui.theme.TodoPomodoroTheme
+import com.personal.todo.viewmodel.FocusViewModel
 import java.time.YearMonth
 import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
@@ -45,6 +47,8 @@ class MainScreenSmokeTest {
 
     private lateinit var db: TodoDatabase
     private lateinit var tasks: TaskRepository
+    private lateinit var focus: FocusRepository
+    private lateinit var focusSettings: FocusSettingsStore
     private var listId = 0L
 
     @Before
@@ -54,7 +58,8 @@ class MainScreenSmokeTest {
                 .allowMainThreadQueries()
                 .build()
             tasks = TaskRepository(db, "收件箱")
-            FocusRepository(db)
+            focus = FocusRepository(db)
+            focusSettings = FocusSettingsStore(RuntimeEnvironment.getApplication())
             val inbox = tasks.ensureInbox()
             tasks.createTask("写季度报告", inbox, plannedDate = tasks.today())
             listId = tasks.createList("工作")
@@ -75,6 +80,7 @@ class MainScreenSmokeTest {
                 var selectedDate by remember { mutableStateOf(tasks.today()) }
                 MainScreen(
                     repository = tasks,
+                    focusViewModel = FocusViewModel(focus, tasks, focusSettings),
                     nav = nav,
                     route = route,
                     kind = kind,
@@ -255,6 +261,15 @@ class MainScreenSmokeTest {
         compose.onNodeWithText("跨期任务").assertExists()
         // The dash only shows up when the card names two dates.
         compose.onNodeWithText("–", substring = true).assertExists()
+    }
+
+    /** The tab that was added for the pomodoro: it renders without the shell's search chrome. */
+    @Test
+    fun theFocusTabComposes() {
+        launch(HomeTab.Focus.route, HomeTab.Focus.route)
+
+        compose.onNodeWithText("开始专注").assertExists()
+        compose.onNodeWithText("先选一个要专注的任务").assertExists()
     }
 
     /** An empty day reads the way the reference screenshot has it. */
