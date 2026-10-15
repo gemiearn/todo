@@ -52,6 +52,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -124,9 +125,22 @@ private fun editTaskRoute(taskId: Long) = "$ROUTE_EDIT/$taskId"
  * composed in a test.
  */
 internal class NavStack(private val routes: SnapshotStateList<String>) {
+    /**
+     * Bumped on every push. The view model store keeps the view model of a
+     * previous visit, so a screen that is opened again must be given a fresh one:
+     * the editor would otherwise come back still holding the "already saved" flag
+     * and pop itself the moment it is composed.
+     */
+    private val visits = mutableIntStateOf(0)
+
+    val visit: Int get() = visits.intValue
+
     val current: String get() = routes.last()
 
-    fun push(route: String) = routes.add(route)
+    fun push(route: String) {
+        routes.add(route)
+        visits.intValue++
+    }
 
     fun pop() {
         if (routes.size > 1) routes.removeAt(routes.lastIndex)
@@ -225,7 +239,7 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
         ROUTE_NEW -> {
             val listId = requireNotNull(argument) { "新建任务路由缺少清单 id: $route" }
             val editorViewModel: TaskEditorViewModel = viewModel(
-                key = "editor-$route",
+                key = "editor-$route-${nav.visit}",
                 factory = TaskEditorViewModel.factory(repository, taskId = null, defaultListId = listId)
             )
             TaskEditorScreen(
@@ -238,7 +252,7 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
         ROUTE_EDIT -> {
             val taskId = requireNotNull(argument) { "编辑任务路由缺少任务 id: $route" }
             val editorViewModel: TaskEditorViewModel = viewModel(
-                key = "editor-$route",
+                key = "editor-$route-${nav.visit}",
                 factory = TaskEditorViewModel.factory(repository, taskId = taskId, defaultListId = 0L)
             )
             TaskEditorScreen(

@@ -116,6 +116,15 @@ class TaskEditorViewModel(
         dueTime = value
     }
 
+    /**
+     * Consumes the save result. A view model can outlive its screen (the same
+     * route opened again gets a fresh one now, but this keeps the screen from
+     * ever popping itself twice).
+     */
+    fun consumeSaved() {
+        _saved.value = false
+    }
+
     fun save() {
         val trimmedTitle = title.trim()
         if (trimmedTitle.isEmpty()) {

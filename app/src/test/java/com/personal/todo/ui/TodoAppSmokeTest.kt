@@ -1,8 +1,14 @@
 package com.personal.todo.ui
 
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
@@ -33,9 +39,12 @@ import org.robolectric.annotation.Config
  * route; a @Composable call that is skipped on one route and taken on another
  * shifts the slot table and the next `rememberSaveable` reads the wrong slot.
  */
+@OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
 class TodoAppSmokeTest {
+
+    private val TimeoutMillis = 5_000L
 
     @get:Rule
     val compose = createComposeRule()
@@ -104,5 +113,26 @@ class TodoAppSmokeTest {
             compose.onNodeWithTag(tabTag(HomeTab.Today)).performClick()
             compose.waitForIdle()
         }
+    }
+
+    /**
+     * The editor used to open only once: the route reused its view model from the
+     * view model store, still holding the "saved" flag, so the second visit popped
+     * itself on the first frame - the screen only flashed on the phone.
+     */
+    @Test
+    fun theEditorStaysOpenWhenItIsOpenedASecondTime() {
+        launchApp()
+
+        compose.onNodeWithContentDescription("新建任务").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(EditorTitleTag).performTextInput("买牛奶")
+        compose.onNodeWithText("保存").performClick()
+        // Back on the list again: the editor has no new-task button of its own.
+        compose.waitUntilNodeCount(hasContentDescription("新建任务"), 1, TimeoutMillis)
+
+        compose.onNodeWithContentDescription("新建任务").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("保存").assertExists()
     }
 }

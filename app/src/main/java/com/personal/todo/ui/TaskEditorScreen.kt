@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +48,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneOffset
+
+/** The tag the smoke tests use to type a title into the editor. */
+internal const val EditorTitleTag = "editor-title"
 
 /**
  * Create / edit screen for title, notes, priority, list and dates.
@@ -74,7 +78,10 @@ fun TaskEditorScreen(
     var timePickerOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(saved) {
-        if (saved) onSaved()
+        if (saved) {
+            viewModel.consumeSaved()
+            onSaved()
+        }
     }
 
     Scaffold(
@@ -116,7 +123,7 @@ fun TaskEditorScreen(
                     null
                 },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag(EditorTitleTag)
             )
 
             Spacer(Modifier.height(12.dp))
