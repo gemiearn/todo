@@ -18,6 +18,11 @@ import com.personal.todo.model.FocusStatus
  * foreign key uses RESTRICT like [TaskEvent]: tasks are never physically
  * deleted, so a session can never lose its task silently.
  *
+ * [listNameSnapshot] is the same idea for the 清单 the task was in: the statistics
+ * page ranks time by list, and a task that moves to another list later must not
+ * rewrite what already happened. It is null for sessions recorded before the
+ * column existed, and those are reported as 未关联.
+ *
  * [plannedSeconds] is the target of a timed mode and 0 for 正向计时, which has
  * no target. [actualFocusSeconds] is the real focus time; for a session that was
  * stopped early it is smaller than the target, and [status] says so.
@@ -38,6 +43,7 @@ data class FocusSession(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
     val taskId: Long? = null,
     val taskTitleSnapshot: String? = null,
+    val listNameSnapshot: String? = null,
     val mode: FocusMode,
     val startedAt: Long,
     val endedAt: Long,
@@ -70,6 +76,8 @@ data class ActiveTimer(
     @ColumnInfo(defaultValue = "FOCUS") val phase: FocusPhase = FocusPhase.FOCUS,
     val taskId: Long? = null,
     val taskTitleSnapshot: String? = null,
+    /** The 清单 the linked task was in when the session started; see [FocusSession]. */
+    val listNameSnapshot: String? = null,
     /** Target of a timed mode, 0 for 正向计时. */
     val plannedSeconds: Int,
     val startedAt: Long,

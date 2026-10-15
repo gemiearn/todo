@@ -4,6 +4,7 @@ import com.personal.todo.data.db.FocusSession
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * The three ways a session counts time (the modes the app offers):
@@ -143,111 +144,315 @@ fun focusStatsOf(sessions: List<FocusSession>, today: LocalDate, zone: ZoneId): 
 fun localDateOf(epochMillis: Long, zone: ZoneId): LocalDate =
     Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate()
 
-/** 专注量的一个小结：时长与番茄数。 */
-data class FocusTotals(val seconds: Int, val pomodoros: Int)
-
-/** 某一天的专注量，趋势图与热力图的格子都用它。 */
+/** 某一天的专注量，年度热力图的格子用它。 */
 data class FocusDay(val date: LocalDate, val seconds: Int, val pomodoros: Int)
 
-/**
- * 一个任务的专注量。标题用的是当时的快照：任务后来改了名或被删掉，这份排行仍然
- * 读得懂；[title] 为空表示那条记录本来就没有关联任务。
- */
-data class FocusTaskFocus(val title: String?, val seconds: Int, val sessions: Int)
+// ----------------------------------------------------------- 统计页的聚合
+//
+// 每一个数字都从 focus_sessions 现算。休息是计时器的另一个阶段、从不写成 session，
+// 所以它天然不会出现在下面任何一个结果里——这不是漏算，是口径本来就没有它。
 
-/**
- * 统计页的数据，形状照着滴答清单 / 番茄ToDo 那一页来：三张小节（今天 / 本周 /
- * 累计）、最近几天的趋势、按任务的排行、以及最近若干周的打卡热力图。
- *
- * Everything is derived from the stored sessions, so 休息 never shows up here - a
- * break is a phase of the timer, not a session.
- */
-data class FocusReport(
-    val today: FocusTotals,
-    val week: FocusTotals,
-    val total: FocusTotals,
-    /** 从早到晚，最后一个永远是今天。 */
-    val lastDays: List<FocusDay>,
-    /** 按专注时长降序，只留前几个。 */
-    val topTasks: List<FocusTaskFocus>,
-    /** 从最早的一周开始，每周 7 天（周一起）。 */
-    val heatmapWeeks: List<List<FocusDay>>
-)
+/** 专注详情那张卡的周期粒度：天 / 周 / 月。 */
+enum class FocusPeriodUnit { DAY, WEEK, MONTH }
 
-/**
- * Aggregates the sessions of [today] and before into a [FocusReport].
- *
- * The rules match [focusStatsOf] exactly: an interrupted session still counts its
- * real focus seconds, but only a completed 番茄钟 counts as a 番茄. Nothing here is
- * stored separately, so the numbers can never drift away from the sessions.
- */
-fun focusReportOf(
+/** 专注趋势那张卡的粒度：周 / 月 / 年。 */
+enum class FocusTrendUnit { WEEK, MONTH, YEAR }
+
+/** 排行的口径：按任务，或者按任务当时所在的清单。 */
+enum class FocusRankBy { TASK, LIST }
+
+/** 一段可以左右步进的日期区间，含首尾。 */
+data class FocusPeriod(val start: LocalDate, val end: LocalDate) {
+
+    fun contains(date: LocalDate): Boolean = !date.isBefore(start) && !date.isAfter(end)
+
+    /** 区间里的天数，至少 1。 */
+    val days: Int get() = (ChronoUnit.DAYS.between(start, end) + 1).toInt()
+}
+
+/** [anchor] 所在的周期区间：周从周一开始，月是自然月。 */
+fun focusPeriodOf(unit: FocusPeriodUnit, anchor: LocalDate): FocusPeriod = when (unit) {
+    FocusPeriodUnit.DAY -> FocusPeriod(anchor, anchor)
+
+    FocusPeriodUnit.WEEK -> {
+        val start = anchor.minusDays((anchor.dayOfWeek.value - 1).toLong())
+        FocusPeriod(start, start.plusDays((DaysPerWeek - 1).toLong()))
+    }
+
+    FocusPeriodUnit.MONTH -> FocusPeriod(
+        start = anchor.withDayOfMonth(1),
+        end = anchor.withDayOfMonth(anchor.lengthOfMonth())
+    )
+}
+
+/** 往前后挪一个周期：[step] 是 -1 或 +1。 */
+fun FocusPeriod.shift(unit: FocusPeriodUnit, step: Long): FocusPeriod = when (unit) {
+    FocusPeriodUnit.DAY -> FocusPeriod(start.plusDays(step), end.plusDays(step))
+    FocusPeriodUnit.WEEK -> FocusPeriod(start.plusWeeks(step), end.plusWeeks(step))
+    FocusPeriodUnit.MONTH -> FocusPeriod(start.plusMonths(step), end.plusMonths(step))
+}
+
+/** 一个周期的专注汇总，甜甜圈图与顶部牌子用它。 */
+data class FocusPeriodTotals(
+    val completedSeconds: Int,
+    val interruptedSeconds: Int,
+    val pomodoros: Int
+) {
+    val seconds: Int get() = completedSeconds + interruptedSeconds
+
+    /**
+     * 专注达成率 0..1。中断的专注也是真实的专注时长，只是没达成目标，所以它进
+     * 分母不进分子；一次都没专注时是 0，页面上显示成「暂无数据」。
+     */
+    val completionRate: Float
+        get() = if (seconds <= 0) 0f else completedSeconds.toFloat() / seconds
+}
+
+/** [period] 这个区间的汇总。 */
+fun focusPeriodTotals(
     sessions: List<FocusSession>,
-    today: LocalDate,
-    zone: ZoneId,
-    days: Int = ReportDays,
-    weeks: Int = ReportWeeks,
-    topTasks: Int = ReportTopTasks
-): FocusReport {
-    val weekStart = today.minusDays((today.dayOfWeek.value - 1).toLong())
-    val firstDay = today.minusDays((days - 1).toLong())
-    val heatmapStart = weekStart.minusWeeks((weeks - 1).toLong())
+    period: FocusPeriod,
+    zone: ZoneId
+): FocusPeriodTotals = totalsOf(sessions.filter { period.contains(localDateOf(it.startedAt, zone)) })
 
-    val secondsByDay = mutableMapOf<LocalDate, Int>()
-    val pomodorosByDay = mutableMapOf<LocalDate, Int>()
-    // 同一个任务可能改过名，所以按 id 归并；没有关联任务的记录按当时的标题归并。
-    val byTask = linkedMapOf<String, FocusTaskFocus>()
+/** 全部历史的汇总，「累计」那张牌子用它。 */
+fun focusAllTimeTotals(sessions: List<FocusSession>): FocusPeriodTotals = totalsOf(sessions)
+
+/** 趋势图上的一根柱。[date] 是它代表的那一天；年视图里是该月的 1 号。 */
+data class FocusTrendBar(val date: LocalDate, val seconds: Int)
+
+/** [unit] 这一个周期里每根柱子代表的时间跨度，横轴从左到右。 */
+fun focusTrendBars(
+    sessions: List<FocusSession>,
+    unit: FocusTrendUnit,
+    anchor: LocalDate,
+    zone: ZoneId
+): List<FocusTrendBar> {
+    val byDay = secondsByDay(sessions, zone)
+
+    if (unit == FocusTrendUnit.YEAR) {
+        return (1..MonthsPerYear).map { month ->
+            val first = LocalDate.of(anchor.year, month, 1)
+            var seconds = 0
+            var day = first
+            while (day.monthValue == month) {
+                seconds += byDay[day] ?: 0
+                day = day.plusDays(1)
+            }
+            FocusTrendBar(first, seconds)
+        }
+    }
+
+    val period = focusPeriodOf(
+        if (unit == FocusTrendUnit.WEEK) FocusPeriodUnit.WEEK else FocusPeriodUnit.MONTH,
+        anchor
+    )
+    val bars = mutableListOf<FocusTrendBar>()
+    var day = period.start
+    while (!day.isAfter(period.end)) {
+        bars += FocusTrendBar(day, byDay[day] ?: 0)
+        day = day.plusDays(1)
+    }
+    return bars
+}
+
+/** 「每日平均」：周期里的总时长摊到每一天。 */
+fun focusDailyAverage(totals: FocusPeriodTotals, period: FocusPeriod): Int =
+    if (period.days <= 0) 0 else totals.seconds / period.days
+
+/**
+ * 排行里的一行。[label] 为空表示那条记录本来就没有关联任务（或者没有清单快照）。
+ */
+data class FocusRankEntry(val label: String?, val seconds: Int, val sessions: Int)
+
+/** [period] 里的专注排行，按 [by] 归并，时长多的排前面，最多留 [limit] 条。 */
+fun focusRanking(
+    sessions: List<FocusSession>,
+    period: FocusPeriod,
+    zone: ZoneId,
+    by: FocusRankBy,
+    limit: Int = ReportTopEntries
+): List<FocusRankEntry> {
+    val entries = linkedMapOf<String, FocusRankEntry>()
 
     sessions.forEach { session ->
-        val day = localDateOf(session.startedAt, zone)
-        secondsByDay[day] = (secondsByDay[day] ?: 0) + session.actualFocusSeconds
-        if (session.mode == FocusMode.POMODORO && session.status == FocusStatus.COMPLETED) {
-            pomodorosByDay[day] = (pomodorosByDay[day] ?: 0) + 1
+        if (!period.contains(localDateOf(session.startedAt, zone))) return@forEach
+
+        // 同一个任务可能改过名，所以按 id 归并，名字取第一次见到的那一个。
+        val key: String
+        val label: String?
+        when (by) {
+            FocusRankBy.TASK -> {
+                key = session.taskId?.let { "id:$it" } ?: "title:${session.taskTitleSnapshot.orEmpty()}"
+                label = session.taskTitleSnapshot
+            }
+
+            FocusRankBy.LIST -> {
+                key = "list:${session.listNameSnapshot.orEmpty()}"
+                label = session.listNameSnapshot
+            }
         }
 
-        val key = session.taskId?.let { "id:$it" } ?: "title:${session.taskTitleSnapshot.orEmpty()}"
-        val seen = byTask[key]
-        byTask[key] = FocusTaskFocus(
-            title = seen?.title ?: session.taskTitleSnapshot,
+        val seen = entries[key]
+        entries[key] = FocusRankEntry(
+            label = seen?.label ?: label,
             seconds = (seen?.seconds ?: 0) + session.actualFocusSeconds,
             sessions = (seen?.sessions ?: 0) + 1
         )
     }
 
-    fun dayOf(date: LocalDate) = FocusDay(
-        date = date,
-        // 今天之后的格子是空的：热力图最后一周会画到未来几天。
-        seconds = if (date.isAfter(today)) 0 else secondsByDay[date] ?: 0,
-        pomodoros = if (date.isAfter(today)) 0 else pomodorosByDay[date] ?: 0
-    )
-
-    fun totalsBetween(from: LocalDate, to: LocalDate): FocusTotals {
-        var seconds = 0
-        var pomodoros = 0
-        var day = from
-        while (!day.isAfter(to)) {
-            seconds += secondsByDay[day] ?: 0
-            pomodoros += pomodorosByDay[day] ?: 0
-            day = day.plusDays(1)
-        }
-        return FocusTotals(seconds, pomodoros)
-    }
-
-    val heatmapDays = (0 until weeks * DaysPerWeek).map { heatmapStart.plusDays(it.toLong()) }
-
-    return FocusReport(
-        today = totalsBetween(today, today),
-        week = totalsBetween(weekStart, today),
-        total = FocusTotals(secondsByDay.values.sum(), pomodorosByDay.values.sum()),
-        lastDays = (0 until days).map { dayOf(firstDay.plusDays(it.toLong())) },
-        topTasks = byTask.values.sortedByDescending { it.seconds }.take(topTasks),
-        heatmapWeeks = heatmapDays.chunked(DaysPerWeek).map { week -> week.map(::dayOf) }
-    )
+    return entries.values.sortedByDescending { it.seconds }.take(limit)
 }
 
-private const val DaysPerWeek = 7
+/**
+ * 时间线上的一段专注：分钟数从当天 0 点算起。跨天的 session 会被拆成两天各一段，
+ * 这样每一列画的都是那一天自己的时间。
+ */
+data class FocusSpan(
+    val date: LocalDate,
+    val startMinute: Int,
+    val endMinute: Int,
+    val interrupted: Boolean
+)
 
-/** 趋势图看最近一周，热力图看最近一个季度。 */
-private const val ReportDays = 7
-private const val ReportWeeks = 12
-private const val ReportTopTasks = 5
+/** [period] 里每一段专注的时钟跨度，按开始时间排。 */
+fun focusSpans(
+    sessions: List<FocusSession>,
+    period: FocusPeriod,
+    zone: ZoneId
+): List<FocusSpan> {
+    val spans = mutableListOf<FocusSpan>()
+
+    sessions.forEach { session ->
+        if (session.endedAt <= session.startedAt) return@forEach
+
+        var day = localDateOf(session.startedAt, zone)
+        val lastDay = localDateOf(session.endedAt, zone)
+        while (!day.isAfter(lastDay)) {
+            val dayStart = day.atStartOfDay(zone).toInstant().toEpochMilli()
+            val dayEnd = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val from = maxOf(session.startedAt, dayStart)
+            val to = minOf(session.endedAt, dayEnd)
+            if (to > from && period.contains(day)) {
+                val startMinute = ((from - dayStart) / MillisPerMinute).toInt().coerceIn(0, MinutesPerDay - 1)
+                val endMinute = ((to - dayStart + MillisPerMinute - 1) / MillisPerMinute).toInt()
+                    .coerceIn(startMinute + 1, MinutesPerDay)
+                spans += FocusSpan(
+                    date = day,
+                    startMinute = startMinute,
+                    endMinute = endMinute,
+                    interrupted = session.status == FocusStatus.INTERRUPTED
+                )
+            }
+            day = day.plusDays(1)
+        }
+    }
+
+    return spans.sortedWith(compareBy({ it.date }, { it.startMinute }))
+}
+
+/** 0..23 点各专注了多少秒，最佳专注时间那张卡用它。 */
+data class FocusHourBar(val hour: Int, val seconds: Int)
+
+/**
+ * 把每一段专注按它在时钟上占的比例摊进 24 个小时里：一段 09:00-11:00 的专注，
+ * 09 点和 10 点各拿一半。这样长时间的一段也不会整个压在开始的那个小时上。
+ */
+fun focusHourBars(
+    sessions: List<FocusSession>,
+    period: FocusPeriod,
+    zone: ZoneId
+): List<FocusHourBar> {
+    val byHour = IntArray(HoursPerDay)
+
+    sessions.forEach { session ->
+        if (!period.contains(localDateOf(session.startedAt, zone))) return@forEach
+        val span = session.endedAt - session.startedAt
+        if (span <= 0) return@forEach
+
+        var cursor = session.startedAt
+        while (cursor < session.endedAt) {
+            val zoned = Instant.ofEpochMilli(cursor).atZone(zone)
+            val nextHour = zoned.truncatedTo(ChronoUnit.HOURS).plusHours(1).toInstant().toEpochMilli()
+            if (nextHour <= cursor) break
+            val sliceEnd = minOf(nextHour, session.endedAt)
+            byHour[zoned.hour] += (session.actualFocusSeconds.toLong() * (sliceEnd - cursor) / span).toInt()
+            cursor = sliceEnd
+        }
+    }
+
+    return (0 until HoursPerDay).map { FocusHourBar(hour = it, seconds = byHour[it]) }
+}
+
+/**
+ * 整年的打卡格子：53 个周列（周一开始）× 7 天。
+ *
+ * 年初 / 年末不满一周的那几天也各占一个格子，只是不属于这一年，页面上画成空的，
+ * 这样每一周都对齐在同一列里。
+ */
+fun focusYearWeeks(
+    sessions: List<FocusSession>,
+    year: Int,
+    zone: ZoneId
+): List<List<FocusDay>> {
+    val byDay = secondsByDay(sessions, zone)
+    val pomodorosByDay = mutableMapOf<LocalDate, Int>()
+    sessions.forEach { session ->
+        if (session.mode == FocusMode.POMODORO && session.status == FocusStatus.COMPLETED) {
+            val day = localDateOf(session.startedAt, zone)
+            pomodorosByDay[day] = (pomodorosByDay[day] ?: 0) + 1
+        }
+    }
+
+    val first = LocalDate.of(year, 1, 1)
+    val last = LocalDate.of(year, 12, 31)
+    val start = first.minusDays((first.dayOfWeek.value - 1).toLong())
+    val end = last.plusDays((DaysPerWeek - last.dayOfWeek.value).toLong())
+
+    val cells = mutableListOf<FocusDay>()
+    var day = start
+    while (!day.isAfter(end)) {
+        val inYear = day.year == year
+        cells += FocusDay(
+            date = day,
+            seconds = if (inYear) byDay[day] ?: 0 else 0,
+            pomodoros = if (inYear) pomodorosByDay[day] ?: 0 else 0
+        )
+        day = day.plusDays(1)
+    }
+    return cells.chunked(DaysPerWeek)
+}
+
+private fun totalsOf(sessions: List<FocusSession>): FocusPeriodTotals {
+    var completed = 0
+    var interrupted = 0
+    var pomodoros = 0
+    sessions.forEach { session ->
+        if (session.status == FocusStatus.COMPLETED) {
+            completed += session.actualFocusSeconds
+            if (session.mode == FocusMode.POMODORO) pomodoros++
+        } else {
+            interrupted += session.actualFocusSeconds
+        }
+    }
+    return FocusPeriodTotals(completed, interrupted, pomodoros)
+}
+
+private fun secondsByDay(sessions: List<FocusSession>, zone: ZoneId): Map<LocalDate, Int> {
+    val seconds = mutableMapOf<LocalDate, Int>()
+    sessions.forEach { session ->
+        val day = localDateOf(session.startedAt, zone)
+        seconds[day] = (seconds[day] ?: 0) + session.actualFocusSeconds
+    }
+    return seconds
+}
+
+internal const val DaysPerWeek = 7
+
+private const val MonthsPerYear = 12
+private const val HoursPerDay = 24
+private const val MinutesPerDay = 24 * 60
+private const val MillisPerMinute = 60_000L
+
+/** 排行只留前几条，够看出时间花在哪了。 */
+private const val ReportTopEntries = 5

@@ -201,15 +201,46 @@
     <string name="more_entry_stats">专注统计</string>
     <!-- 统计页（照滴答清单/番茄ToDo那一页） -->
     <string name="focus_stats_open">统计</string>
-    <string name="stats_card_today">今天</string>
-    <string name="stats_card_week">本周</string>
-    <string name="stats_card_total">累计</string>
-    <string name="stats_pomodoros">%1$d 个番茄</string>
-    <string name="stats_trend_title">最近 7 天（分钟）</string>
-    <string name="stats_top_tasks_title">时间都去哪了</string>
-    <string name="stats_heatmap_title">近 12 周</string>
-    <string name="stats_heatmap_less">浅＝少</string>
-    <string name="stats_heatmap_more">深＝多</string>
+    <string name="stats_detail_title">专注详情</string>
+    <string name="stats_trend_title">专注趋势</string>
+    <string name="stats_timeline_title">专注时间线</string>
+    <string name="stats_hours_title">最佳专注时间</string>
+    <string name="stats_year_title">年度热力图</string>
+    <!-- 周期粒度（详情卡）/ 粒度（趋势卡） -->
+    <string name="stats_period_day">天</string>
+    <string name="stats_period_week">周</string>
+    <string name="stats_period_month">月</string>
+    <string name="stats_period_year">年</string>
+    <string name="stats_achievement">专注达成率</string>
+    <string name="stats_legend_focus">专注</string>
+    <string name="stats_legend_interrupted">中断</string>
+    <string name="stats_detail_total">总时长 %1$s</string>
+    <string name="stats_ranking_title">专注排行</string>
+    <string name="stats_rank_by_task">按任务</string>
+    <string name="stats_rank_by_list">按清单</string>
+    <string name="stats_rank_none">无</string>
+    <string name="stats_rank_unlinked">未关联</string>
+    <string name="stats_daily_average">每日平均</string>
+    <string name="stats_no_data">暂无数据</string>
+    <string name="stats_this_day">今天</string>
+    <string name="stats_this_week">本周</string>
+    <string name="stats_month_label">%1$d月</string>
+    <string name="stats_month_year_label">%1$d年%2$d月</string>
+    <string name="stats_date_label">%1$d月%2$d日</string>
+    <string name="stats_year_label">%1$d年</string>
+    <string name="stats_percent">%1$d%%</string>
+    <string name="stats_step_previous">上一个周期</string>
+    <string name="stats_step_next">下一个周期</string>
+    <!-- 年度热力图的五档图例 -->
+    <string name="stats_heat_none">0m</string>
+    <string name="stats_heat_light">0–1h</string>
+    <string name="stats_heat_medium">1h–3h</string>
+    <string name="stats_heat_strong">3h–5h</string>
+    <string name="stats_heat_fire">&gt;5h</string>
+    <!-- 图上的紧凑时长：23m / 1h9m，不带空格 -->
+    <string name="stats_duration_minutes">%1$dm</string>
+    <string name="stats_duration_hours">%1$dh</string>
+    <string name="stats_duration_hours_minutes">%1$dh%2$dm</string>
     <string name="stats_empty">还没有专注记录。去专注一次，这里就会长出趋势和热力图。</string>
     <string name="focus_task_none_label">未关联任务</string>
     <string name="focus_mode_stopwatch">正向计时</string>

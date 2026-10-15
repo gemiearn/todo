@@ -76,7 +76,8 @@ class FocusRepository(
         mode: FocusMode,
         plannedSeconds: Int,
         taskId: Long? = null,
-        taskTitleSnapshot: String? = null
+        taskTitleSnapshot: String? = null,
+        listNameSnapshot: String? = null
     ): Boolean = db.withTransaction {
         if (focusDao.getActiveTimer() != null) return@withTransaction false
         val time = now()
@@ -85,6 +86,7 @@ class FocusRepository(
                 mode = mode,
                 taskId = taskId,
                 taskTitleSnapshot = taskTitleSnapshot,
+                listNameSnapshot = listNameSnapshot,
                 plannedSeconds = if (mode.timed) plannedSeconds.coerceAtLeast(MinTimedSeconds) else 0,
                 startedAt = time,
                 lastResumeAtElapsed = elapsed(),
@@ -216,6 +218,7 @@ class FocusRepository(
                 FocusSession(
                     taskId = timer.taskId,
                     taskTitleSnapshot = timer.taskTitleSnapshot,
+                    listNameSnapshot = timer.listNameSnapshot,
                     mode = timer.mode,
                     startedAt = timer.startedAt,
                     endedAt = now(),

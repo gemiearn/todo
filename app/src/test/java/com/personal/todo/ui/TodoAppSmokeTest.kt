@@ -2,17 +2,20 @@ package com.personal.todo.ui
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TodoDatabase
+import com.personal.todo.model.FocusMode
 import com.personal.todo.ui.theme.TodoPomodoroTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -161,6 +164,40 @@ class TodoAppSmokeTest {
 
         // 还没有专注记录时，它老老实实说没有。
         compose.onNodeWithText("还没有专注记录", substring = true).assertExists()
+    }
+
+    /**
+     * 有记录时统计页把五张卡都画出来，顺序照参考图来：专注详情、专注趋势、
+     * 专注时间线、最佳专注时间、年度热力图。
+     */
+    @Test
+    fun theStatisticsPageDrawsAllItsCardsOnceThereIsData() {
+        runBlocking {
+            val taskId = tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
+            focus.startTimer(
+                mode = FocusMode.POMODORO,
+                plannedSeconds = 1_500,
+                taskId = taskId,
+                taskTitleSnapshot = "写季度报告",
+                listNameSnapshot = "收件箱"
+            )
+            focus.finishTimer()
+        }
+
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("专注统计").performClick()
+        compose.waitForIdle()
+
+        // sessions 是 Room 的 Flow，进页面之后才第一次发值：等那张卡真的出现。
+        compose.waitUntilNodeCount(hasText("专注详情"), 1, TimeoutMillis)
+        compose.onNodeWithText("专注趋势").assertExists()
+        // 后两张在视口之外，列表要滚过去才会组合它们。
+        compose.onNodeWithTag(FocusStatsTag).performScrollToIndex(3)
+        compose.onNodeWithText("最佳专注时间").assertExists()
+        compose.onNodeWithTag(FocusStatsTag).performScrollToIndex(4)
+        compose.onNodeWithText("年度热力图").assertExists()
     }
 
     @Test

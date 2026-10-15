@@ -193,6 +193,102 @@ class TodoDatabaseMigrationTest {
     }
 
     /**
+     * v5 -> v6: the 清单 a focus session's task was in. Both new columns are
+     * nullable, so a session recorded before the upgrade comes back with no list
+     * - which is exactly what it has, and the statistics page reports it as
+     * 未关联 - and a timer running right now upgrades just as harmlessly.
+     */
+    @Test
+    fun migratingFromVersion5KeepsTheSessionsAndLeavesTheListEmpty() = runBlocking {
+        val name = "migration-5-to-6.db"
+        context.deleteDatabase(name)
+        createVersion5Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val session = db.focusDao().getSessions().single()
+            assertEquals("迁移前的任务", session.taskTitleSnapshot)
+            assertEquals(1_500, session.actualFocusSeconds)
+            assertNull("旧记录没有清单快照，不会被猜出来", session.listNameSnapshot)
+
+            // 迁移之后记下来的专注才带着当时的清单名。
+            val focus = FocusRepository(
+                db = db,
+                now = { 2_000L },
+                elapsed = { 5_000L },
+                zone = ZoneId.of("Asia/Shanghai")
+            )
+            assertTrue(
+                focus.startTimer(
+                    mode = FocusMode.POMODORO,
+                    plannedSeconds = 1_500,
+                    taskId = 1L,
+                    taskTitleSnapshot = "迁移前的任务",
+                    listNameSnapshot = "收件箱"
+                )
+            )
+            assertTrue(focus.abandonTimer())
+
+            val written = requireNotNull(db.focusDao().getSessions().maxByOrNull { it.id })
+            assertEquals("收件箱", written.listNameSnapshot)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * Builds a file backed database exactly as version 5 would have left it: the
+     * DDL of `schemas/.../5.json`, one task and its finished 番茄钟.
+     */
+    private fun createVersion5Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V5_TASK_LISTS)
+            sqlite.execSQL(V5_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V5_FOCUS_SESSIONS)
+            sqlite.execSQL(V5_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V5_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime) " +
+                    "VALUES ('迁移前的任务', NULL, 1, NULL, 'NORMAL', NULL, NULL, 0, 1000, 1000, " +
+                    "NULL, NULL, NULL, NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO task_events (taskId, eventAt, eventType, titleSnapshot, detailsJson) " +
+                    "VALUES (1, 1000, 'CREATED', '迁移前的任务', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO focus_sessions (taskId, taskTitleSnapshot, mode, startedAt, endedAt, " +
+                    "plannedSeconds, actualFocusSeconds, status, note) " +
+                    "VALUES (1, '迁移前的任务', 'POMODORO', 1000, 2000, 1500, 1500, 'COMPLETED', NULL)"
+            )
+            sqlite.version = 5
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
      * Builds a file backed database exactly as version 1 of the app would have:
      * same DDL, same indices, same room_master_table identity hash.
      */
@@ -259,5 +355,47 @@ class TodoDatabaseMigrationTest {
                 "`plannedDate` TEXT, `dueDate` TEXT, `dueTime` TEXT, " +
                 "FOREIGN KEY(`listId`) REFERENCES `task_lists`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , " +
                 "FOREIGN KEY(`parentTaskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        /** The identity hash `schemas/.../5.json` records for version 5. */
+        const val V5_IDENTITY_HASH = "d6700e6737c6411d1ed3b24cb122374f"
+
+        const val V5_TASK_LISTS = V1_TASK_LISTS
+
+        const val V5_TASK_EVENTS = V1_TASK_EVENTS
+
+        /** The tasks table as of version 5: v1 plus 计划日期 / 计划时间 / 截止日期 / 截止时间. */
+        const val V5_TASKS =
+            "CREATE TABLE IF NOT EXISTS `tasks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`title` TEXT NOT NULL, `notes` TEXT, `listId` INTEGER NOT NULL, `parentTaskId` INTEGER, " +
+                "`priority` TEXT NOT NULL, `completedAt` INTEGER, `deletedAt` INTEGER, `sortOrder` INTEGER NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                "`plannedDate` TEXT, `plannedTime` TEXT, `dueDate` TEXT, `dueTime` TEXT, " +
+                "FOREIGN KEY(`listId`) REFERENCES `task_lists`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , " +
+                "FOREIGN KEY(`parentTaskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        const val V5_FOCUS_SESSIONS =
+            "CREATE TABLE IF NOT EXISTS `focus_sessions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`taskId` INTEGER, `taskTitleSnapshot` TEXT, `mode` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, " +
+                "`endedAt` INTEGER NOT NULL, `plannedSeconds` INTEGER NOT NULL, " +
+                "`actualFocusSeconds` INTEGER NOT NULL, `status` TEXT NOT NULL, `note` TEXT, " +
+                "FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        const val V5_ACTIVE_TIMER =
+            "CREATE TABLE IF NOT EXISTS `active_timer` (`id` INTEGER NOT NULL, `mode` TEXT NOT NULL, " +
+                "`phase` TEXT NOT NULL DEFAULT 'FOCUS', `taskId` INTEGER, `taskTitleSnapshot` TEXT, " +
+                "`plannedSeconds` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, " +
+                "`lastResumeAtElapsed` INTEGER NOT NULL, `accumulatedFocusSeconds` INTEGER NOT NULL, " +
+                "`running` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+
+        const val V5_TAGS =
+            "CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `color` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+
+        const val V5_TASK_TAGS =
+            "CREATE TABLE IF NOT EXISTS `task_tags` (`taskId` INTEGER NOT NULL, `tagId` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`taskId`, `tagId`), " +
+                "FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , " +
+                "FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
     }
 }

@@ -409,7 +409,9 @@ private fun SetupPanel(
         // 计时必须绑在一个真实任务上：没有一个任务，就没有可统计的对象，所以
         // 选任务之前这个按钮根本点不动。
         Button(
-            onClick = viewModel::start,
+            // 开始的这一刻把清单名一起记进 session，统计页就能按清单排行——
+            // 任务以后换了清单，也不会改写已经发生的这段专注。
+            onClick = { viewModel.start(linkedListName) },
             enabled = viewModel.linkedTaskId != null,
             colors = ButtonDefaults.buttonColors(containerColor = colors.focusAccent),
             modifier = Modifier

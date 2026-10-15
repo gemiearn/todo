@@ -204,8 +204,12 @@ class FocusViewModel(
      * Starts the session. Without a linked task nothing happens - the button that
      * calls this is disabled until one is picked, and this is the second half of
      * the same rule, so no path can start an unattached session.
+     *
+     * [listName] is the 清单 the task is in right now. It is stored with the
+     * session so the statistics page can rank time by list later, even after the
+     * task has moved somewhere else.
      */
-    fun start() {
+    fun start(listName: String? = null) {
         val taskId = linkedTaskId ?: return
         val title = linkedTaskTitle
         val target = if (mode.timed) plannedLengthMinutes * 60 else 0
@@ -214,7 +218,8 @@ class FocusViewModel(
                 mode = mode,
                 plannedSeconds = target,
                 taskId = taskId,
-                taskTitleSnapshot = title
+                taskTitleSnapshot = title,
+                listNameSnapshot = listName
             )
         }
     }

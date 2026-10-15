@@ -29,6 +29,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * Version 5 adds `active_timer.phase`, so a pomodoro can carry the break that
  * follows it (说明文档 5.1). The column is `NOT NULL DEFAULT 'FOCUS'`: a timer
  * stored before it existed was a focus block, which is exactly that default.
+ *
+ * Version 6 adds `focus_sessions.listNameSnapshot` and
+ * `active_timer.listNameSnapshot`: the 清单 a session's task was in. Both are
+ * nullable, so sessions (and a running timer) recorded before the upgrade simply
+ * have no list and are reported as 未关联 - nothing is guessed.
  */
 @Database(
     entities = [
@@ -40,7 +45,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Tag::class,
         TaskTag::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -167,8 +172,20 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 -> v6: the 清单 a focus session's task was in. Nullable on both
+         * tables, so every existing session and a timer that is running right
+         * now upgrade as "no list" - which is exactly what they have.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `focus_sessions` ADD COLUMN `listNameSnapshot` TEXT")
+                db.execSQL("ALTER TABLE `active_timer` ADD COLUMN `listNameSnapshot` TEXT")
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
     }
 }
