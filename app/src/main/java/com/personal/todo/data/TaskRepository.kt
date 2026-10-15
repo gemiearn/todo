@@ -181,8 +181,13 @@ class TaskRepository(
     /** Open tasks planned for today or due today - each task appears once. */
     fun observeTodayTasks(): Flow<List<Task>> = taskDao.observeOpenTasksOnDate(today())
 
-    /** Open tasks planned for today (the calendar day list of the same day). */
-    fun observeOpenTasksOn(date: LocalDate): Flow<List<Task>> = taskDao.observeOpenTasksOnDate(date)
+    /**
+     * Open tasks the calendar day of [date] lists: tasks dated that day and tasks
+     * whose planned..due interval covers it. The 今日 view deliberately keeps the
+     * exact rule, so this is only for the calendar.
+     */
+    fun observeOpenTasksCovering(date: LocalDate): Flow<List<Task>> =
+        taskDao.observeOpenTasksCoveringDate(date)
 
     /** Open tasks dated after today, planned or due. */
     fun observeFutureTasks(): Flow<List<Task>> = taskDao.observeOpenTasksAfterDate(today())
@@ -199,11 +204,11 @@ class TaskRepository(
     fun observeAllOpenTasks(): Flow<List<Task>> = taskDao.observeAllOpenTasks()
 
     /**
-     * Open tasks dated inside [start]..[end] (planned or due) - the task dots of
-     * one calendar month. Read only: it never shifts a date.
+     * Open tasks whose dates overlap [start]..[end] - the task dots of one
+     * calendar month. Read only: it never shifts a date.
      */
-    fun observeOpenTasksInRange(start: LocalDate, end: LocalDate): Flow<List<Task>> =
-        taskDao.observeOpenTasksInRange(start, end)
+    fun observeOpenTasksSpanning(start: LocalDate, end: LocalDate): Flow<List<Task>> =
+        taskDao.observeOpenTasksSpanning(start, end)
 
     /** True when this task is past its due moment. */
     fun isOverdue(task: Task): Boolean =

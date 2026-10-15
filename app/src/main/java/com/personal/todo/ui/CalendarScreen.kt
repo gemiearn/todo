@@ -165,7 +165,7 @@ private fun MonthGrid(
     val monthTasks by remember(month, tasksInRange) {
         tasksInRange(firstOfMonth, month.atEndOfMonth())
     }.collectAsStateWithLifecycle(emptyList())
-    val dotsByDate = remember(monthTasks) { tasksByDate(monthTasks) }
+    val dotsByDate = remember(monthTasks, month) { tasksByDate(monthTasks, month) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         repeat(WeeksPerMonth) { week ->
@@ -256,15 +256,43 @@ private fun dotColor(priority: Priority): Color {
 }
 
 /**
- * Tasks grouped by the day they belong to. A task with both a planned and a due
- * date is listed on both days, because the 今日 view merges the same way.
+ * Tasks grouped by every day they cover inside [month].
+ *
+ * A task that has both a planned date and a due date is drawn across the whole
+ * interval between them, so a multi-day task is visible on each of its days
+ * instead of only on its two endpoints. A task with a single date is drawn on
+ * that day. This is a display decision only: no date of any task is changed, and
+ * the 今日 view keeps its exact "planned or due today" rule.
+ *
+ * The interval is clamped to the month being drawn, so an unusually long span
+ * (or a typo in a date) can never make the grid walk through years of days.
  */
-private fun tasksByDate(tasks: List<Task>): Map<LocalDate, List<Task>> {
+private fun tasksByDate(tasks: List<Task>, month: YearMonth): Map<LocalDate, List<Task>> {
     val byDate = mutableMapOf<LocalDate, MutableList<Task>>()
+    val monthStart = month.atDay(1)
+    val monthEnd = month.atEndOfMonth()
+
     tasks.forEach { task ->
-        task.plannedDate?.let { byDate.getOrPut(it) { mutableListOf() }.add(task) }
-        task.dueDate?.takeIf { it != task.plannedDate }
-            ?.let { byDate.getOrPut(it) { mutableListOf() }.add(task) }
+        val planned = task.plannedDate
+        val due = task.dueDate
+        when {
+            planned != null && due != null -> {
+                var day = maxOf(minOf(planned, due), monthStart)
+                val last = minOf(maxOf(planned, due), monthEnd)
+                while (!day.isAfter(last)) {
+                    byDate.getOrPut(day) { mutableListOf() }.add(task)
+                    day = day.plusDays(1)
+                }
+            }
+
+            planned != null -> if (!planned.isBefore(monthStart) && !planned.isAfter(monthEnd)) {
+                byDate.getOrPut(planned) { mutableListOf() }.add(task)
+            }
+
+            due != null -> if (!due.isBefore(monthStart) && !due.isAfter(monthEnd)) {
+                byDate.getOrPut(due) { mutableListOf() }.add(task)
+            }
+        }
     }
     return byDate
 }

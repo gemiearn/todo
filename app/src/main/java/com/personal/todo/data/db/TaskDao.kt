@@ -198,8 +198,10 @@ interface TaskDao {
     fun observeAllOpenTasks(): Flow<List<Task>>
 
     /**
-     * Open top level tasks dated inside [start]..[end], planned or due. The
-     * calendar draws the task dots of a month from this; it only reads dates.
+     * Open top level tasks the calendar may draw on [date]: dated exactly that
+     * day, or spanning it because the planned date and the due date form an
+     * interval around it. The calendar shows a task on every day of its interval
+     * (a display decision), while the 今日 view keeps the exact rule.
      */
     @Query(
         """
@@ -207,10 +209,37 @@ interface TaskDao {
         WHERE parentTaskId IS NULL
           AND deletedAt IS NULL
           AND completedAt IS NULL
-          AND ((plannedDate BETWEEN :start AND :end) OR (dueDate BETWEEN :start AND :end))
+          AND (
+                plannedDate = :date
+                OR dueDate = :date
+                OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
+                    AND plannedDate <= :date AND dueDate >= :date)
+              )
         """
     )
-    fun observeOpenTasksInRange(start: LocalDate, end: LocalDate): Flow<List<Task>>
+    fun observeOpenTasksCoveringDate(date: LocalDate): Flow<List<Task>>
+
+    /**
+     * Open top level tasks whose dates overlap [start]..[end], planned or due.
+     * The calendar draws a task's dots across the whole interval between its
+     * planned and its due date, so an interval that merely passes through the
+     * range counts too. Read only: it never shifts a date.
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NULL
+          AND (
+                (plannedDate BETWEEN :start AND :end)
+                OR (dueDate BETWEEN :start AND :end)
+                OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
+                    AND plannedDate <= :end AND dueDate >= :start)
+              )
+        """
+    )
+    fun observeOpenTasksSpanning(start: LocalDate, end: LocalDate): Flow<List<Task>>
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getById(id: Long): Task?

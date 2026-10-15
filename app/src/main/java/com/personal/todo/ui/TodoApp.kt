@@ -1,5 +1,6 @@
 package com.personal.todo.ui
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -317,6 +318,12 @@ internal fun MainScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    // Leaving from a root tab asks once first: a stray back press should not
+    // throw the user straight out of the app.
+    var exitConfirmOpen by remember { mutableStateOf(false) }
+    BackHandler(enabled = !nav.canPop()) { exitConfirmOpen = true }
 
     val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
     val lists by shellViewModel.lists.collectAsStateWithLifecycle()
@@ -596,7 +603,7 @@ internal fun MainScreen(
                     CalendarScreen(
                         selectedDate = selectedDate,
                         today = today,
-                        tasksInRange = { start, end -> repository.observeOpenTasksInRange(start, end) },
+                        tasksInRange = { start, end -> repository.observeOpenTasksSpanning(start, end) },
                         onSelectDate = onSelectDate,
                         onOpenLists = { scope.launch { drawerState.open() } }
                     )
@@ -659,6 +666,29 @@ internal fun MainScreen(
                 )
             }
         }
+    }
+
+    if (exitConfirmOpen) {
+        AlertDialog(
+            onDismissRequest = { exitConfirmOpen = false },
+            title = { Text(stringResource(R.string.dialog_exit_title)) },
+            text = { Text(stringResource(R.string.dialog_exit_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        exitConfirmOpen = false
+                        (context as? Activity)?.finish()
+                    }
+                ) {
+                    Text(stringResource(R.string.action_exit))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { exitConfirmOpen = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
     }
 
     if (showNewListDialog) {
@@ -894,12 +924,9 @@ private fun ListsDrawer(
             onClick = { onSelect(ROUTE_COMPLETED) },
             modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
         )
-        NavigationDrawerItem(
-            label = { Text(stringResource(R.string.nav_trash)) },
-            selected = currentRoute == ROUTE_TRASH,
-            onClick = { onSelect(ROUTE_TRASH) },
-            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-        )
+        // 回收站 deliberately has no entry here: it lives in 更多, so the drawer
+        // stays a plain list of lists (spec section 4.2 still requires the trash
+        // itself, and nothing about it is removed).
         TextButton(onClick = onNewList, modifier = Modifier.padding(horizontal = 12.dp)) {
             Text(stringResource(R.string.action_new_list))
         }

@@ -54,7 +54,7 @@ class TaskCollectionViewModel(
         TaskCollection.Today -> repository.observeTodayTasks()
         TaskCollection.Future -> repository.observeFutureTasks()
         TaskCollection.Overdue -> repository.observeOverdueTasks()
-        is TaskCollection.DayView -> repository.observeOpenTasksOn(collection.date)
+        is TaskCollection.DayView -> repository.observeOpenTasksCovering(collection.date)
         TaskCollection.None -> flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

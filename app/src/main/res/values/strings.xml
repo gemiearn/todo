@@ -39,6 +39,9 @@
     <string name="action_clear">清除</string>
     <string name="action_confirm">确定</string>
     <string name="action_close">关闭</string>
+    <string name="action_exit">退出</string>
+    <string name="dialog_exit_title">退出应用</string>
+    <string name="dialog_exit_message">确定要退出吗？任务和专注记录都已经保存在本机。</string>
     <string name="date_not_set">未设置</string>
     <string name="due_time_needs_date">先设置截止日期</string>
 

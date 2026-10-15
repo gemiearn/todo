@@ -235,7 +235,7 @@ class TaskDateViewTest {
         repository.createTask("没有日期", inboxId)
 
         val inOctober = repository
-            .observeOpenTasksInRange(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
+            .observeOpenTasksSpanning(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
             .first()
 
         assertEquals(
@@ -254,7 +254,7 @@ class TaskDateViewTest {
         repository.deleteTask(deleted)
 
         val range = repository
-            .observeOpenTasksInRange(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
+            .observeOpenTasksSpanning(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
             .first()
 
         assertEquals(listOf(open), range.map { it.id })
@@ -266,7 +266,7 @@ class TaskDateViewTest {
         val lastDay = repository.createTask("月末", inboxId, dueDate = LocalDate.of(2026, 10, 31))
 
         val range = repository
-            .observeOpenTasksInRange(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
+            .observeOpenTasksSpanning(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
             .first()
 
         assertEquals(setOf(firstDay, lastDay), range.map { it.id }.toSet())
@@ -362,6 +362,90 @@ class TaskDateViewTest {
         assertEquals(today.plusDays(2), task.dueDate)
         assertEquals(Priority.HIGH, task.priority)
         assertEquals("备注", task.notes)
+    }
+
+    // --------------------------------------------------- 日历的区间显示
+
+    @Test
+    fun theCalendarRangeKeepsAnIntervalThatOnlyPassesThroughTheMonth() = runBlocking {
+        // Planned in September, due in November: the interval crosses October
+        // without either end being inside it.
+        val crossing = repository.createTask(
+            "跨月的事",
+            inboxId,
+            plannedDate = LocalDate.of(2026, 9, 28),
+            dueDate = LocalDate.of(2026, 11, 3)
+        )
+        repository.createTask("完全在十一月", inboxId, plannedDate = LocalDate.of(2026, 11, 10))
+
+        val inOctober = repository
+            .observeOpenTasksSpanning(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
+            .first()
+
+        assertEquals(listOf(crossing), inOctober.map { it.id })
+    }
+
+    @Test
+    fun theCalendarDayListShowsATaskOnEveryDayOfItsInterval() = runBlocking {
+        val spanning = repository.createTask(
+            "三天的活",
+            inboxId,
+            plannedDate = LocalDate.of(2026, 10, 12),
+            dueDate = LocalDate.of(2026, 10, 14)
+        )
+        val singleDay = repository.createTask("只有一天", inboxId, plannedDate = LocalDate.of(2026, 10, 20))
+        repository.createTask("区间之外", inboxId, plannedDate = LocalDate.of(2026, 11, 1))
+
+        val days = listOf(11, 12, 13, 14, 15).map { day ->
+            repository.observeOpenTasksCovering(LocalDate.of(2026, 10, day)).first().map { it.id }
+        }
+
+        assertEquals(
+            "区间内的每一天都能看到这条任务，两端也一样",
+            listOf(emptyList(), listOf(spanning), listOf(spanning), listOf(spanning), emptyList()),
+            days
+        )
+        assertEquals(
+            listOf(singleDay),
+            repository.observeOpenTasksCovering(LocalDate.of(2026, 10, 20)).first().map { it.id }
+        )
+    }
+
+    @Test
+    fun theTodayViewIsNotWidenedByTheIntervalRule() = runBlocking {
+        // Both dates are away from today, so 今日 must not pick it up even though
+        // the interval covers today; only the calendar may show it today.
+        val spanning = repository.createTask(
+            "跨过今天的事",
+            inboxId,
+            plannedDate = today.minusDays(4),
+            dueDate = today.plusDays(4)
+        )
+
+        assertTrue(
+            "今日视图仍然只收计划日期或截止日期为今天的任务",
+            repository.observeTodayTasks().first().isEmpty()
+        )
+        assertEquals(
+            listOf(spanning),
+            repository.observeOpenTasksCovering(today).first().map { it.id }
+        )
+    }
+
+    @Test
+    fun theIntervalRuleOnlyAppliesToTheCalendarAndNeverChangesADate() = runBlocking {
+        val taskId = repository.createTask(
+            "跨月的事",
+            inboxId,
+            plannedDate = LocalDate.of(2026, 9, 28),
+            dueDate = LocalDate.of(2026, 11, 3)
+        )
+
+        repository.observeOpenTasksCovering(LocalDate.of(2026, 10, 15)).first()
+
+        val task = requireNotNull(repository.getTask(taskId))
+        assertEquals("任务日期只用于显示，不会被改写", LocalDate.of(2026, 9, 28), task.plannedDate)
+        assertEquals(LocalDate.of(2026, 11, 3), task.dueDate)
     }
 
     // ----------------------------------------------------- 编辑器的日期字段
