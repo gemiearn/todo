@@ -245,6 +245,20 @@ interface TaskDao {
     suspend fun getById(id: Long): Task?
 
     /**
+     * 所有还活着、带重复规则的任务：生成器以它们为源，每次算一遍它们该有的那几次。
+     * 带规则的只能是顶层任务，子任务不重复。
+     */
+    @Query("SELECT * FROM tasks WHERE repeatRule IS NOT NULL AND deletedAt IS NULL AND parentTaskId IS NULL")
+    suspend fun getRepeatSources(): List<Task>
+
+    /**
+     * 某个源已经生成过的所有次，**连进过回收站的也算**：生成器靠它去重，所以被用户
+     * 删掉的那一次不该被下一次补生成又变出来。
+     */
+    @Query("SELECT * FROM tasks WHERE recurrenceSourceId = :sourceId")
+    suspend fun getOccurrencesOf(sourceId: Long): List<Task>
+
+    /**
      * Live view of one task. The detail screen observes this instead of keeping
      * a snapshot, so a change made anywhere else (completing the task from the
      * list, for example) is reflected immediately.

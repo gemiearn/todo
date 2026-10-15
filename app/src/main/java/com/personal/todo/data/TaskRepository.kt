@@ -6,6 +6,7 @@ import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.Priority
+import com.personal.todo.model.RepeatRule
 import com.personal.todo.model.Schedule
 import com.personal.todo.model.TaskEventType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * All task operations of phase 1 live here.
@@ -37,6 +39,8 @@ import java.time.ZoneId
  * [now] is injectable so tests can use a deterministic clock, and [zone] so the
  * date boundary of section 4.1 can be tested across time zones.
  */
+private const val RecurrenceHorizonDays = 14
+
 class TaskRepository(
     private val db: TodoDatabase,
     private val inboxName: String,
@@ -248,7 +252,8 @@ class TaskRepository(
         plannedDate: LocalDate? = null,
         plannedTime: LocalTime? = null,
         dueDate: LocalDate? = null,
-        dueTime: LocalTime? = null
+        dueTime: LocalTime? = null,
+        repeatRule: RepeatRule? = null
     ): Long {
         val trimmedTitle = title.trim()
         require(trimmedTitle.isNotEmpty()) { "任务标题不能为空" }
@@ -278,12 +283,66 @@ class TaskRepository(
                     plannedDate = plannedDate,
                     plannedTime = plannedTime,
                     dueDate = dueDate,
-                    dueTime = dueTime
+                    dueTime = dueTime,
+                    repeatRule = repeatRule
                 )
             )
             recordEvent(taskId, TaskEventType.CREATED, trimmedTitle, time)
             taskId
         }
+    }
+
+    /**
+     * 把重复任务算出来的每一次落成**独立任务**（说明文档 4.5：规则 + 每次独立任务
+     * 实例，不循环复用同一条 Task）。
+     *
+     * 只补 [today]..[today + horizonDays] 这一段：过去的日期不回溯，打开 app 不该凭空
+     * 长出一排逾期任务。已经生成过的那些天——以及带规则那条任务自己占的那一格——都会
+     * 跳过，所以它幂等，可以在每次回到前台时放心再跑一遍。
+     *
+     * 生成出来的那一次带着源的标题、备注、优先级和清单，日期换成这一次的；源如果有
+     * 结束日期，实例的结束日期按同样的偏移跟着走（「每周一 9:00-11:00」这种时间段也
+     * 就自然重复了）。规则只留在源上，实例自己没有规则。
+     *
+     * @return 这次新建了几条。
+     */
+    suspend fun materializeRecurrences(
+        today: LocalDate,
+        horizonDays: Int = RecurrenceHorizonDays
+    ): Int = db.withTransaction {
+        val until = today.plusDays(horizonDays.toLong())
+        var created = 0
+
+        taskDao.getRepeatSources().forEach { source ->
+            val rule = source.repeatRule ?: return@forEach
+            val anchor = source.plannedDate ?: return@forEach
+
+            // 已经有的（包括被删掉的、以及源自己那一格）都算「占住了」，绝不重复生成。
+            val taken = taskDao.getOccurrencesOf(source.id).mapNotNull { it.plannedDate }.toMutableSet()
+            if (!anchor.isBefore(today) && !anchor.isAfter(until)) taken += anchor
+
+            val dueOffset = source.dueDate?.let { ChronoUnit.DAYS.between(anchor, it) }
+            rule.occurrencesIn(today, until, anchor).forEach { date ->
+                if (!taken.add(date)) return@forEach
+                val time = now()
+                val occurrenceId = taskDao.insert(
+                    source.copy(
+                        id = 0L,
+                        completedAt = null,
+                        deletedAt = null,
+                        createdAt = time,
+                        updatedAt = time,
+                        plannedDate = date,
+                        dueDate = dueOffset?.let { date.plusDays(it) },
+                        repeatRule = null,
+                        recurrenceSourceId = source.id
+                    )
+                )
+                recordEvent(occurrenceId, TaskEventType.CREATED, source.title, time)
+                created++
+            }
+        }
+        created
     }
 
     suspend fun addSubtask(parentTaskId: Long, title: String): Long {
@@ -310,7 +369,8 @@ class TaskRepository(
         plannedDate: LocalDate? = null,
         plannedTime: LocalTime? = null,
         dueDate: LocalDate? = null,
-        dueTime: LocalTime? = null
+        dueTime: LocalTime? = null,
+        repeatRule: RepeatRule? = null
     ) {
         val trimmedTitle = title.trim()
         require(trimmedTitle.isNotEmpty()) { "任务标题不能为空" }
@@ -332,7 +392,8 @@ class TaskRepository(
                 plannedDate = plannedDate,
                 plannedTime = plannedTime,
                 dueDate = dueDate,
-                dueTime = dueTime
+                dueTime = dueTime,
+                repeatRule = repeatRule
             )
         )
     }

@@ -24,10 +24,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -40,12 +37,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,10 +63,8 @@ import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Priority
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskEditorViewModel
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.ZoneOffset
 
 /** The tag the smoke tests use to type a title into the editor. */
 internal const val EditorTitleTag = "editor-title"
@@ -235,20 +226,23 @@ internal fun TaskEditorBody(
     var groupIndex by rememberSaveable { mutableIntStateOf(EditorGroup.DATE.ordinal) }
     val group = EditorGroup.entries[groupIndex]
 
-    var plannedPickerOpen by remember { mutableStateOf(false) }
-    var plannedTimePickerOpen by remember { mutableStateOf(false) }
-    var duePickerOpen by remember { mutableStateOf(false) }
-    var dueTimePickerOpen by remember { mutableStateOf(false) }
+    // 日期、时间段、时刻、重复全在同一个弹层里（照「待办时间」那张图），所以这里只留
+    // 一个状态：弹层开着的话停在哪个页签。
+    var dateSheet by remember { mutableStateOf<DateSheetTab?>(null) }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        TitleCard(viewModel = viewModel, onOpenGroup = { groupIndex = it.ordinal })
+        TitleCard(
+            viewModel = viewModel,
+            onOpenGroup = { groupIndex = it.ordinal },
+            onOpenDateSheet = { dateSheet = DateSheetTab.DATE }
+        )
 
         if (showQuickDates) {
             Spacer(Modifier.height(10.dp))
             QuickDates(
                 today = viewModel.today,
                 onPick = { viewModel.onPlannedDateChange(it) },
-                onPickExact = { plannedPickerOpen = true }
+                onPickExact = { dateSheet = DateSheetTab.DATE }
             )
         }
 
@@ -260,10 +254,7 @@ internal fun TaskEditorBody(
             when (group) {
                 EditorGroup.DATE -> DateGroup(
                     viewModel = viewModel,
-                    onPickPlanned = { plannedPickerOpen = true },
-                    onPickPlannedTime = { plannedTimePickerOpen = true },
-                    onPickDue = { duePickerOpen = true },
-                    onPickDueTime = { dueTimePickerOpen = true }
+                    onOpenSheet = { dateSheet = it }
                 )
 
                 EditorGroup.PRIORITY -> PriorityGroup(viewModel = viewModel)
@@ -274,116 +265,11 @@ internal fun TaskEditorBody(
             }
         }
     }
-
-    if (plannedPickerOpen) {
-        val pickerState = rememberDatePickerState(
-            initialSelectedDateMillis = localDateToUtcMillis(viewModel.plannedDate ?: viewModel.today)
-        )
-        DatePickerDialog(
-            onDismissRequest = { plannedPickerOpen = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pickerState.selectedDateMillis
-                            ?.let { viewModel.onPlannedDateChange(utcMillisToLocalDate(it)) }
-                        plannedPickerOpen = false
-                    }
-                ) {
-                    Text(stringResource(R.string.action_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { plannedPickerOpen = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        ) {
-            DatePicker(state = pickerState)
-        }
-    }
-
-    if (duePickerOpen) {
-        val pickerState = rememberDatePickerState(
-            initialSelectedDateMillis = localDateToUtcMillis(viewModel.dueDate ?: viewModel.today)
-        )
-        DatePickerDialog(
-            onDismissRequest = { duePickerOpen = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pickerState.selectedDateMillis
-                            ?.let { viewModel.onDueDateChange(utcMillisToLocalDate(it)) }
-                        duePickerOpen = false
-                    }
-                ) {
-                    Text(stringResource(R.string.action_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { duePickerOpen = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        ) {
-            DatePicker(state = pickerState)
-        }
-    }
-
-    if (plannedTimePickerOpen) {
-        val start = viewModel.plannedTime ?: DefaultTimeOfDay
-        val timeState = rememberTimePickerState(
-            initialHour = start.hour,
-            initialMinute = start.minute,
-            is24Hour = true
-        )
-        AlertDialog(
-            onDismissRequest = { plannedTimePickerOpen = false },
-            title = { Text(stringResource(R.string.dialog_planned_time_picker_title)) },
-            text = { TimeInput(state = timeState) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.onPlannedTimeChange(LocalTime.of(timeState.hour, timeState.minute))
-                        plannedTimePickerOpen = false
-                    }
-                ) {
-                    Text(stringResource(R.string.action_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { plannedTimePickerOpen = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
-    }
-
-    if (dueTimePickerOpen) {
-        val start = viewModel.dueTime ?: DefaultTimeOfDay
-        val timeState = rememberTimePickerState(
-            initialHour = start.hour,
-            initialMinute = start.minute,
-            is24Hour = true
-        )
-        AlertDialog(
-            onDismissRequest = { dueTimePickerOpen = false },
-            title = { Text(stringResource(R.string.dialog_time_picker_title)) },
-            text = { TimeInput(state = timeState) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.onDueTimeChange(LocalTime.of(timeState.hour, timeState.minute))
-                        dueTimePickerOpen = false
-                    }
-                ) {
-                    Text(stringResource(R.string.action_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { dueTimePickerOpen = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
+    dateSheet?.let { tab ->
+        TaskDateSheet(
+            viewModel = viewModel,
+            tab = tab,
+            onDismiss = { dateSheet = null }
         )
     }
 }
@@ -392,7 +278,11 @@ internal fun TaskEditorBody(
 
 /** 标题 + 日期胶囊同行，下面是「添加描述」，就是参考图里的第一张卡。 */
 @Composable
-private fun TitleCard(viewModel: TaskEditorViewModel, onOpenGroup: (EditorGroup) -> Unit) {
+private fun TitleCard(
+    viewModel: TaskEditorViewModel,
+    onOpenGroup: (EditorGroup) -> Unit,
+    onOpenDateSheet: () -> Unit
+) {
     val colors = LocalTodoColors.current
     val planned = viewModel.plannedDate
 
@@ -419,7 +309,7 @@ private fun TitleCard(viewModel: TaskEditorViewModel, onOpenGroup: (EditorGroup)
             Spacer(Modifier.width(8.dp))
             DatePill(
                 text = planned?.let { dateAndTimeText(it, viewModel.plannedTime, viewModel.today) },
-                onClick = { onOpenGroup(EditorGroup.DATE) }
+                onClick = onOpenDateSheet
             )
         }
 
@@ -587,54 +477,34 @@ private fun PanelCard(content: @Composable ColumnScope.() -> Unit) {
 
 // ---------------------------------------------------------------- 各组的行
 
+/** 日期那一组：两个入口，一个进「日期」页签，一个进「时间段」页签。 */
 @Composable
-private fun DateGroup(
-    viewModel: TaskEditorViewModel,
-    onPickPlanned: () -> Unit,
-    onPickPlannedTime: () -> Unit,
-    onPickDue: () -> Unit,
-    onPickDueTime: () -> Unit
-) {
+private fun DateGroup(viewModel: TaskEditorViewModel, onOpenSheet: (DateSheetTab) -> Unit) {
     PanelValueRow(
-        label = stringResource(R.string.task_planned_date_label),
-        valueText = viewModel.plannedDate?.let { calendarDateText(it, viewModel.today) }
+        label = stringResource(R.string.editor_tab_date),
+        valueText = viewModel.plannedDate?.let { dateAndTimeText(it, viewModel.plannedTime, viewModel.today) }
             ?: stringResource(R.string.date_not_set),
         isSet = viewModel.plannedDate != null,
         pickEnabled = true,
-        onPick = onPickPlanned,
+        onPick = { onOpenSheet(DateSheetTab.DATE) },
         onClear = { viewModel.onPlannedDateChange(null) }
     )
     PanelValueRow(
-        label = stringResource(R.string.task_planned_time_label),
-        valueText = viewModel.plannedTime?.let { timeText(it) }
-            ?: stringResource(
-                if (viewModel.plannedDate == null) R.string.planned_time_needs_date else R.string.date_not_set
-            ),
-        isSet = viewModel.plannedTime != null,
-        pickEnabled = viewModel.plannedDate != null,
-        onPick = onPickPlannedTime,
-        onClear = { viewModel.onPlannedTimeChange(null) }
-    )
-    PanelValueRow(
-        label = stringResource(R.string.task_due_date_label),
-        valueText = viewModel.dueDate?.let { calendarDateText(it, viewModel.today) }
-            ?: stringResource(R.string.date_not_set),
+        label = stringResource(R.string.editor_range_tab),
+        valueText = rangeText(viewModel),
         isSet = viewModel.dueDate != null,
         pickEnabled = true,
-        onPick = onPickDue,
+        onPick = { onOpenSheet(DateSheetTab.RANGE) },
         onClear = { viewModel.onDueDateChange(null) }
     )
-    PanelValueRow(
-        label = stringResource(R.string.task_due_time_label),
-        valueText = viewModel.dueTime?.let { timeText(it) }
-            ?: stringResource(
-                if (viewModel.dueDate == null) R.string.due_time_needs_date else R.string.date_not_set
-            ),
-        isSet = viewModel.dueTime != null,
-        pickEnabled = viewModel.dueDate != null,
-        onPick = onPickDueTime,
-        onClear = { viewModel.onDueTimeChange(null) }
-    )
+}
+
+/** 时间段的摘要：`开始 - 结束`，两头缺一个就说没设置。 */
+@Composable
+private fun rangeText(viewModel: TaskEditorViewModel): String {
+    val start = viewModel.plannedDate ?: return stringResource(R.string.date_not_set)
+    val end = viewModel.dueDate ?: return stringResource(R.string.date_not_set)
+    return "${calendarDateText(start, viewModel.today)} - ${calendarDateText(end, viewModel.today)}"
 }
 
 /** 优先级就是四象限：两个开关，下面一行实时说清楚落进哪一格。 */
@@ -775,9 +645,6 @@ private fun PanelValueRow(
 /** Keeps the rows aligned whether or not the clear button is shown. */
 private val ClearSlot = 32.dp
 
-/** The hour a time picker starts on when the task has no time there yet. */
-private val DefaultTimeOfDay: LocalTime = LocalTime.of(9, 0)
-
 /** 「明天 15:00」 / 「明天」: the text of the date pill beside the title. */
 @Composable
 private fun dateAndTimeText(date: LocalDate, time: LocalTime?, today: LocalDate): String {
@@ -787,10 +654,3 @@ private fun dateAndTimeText(date: LocalDate, time: LocalTime?, today: LocalDate)
 
 /** The time as `HH:mm`; the picker itself works on hour and minute. */
 private fun timeText(time: LocalTime): String = "%02d:%02d".format(time.hour, time.minute)
-
-/** The material date picker works in UTC midnight millis, so the date never shifts. */
-private fun localDateToUtcMillis(date: LocalDate): Long =
-    date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-
-private fun utcMillisToLocalDate(millis: Long): LocalDate =
-    Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()

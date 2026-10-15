@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -169,6 +170,10 @@ internal fun rememberNavStack(): NavStack {
 
 @Composable
 fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
+    // 冷启动先把重复任务后面两周那几次补上。生成器幂等（同一天不会生成两遍），所以
+    // 每次进来跑一遍是安全的。
+    LaunchedEffect(Unit) { repository.materializeRecurrences(repository.today()) }
+
     val nav = rememberNavStack()
     val route = nav.current
     val kind = route.substringBefore('/')

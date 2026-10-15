@@ -5,6 +5,7 @@ import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusPhase
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.Priority
+import com.personal.todo.model.RepeatRule
 import com.personal.todo.model.TaskEventType
 import java.time.LocalDate
 import java.time.LocalTime
@@ -49,6 +50,12 @@ class Converters {
 
     @TypeConverter
     fun focusPhaseFromStored(value: String): FocusPhase = FocusPhase.valueOf(value)
+
+    @TypeConverter
+    fun repeatRuleToStored(rule: RepeatRule?): String? = rule?.toStored()
+
+    @TypeConverter
+    fun repeatRuleFromStored(value: String?): RepeatRule? = RepeatRule.fromStored(value)
 
     @TypeConverter
     fun localDateToStored(date: LocalDate?): String? = date?.toString()

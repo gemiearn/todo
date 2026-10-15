@@ -39,6 +39,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * four quadrants (重要 / 紧急 are two dimensions the user sets), so the old three
  * values NORMAL / HIGH / URGENT are rewritten into the four quadrant names. No
  * column is added or dropped, so every other table is untouched.
+ *
+ * Version 8 adds `tasks.repeatRule` and `tasks.recurrenceSourceId`: a repeating
+ * task keeps its rule, and every occurrence it produces is a task of its own
+ * (spec section 4.5), pointing back at its source. Both are nullable, so every
+ * task that already exists simply does not repeat.
  */
 @Database(
     entities = [
@@ -50,7 +55,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Tag::class,
         TaskTag::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -205,8 +210,31 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7 -> v8: 重复任务。规则与「这一行是从哪条重复任务生成的」都是可空列，所以
+         * 已经存在的任务升级之后就是「不重复」——这正是它们的情况。新增的那个索引是
+         * 给生成器去重用的（同一源 + 同一天只能有一条）。
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `repeatRule` TEXT")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `recurrenceSourceId` INTEGER")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_tasks_recurrenceSourceId` " +
+                        "ON `tasks` (`recurrenceSourceId`)"
+                )
+            }
+        }
+
         /** Every migration the app ships, in order. */
-        val ALL_MIGRATIONS: Array<Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+        val ALL_MIGRATIONS: Array<Migration> = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8
+        )
     }
 }

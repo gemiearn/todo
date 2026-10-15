@@ -5,6 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.personal.todo.model.Priority
+import com.personal.todo.model.RepeatRule
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -24,6 +25,12 @@ import java.time.LocalTime
  * dates kept as `YYYY-MM-DD` text, and [dueTime] is a local time kept as
  * `HH:mm` text. A null [dueTime] means "due at the end of [dueDate]". Reminder
  * time stays in phase 4 and will be added by a later migration.
+ *
+ * [repeatRule] makes this row the *source* of a repeating series: the rule lives
+ * here and nowhere else, and every occurrence it produces is a separate task
+ * (spec section 4.5). [recurrenceSourceId] is that link seen from the generated
+ * occurrence's side; it carries no foreign key, because a source that was soft
+ * deleted must not take the occurrences that already exist with it.
  */
 @Entity(
     tableName = "tasks",
@@ -41,7 +48,7 @@ import java.time.LocalTime
             onDelete = ForeignKey.RESTRICT
         )
     ],
-    indices = [Index("listId"), Index("parentTaskId")]
+    indices = [Index("listId"), Index("parentTaskId"), Index("recurrenceSourceId")]
 )
 data class Task(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
@@ -67,5 +74,9 @@ data class Task(
     /** Local date it is due; the only field that can make a task overdue. */
     val dueDate: LocalDate? = null,
     /** Local time it is due; null means "at the end of [dueDate]". */
-    val dueTime: LocalTime? = null
+    val dueTime: LocalTime? = null,
+    /** 重复规则。有它，这一行就是「带规则的那条任务」，规则只存在这里。 */
+    val repeatRule: RepeatRule? = null,
+    /** 生成这条任务的那条重复任务的 id；它就是某一次，不是源。 */
+    val recurrenceSourceId: Long? = null
 )

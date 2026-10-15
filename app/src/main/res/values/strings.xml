@@ -44,7 +44,6 @@
     <string name="dialog_exit_title">退出应用</string>
     <string name="dialog_exit_message">确定要退出吗？任务和专注记录都已经保存在本机。</string>
     <string name="date_not_set">未设置</string>
-    <string name="due_time_needs_date">先设置截止日期</string>
 
     <!-- 搜索与排序 -->
     <string name="action_search">搜索</string>
@@ -127,7 +126,6 @@
     <string name="task_list_label">所属清单</string>
     <string name="task_planned_date_label">计划日期</string>
     <string name="task_planned_time_label">计划时间</string>
-    <string name="planned_time_needs_date">先设置计划日期</string>
     <string name="dialog_planned_time_picker_title">选择计划时间</string>
     <string name="task_due_date_label">截止日期</string>
     <string name="task_due_time_label">截止时间</string>
@@ -169,6 +167,25 @@
     <string name="editor_toggle_important">重要</string>
     <string name="editor_toggle_urgent">紧急</string>
     <string name="editor_priority_result">落在「%1$s」这一格</string>
+    <!-- 日期弹层（照「待办时间」那张图）：日期 / 时间段两个页签 + 时间 / 重复两行 -->
+    <string name="editor_range_tab">时间段</string>
+    <string name="editor_time_label">时间</string>
+    <string name="editor_repeat_label">重复</string>
+    <string name="editor_value_none">无</string>
+    <string name="editor_repeat_none">不重复</string>
+    <string name="editor_previous_month">上个月</string>
+    <string name="editor_next_month">下个月</string>
+    <!-- 重复规则的名字 -->
+    <string name="repeat_daily">每天</string>
+    <string name="repeat_every_other_day">每两天</string>
+    <string name="repeat_weekdays">每个工作日</string>
+    <string name="repeat_weekends">每个周末</string>
+    <string name="repeat_weekly">每周</string>
+    <string name="repeat_monthly">每月</string>
+    <string name="repeat_weekly_on">每周%1$s</string>
+    <string name="repeat_monthly_on">每月 %1$d 号</string>
+    <string name="repeat_weekly_title">每周哪一天</string>
+    <string name="repeat_monthly_title">每月哪一号</string>
 
     <!-- 空状态 -->
     <string name="empty_inbox">收件箱还没有任务，点右下角的按钮新建一个</string>

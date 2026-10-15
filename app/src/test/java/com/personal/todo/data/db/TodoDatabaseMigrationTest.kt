@@ -7,6 +7,8 @@ import com.personal.todo.data.FocusRepository
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.Priority
+import com.personal.todo.model.RepeatKind
+import com.personal.todo.model.RepeatRule
 import com.personal.todo.model.TaskEventType
 import java.time.LocalDate
 import java.time.LocalTime
@@ -357,6 +359,83 @@ class TodoDatabaseMigrationTest {
                 )
             }
             sqlite.version = 6
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
+     * v7 -> v8: 重复任务。两个新列都可空，所以已经存在的任务升级之后就是「不重复」；
+     * 升完之后带规则的重复任务能正常写进去、读出来。
+     */
+    @Test
+    fun migratingFromVersion7AddsRepeatsAndKeepsEveryTask() = runBlocking {
+        val name = "migration-7-to-8.db"
+        context.deleteDatabase(name)
+        createVersion7Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val task = requireNotNull(db.taskDao().getById(1L))
+            assertEquals("迁移前的任务", task.title)
+            assertEquals(Priority.IMPORTANT_NOT_URGENT, task.priority)
+            assertNull("老任务不会凭空长出规则", task.repeatRule)
+            assertNull(task.recurrenceSourceId)
+
+            db.taskDao().update(
+                task.copy(
+                    plannedDate = LocalDate.of(2026, 10, 15),
+                    repeatRule = RepeatRule(RepeatKind.DAILY)
+                )
+            )
+            assertEquals(
+                RepeatRule(RepeatKind.DAILY),
+                db.taskDao().getById(1L)?.repeatRule
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * Builds a file backed database exactly as version 7 would have left it: the
+     * same DDL as version 6 (that upgrade only rewrote values), one task.
+     */
+    private fun createVersion7Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V5_TASK_LISTS)
+            sqlite.execSQL(V5_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V6_FOCUS_SESSIONS)
+            sqlite.execSQL(V6_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            // 版本 7 的表结构和版本 6 完全一样，所以 identity hash 也是同一个。
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V6_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime) " +
+                    "VALUES ('迁移前的任务', NULL, 1, NULL, 'IMPORTANT_NOT_URGENT', NULL, NULL, 0, 1000, 1000, " +
+                    "NULL, NULL, NULL, NULL)"
+            )
+            sqlite.version = 7
         } finally {
             sqlite.close()
         }

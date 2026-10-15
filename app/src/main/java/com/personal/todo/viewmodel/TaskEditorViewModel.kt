@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Priority
+import com.personal.todo.model.RepeatRule
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +70,16 @@ class TaskEditorViewModel(
     var dueTime by mutableStateOf<LocalTime?>(null)
         private set
 
+    /**
+     * 重复规则。规则只留在这条任务上，算出来的每一次都是**独立任务**，所以这里只要
+     * 一个动作：开 / 换 / 关。
+     *
+     * 规则需要一个起点，也就是开始日期；点重复时还没有日期就先落到今天，不会出现
+     * 「有规则却没有起点」这种状态。
+     */
+    var repeatRule by mutableStateOf<RepeatRule?>(null)
+        private set
+
     /** The day the pickers open on and the day 今天 / 明天 are measured from. */
     val today: LocalDate = repository.today()
 
@@ -90,6 +101,7 @@ class TaskEditorViewModel(
                 plannedTime = task.plannedTime
                 dueDate = task.dueDate
                 dueTime = task.dueTime
+                repeatRule = task.repeatRule
             }
         }
     }
@@ -137,6 +149,12 @@ class TaskEditorViewModel(
         dueTime = value
     }
 
+    /** 开、换、关重复规则；没有开始日期就先落到今天，规则总要有个起点。 */
+    fun onRepeatChange(value: RepeatRule?) {
+        repeatRule = value
+        if (value != null && plannedDate == null) plannedDate = today
+    }
+
     /**
      * Consumes the save result. A view model can outlive its screen (the same
      * route opened again gets a fresh one now, but this keeps the screen from
@@ -162,7 +180,8 @@ class TaskEditorViewModel(
                     plannedDate = plannedDate,
                     plannedTime = plannedTime,
                     dueDate = dueDate,
-                    dueTime = dueTime
+                    dueTime = dueTime,
+                    repeatRule = repeatRule
                 )
             } else {
                 repository.updateTask(
@@ -174,9 +193,13 @@ class TaskEditorViewModel(
                     plannedDate = plannedDate,
                     plannedTime = plannedTime,
                     dueDate = dueDate,
-                    dueTime = dueTime
+                    dueTime = dueTime,
+                    repeatRule = repeatRule
                 )
             }
+            // 带规则的这条任务刚存下，立刻把后面两周那几次也落成独立任务，用户一回到
+            // 列表就能看见它们。
+            if (repeatRule != null) repository.materializeRecurrences(today)
             _saved.value = true
         }
     }
