@@ -41,7 +41,11 @@ class TaskEditorViewModel(
     var notes by mutableStateOf("")
         private set
 
-    var priority by mutableStateOf(Priority.NORMAL)
+    /**
+     * 优先级就是四象限：「重要」与「紧急」两个开关的组合。界面上是两个开关，存下去
+     * 的仍是 [Priority] 那一个值，四象限页直接读它。
+     */
+    var priority by mutableStateOf(Priority.DEFAULT)
         private set
 
     var listId by mutableLongStateOf(defaultListId)
@@ -99,8 +103,14 @@ class TaskEditorViewModel(
         notes = value
     }
 
-    fun onPriorityChange(value: Priority) {
-        priority = value
+    /** 打开 / 关掉「重要」这一维，另一维保持不变。 */
+    fun onImportantChange(value: Boolean) {
+        priority = Priority.of(important = value, urgent = priority.urgent)
+    }
+
+    /** 打开 / 关掉「紧急」这一维，另一维保持不变。 */
+    fun onUrgentChange(value: Boolean) {
+        priority = Priority.of(important = priority.important, urgent = value)
     }
 
     fun onListChange(value: Long) {

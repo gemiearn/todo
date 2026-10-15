@@ -155,11 +155,11 @@ class TaskRepositoryTest {
     fun creatingATaskRequiresATitleAndCreatesACreatedEvent() = runBlocking {
         assertFailsWithIllegalArgument { repository.createTask("   ", inboxId) }
 
-        val taskId = repository.createTask("写周报", inboxId, notes = "  含下季度计划  ", priority = Priority.HIGH)
+        val taskId = repository.createTask("写周报", inboxId, notes = "  含下季度计划  ", priority = Priority.IMPORTANT_NOT_URGENT)
         val task = requireNotNull(repository.getTask(taskId))
         assertEquals("写周报", task.title)
         assertEquals("含下季度计划", task.notes)
-        assertEquals(Priority.HIGH, task.priority)
+        assertEquals(Priority.IMPORTANT_NOT_URGENT, task.priority)
         assertNull(task.completedAt)
         assertNull(task.deletedAt)
 
@@ -237,12 +237,12 @@ class TaskRepositoryTest {
         val completedAt = repository.getTask(taskId)?.completedAt
         advanceClock()
 
-        repository.updateTask(taskId, title = "写周报（补充）", notes = null, priority = Priority.URGENT, listId = inboxId)
+        repository.updateTask(taskId, title = "写周报（补充）", notes = null, priority = Priority.IMPORTANT_URGENT, listId = inboxId)
 
         val task = requireNotNull(repository.getTask(taskId))
         assertEquals(completedAt, task.completedAt)
         assertEquals("写周报（补充）", task.title)
-        assertEquals(Priority.URGENT, task.priority)
+        assertEquals(Priority.IMPORTANT_URGENT, task.priority)
     }
 
     @Test
@@ -264,7 +264,7 @@ class TaskRepositoryTest {
     fun theHistoryKeepsTheTitleSnapshotOfEarlierEvents() = runBlocking {
         val taskId = repository.createTask("旧标题", inboxId)
         advanceClock()
-        repository.updateTask(taskId, title = "新标题", notes = null, priority = Priority.NORMAL, listId = inboxId)
+        repository.updateTask(taskId, title = "新标题", notes = null, priority = Priority.NOT_IMPORTANT_NOT_URGENT, listId = inboxId)
         advanceClock()
         repository.completeTask(taskId)
 
@@ -329,7 +329,7 @@ class TaskRepositoryTest {
         val parentId = repository.createTask("父任务", inboxId)
         val subtaskId = repository.addSubtask(parentId, "子任务")
 
-        repository.updateTask(subtaskId, title = "子任务改", notes = null, priority = Priority.NORMAL, listId = otherListId)
+        repository.updateTask(subtaskId, title = "子任务改", notes = null, priority = Priority.NOT_IMPORTANT_NOT_URGENT, listId = otherListId)
 
         assertEquals(inboxId, repository.getTask(subtaskId)?.listId)
         assertEquals("子任务改", repository.getTask(subtaskId)?.title)

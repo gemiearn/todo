@@ -243,7 +243,7 @@ class TaskRepository(
         title: String,
         listId: Long,
         notes: String? = null,
-        priority: Priority = Priority.NORMAL,
+        priority: Priority = Priority.DEFAULT,
         parentTaskId: Long? = null,
         plannedDate: LocalDate? = null,
         plannedTime: LocalTime? = null,

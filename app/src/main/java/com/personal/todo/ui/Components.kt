@@ -21,7 +21,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -101,14 +100,28 @@ fun rememberNowMillis(): Long {
     return now
 }
 
+/** 优先级的名字就是四象限的名字：Ⅰ 重要且紧急，Ⅱ 重要不紧急，Ⅲ 不重要但紧急，Ⅳ 不重要不紧急。 */
 @Composable
 fun priorityLabel(priority: Priority): String = stringResource(
     when (priority) {
-        Priority.NORMAL -> R.string.priority_normal
-        Priority.HIGH -> R.string.priority_high
-        Priority.URGENT -> R.string.priority_urgent
+        Priority.IMPORTANT_URGENT -> R.string.quadrant_important_urgent
+        Priority.IMPORTANT_NOT_URGENT -> R.string.quadrant_important_not_urgent
+        Priority.NOT_IMPORTANT_URGENT -> R.string.quadrant_not_important_urgent
+        Priority.NOT_IMPORTANT_NOT_URGENT -> R.string.quadrant_not_important_not_urgent
     }
 )
+
+/** 四象限的四个颜色：任务卡左边的色条、四象限页的角标都用它。 */
+@Composable
+fun priorityColor(priority: Priority): Color {
+    val colors = LocalTodoColors.current
+    return when (priority) {
+        Priority.IMPORTANT_URGENT -> colors.barUrgent
+        Priority.IMPORTANT_NOT_URGENT -> colors.barHigh
+        Priority.NOT_IMPORTANT_URGENT -> colors.accent
+        Priority.NOT_IMPORTANT_NOT_URGENT -> colors.barNormal
+    }
+}
 
 @Composable
 fun eventLabel(type: TaskEventType): String = stringResource(
@@ -239,11 +252,7 @@ fun TaskCard(
     }
     val countdownLabel = countdownText(countdown)
 
-    val barColor = when (task.priority) {
-        Priority.NORMAL -> colors.barNormal
-        Priority.HIGH -> colors.barHigh
-        Priority.URGENT -> colors.barUrgent
-    }
+    val barColor = priorityColor(task.priority)
     val titleColor = if (completed) colors.doneInk else MaterialTheme.colorScheme.onSurface
 
     Row(
@@ -469,24 +478,6 @@ fun DeleteTaskConfirmDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
-}
-
-@Composable
-fun PriorityChips(
-    selected: Priority,
-    onSelect: (Priority) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(modifier = modifier) {
-        Priority.entries.forEach { priority ->
-            FilterChip(
-                selected = priority == selected,
-                onClick = { onSelect(priority) },
-                label = { Text(priorityLabel(priority)) },
-                modifier = Modifier.padding(end = 8.dp)
-            )
-        }
-    }
 }
 
 @Composable

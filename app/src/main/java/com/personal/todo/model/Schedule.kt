@@ -38,37 +38,7 @@ object Schedule {
     fun todayOf(nowMillis: Long, zone: ZoneId): LocalDate =
         Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
 
-    /**
-     * Four quadrant rule taken from the tick-list screenshots the user supplied:
-     * important = high or urgent priority; urgent = due today or already overdue.
-     * A task without a due date is never urgent, so it drifts between the two
-     * "not urgent" quadrants only. Grouping never changes a task's date.
-     */
-    fun isImportant(priority: Priority): Boolean =
-        priority == Priority.HIGH || priority == Priority.URGENT
-
-    fun isUrgent(nowMillis: Long, dueDate: LocalDate?, dueTime: LocalTime?, zone: ZoneId): Boolean {
-        if (dueDate == null) return false
-        return dueDate == todayOf(nowMillis, zone) || isOverdue(nowMillis, dueDate, dueTime, zone)
-    }
-
-    fun quadrantOf(
-        nowMillis: Long,
-        priority: Priority,
-        dueDate: LocalDate?,
-        dueTime: LocalTime?,
-        zone: ZoneId
-    ): Quadrant {
-        val important = isImportant(priority)
-        val urgent = isUrgent(nowMillis, dueDate, dueTime, zone)
-        return when {
-            important && urgent -> Quadrant.IMPORTANT_URGENT
-            important -> Quadrant.IMPORTANT_NOT_URGENT
-            urgent -> Quadrant.NOT_IMPORTANT_URGENT
-            else -> Quadrant.NOT_IMPORTANT_NOT_URGENT
-        }
-    }
-
+    /** Whole days from [today] to [date]; negative when the date has passed. */
     fun daysUntil(date: LocalDate, today: LocalDate): Long = ChronoUnit.DAYS.between(today, date)
 
     /**
@@ -118,14 +88,6 @@ object Schedule {
         val days = ChronoUnit.DAYS.between(dueDate, todayOf(nowMillis, zone))
         return if (days <= 0L) DateLabel.Overdue else DateLabel.OverdueDays(days.toInt())
     }
-}
-
-/** The four quadrants of the "四象限" view, in the order they are displayed. */
-enum class Quadrant {
-    IMPORTANT_URGENT,
-    IMPORTANT_NOT_URGENT,
-    NOT_IMPORTANT_URGENT,
-    NOT_IMPORTANT_NOT_URGENT
 }
 
 /**

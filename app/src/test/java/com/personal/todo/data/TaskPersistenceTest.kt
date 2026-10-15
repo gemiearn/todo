@@ -39,7 +39,7 @@ class TaskPersistenceTest {
         val firstRepository = TaskRepository(first, inboxName = "收件箱", now = { 5_000L })
         val inboxId = firstRepository.ensureInbox()
         val listId = firstRepository.createList("工作")
-        val taskId = firstRepository.createTask("跨重启任务", listId, notes = "备注", priority = Priority.URGENT)
+        val taskId = firstRepository.createTask("跨重启任务", listId, notes = "备注", priority = Priority.IMPORTANT_URGENT)
         firstRepository.completeTask(taskId)
         first.close()
 
@@ -50,7 +50,7 @@ class TaskPersistenceTest {
             val task = requireNotNull(repository.getTask(taskId))
             assertEquals("跨重启任务", task.title)
             assertEquals("备注", task.notes)
-            assertEquals(Priority.URGENT, task.priority)
+            assertEquals(Priority.IMPORTANT_URGENT, task.priority)
             assertEquals(listId, task.listId)
             assertNotNull(task.completedAt)
 

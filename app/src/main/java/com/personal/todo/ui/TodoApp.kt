@@ -108,14 +108,11 @@ private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_STATS = "stats"
 private const val ROUTE_CRASH = "crash"
 private const val ROUTE_TASK = "task"
-private const val ROUTE_NEW = "new"
 private const val ROUTE_EDIT = "edit"
 
 private fun listRoute(listId: Long) = "$ROUTE_LIST/$listId"
 
 private fun taskRoute(taskId: Long) = "$ROUTE_TASK/$taskId"
-
-private fun newTaskRoute(listId: Long) = "$ROUTE_NEW/$listId"
 
 private fun editTaskRoute(taskId: Long) = "$ROUTE_EDIT/$taskId"
 
@@ -249,19 +246,6 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
                 zone = repository.zone,
                 onOpenTask = { nav.push(taskRoute(it)) },
                 onEdit = { nav.push(editTaskRoute(taskId)) },
-                onBack = { nav.pop() }
-            )
-        }
-
-        ROUTE_NEW -> {
-            val listId = requireNotNull(argument) { "新建任务路由缺少清单 id: $route" }
-            val editorViewModel: TaskEditorViewModel = viewModel(
-                key = "editor-$route-${nav.visit}",
-                factory = TaskEditorViewModel.factory(repository, taskId = null, defaultListId = listId)
-            )
-            TaskEditorScreen(
-                viewModel = editorViewModel,
-                onSaved = { nav.pop() },
                 onBack = { nav.pop() }
             )
         }
@@ -405,6 +389,18 @@ internal fun MainScreen(
     var renameTarget by remember { mutableStateOf<TaskList?>(null) }
     var deleteTarget by remember { mutableStateOf<TaskList?>(null) }
     var pendingTaskDelete by remember { mutableStateOf<Task?>(null) }
+
+    // 新建任务走底部弹层（照「创建任务UI-2」），不再是一页推入的路由。每打开一次就
+    // 换一个 view model key，免得复用上一次那个已经置上 saved 标志的实例、一进来就把
+    // 自己弹回去。
+    var newTaskSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var newTaskSheetVisit by rememberSaveable { mutableIntStateOf(0) }
+    var newTaskSheetListId by rememberSaveable { mutableLongStateOf(0L) }
+    val openNewTaskSheet: (Long) -> Unit = { listId ->
+        newTaskSheetListId = listId
+        newTaskSheetVisit++
+        newTaskSheetOpen = true
+    }
 
     val deletedMessage = stringResource(R.string.message_task_deleted)
     val completedMessage = stringResource(R.string.message_task_completed)
@@ -620,7 +616,7 @@ internal fun MainScreen(
             floatingActionButton = {
                 val listId = targetListId
                 if (listId != null) {
-                    FloatingActionButton(onClick = { nav.push(newTaskRoute(listId)) }) {
+                    FloatingActionButton(onClick = { openNewTaskSheet(listId) }) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = stringResource(R.string.action_new_task)
@@ -828,6 +824,22 @@ internal fun MainScreen(
                 pendingTaskDelete = null
             },
             onDismiss = { pendingTaskDelete = null }
+        )
+    }
+
+    if (newTaskSheetOpen) {
+        val editorViewModel: TaskEditorViewModel = viewModel(
+            key = "editor-sheet-$newTaskSheetVisit",
+            factory = TaskEditorViewModel.factory(
+                repository = repository,
+                taskId = null,
+                defaultListId = newTaskSheetListId
+            )
+        )
+        NewTaskSheet(
+            viewModel = editorViewModel,
+            onSaved = { newTaskSheetOpen = false },
+            onDismiss = { newTaskSheetOpen = false }
         )
     }
 }

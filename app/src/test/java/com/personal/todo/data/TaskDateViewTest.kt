@@ -342,7 +342,7 @@ class TaskDateViewTest {
             title = "任务",
             listId = inboxId,
             notes = "备注",
-            priority = Priority.HIGH,
+            priority = Priority.IMPORTANT_NOT_URGENT,
             plannedDate = today,
             dueDate = today.plusDays(2)
         )
@@ -351,7 +351,7 @@ class TaskDateViewTest {
             taskId = taskId,
             title = "任务",
             notes = "备注",
-            priority = Priority.HIGH,
+            priority = Priority.IMPORTANT_NOT_URGENT,
             listId = inboxId,
             plannedDate = null,
             dueDate = today.plusDays(2)
@@ -360,7 +360,7 @@ class TaskDateViewTest {
         val task = requireNotNull(repository.getTask(taskId))
         assertNull(task.plannedDate)
         assertEquals(today.plusDays(2), task.dueDate)
-        assertEquals(Priority.HIGH, task.priority)
+        assertEquals(Priority.IMPORTANT_NOT_URGENT, task.priority)
         assertEquals("备注", task.notes)
     }
 
@@ -481,7 +481,7 @@ class TaskDateViewTest {
             taskId = taskId,
             title = "上午写报告",
             notes = null,
-            priority = Priority.NORMAL,
+            priority = Priority.NOT_IMPORTANT_NOT_URGENT,
             listId = inboxId,
             plannedDate = null,
             plannedTime = null,
@@ -510,7 +510,7 @@ class TaskDateViewTest {
             taskId = taskId,
             title = "带日期",
             notes = null,
-            priority = Priority.NORMAL,
+            priority = Priority.NOT_IMPORTANT_NOT_URGENT,
             listId = inboxId,
             plannedDate = today.plusDays(3),
             dueDate = today.plusDays(1),
@@ -537,7 +537,7 @@ class TaskDateViewTest {
                 taskId = taskId,
                 title = "带日期",
                 notes = null,
-                priority = Priority.NORMAL,
+                priority = Priority.NOT_IMPORTANT_NOT_URGENT,
                 listId = inboxId,
                 plannedDate = today,
                 dueDate = null,

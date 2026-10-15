@@ -49,7 +49,7 @@ data class Task(
     val notes: String? = null,
     val listId: Long,
     val parentTaskId: Long? = null,
-    val priority: Priority = Priority.NORMAL,
+    val priority: Priority = Priority.DEFAULT,
     val completedAt: Long? = null,
     val deletedAt: Long? = null,
     /** Kept for manual ordering; phase 1 sorts by creation time. */

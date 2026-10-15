@@ -16,7 +16,7 @@ class TaskQueryTest {
         id: Long,
         title: String = "任务 $id",
         notes: String? = null,
-        priority: Priority = Priority.NORMAL,
+        priority: Priority = Priority.NOT_IMPORTANT_NOT_URGENT,
         createdAt: Long = id,
         plannedDate: LocalDate? = null,
         dueDate: LocalDate? = null
@@ -74,7 +74,7 @@ class TaskQueryTest {
         val undated = task(1)
         val later = task(2, plannedDate = LocalDate.of(2026, 10, 20))
         val earlierNormal = task(3, plannedDate = LocalDate.of(2026, 10, 18))
-        val earlierUrgent = task(4, plannedDate = LocalDate.of(2026, 10, 18), priority = Priority.URGENT)
+        val earlierUrgent = task(4, plannedDate = LocalDate.of(2026, 10, 18), priority = Priority.IMPORTANT_URGENT)
 
         val sorted = sortTasks(listOf(undated, later, earlierNormal, earlierUrgent), TaskSort.DEFAULT)
 
@@ -91,9 +91,9 @@ class TaskQueryTest {
 
     @Test
     fun orderingByPriorityIgnoresTheDateAndKeepsTheRelativeOrderOfEquals() {
-        val first = task(1, priority = Priority.HIGH)
-        val second = task(2, priority = Priority.HIGH)
-        val urgent = task(3, priority = Priority.URGENT, plannedDate = LocalDate.of(2026, 12, 31))
+        val first = task(1, priority = Priority.IMPORTANT_NOT_URGENT)
+        val second = task(2, priority = Priority.IMPORTANT_NOT_URGENT)
+        val urgent = task(3, priority = Priority.IMPORTANT_URGENT, plannedDate = LocalDate.of(2026, 12, 31))
         val normal = task(4)
 
         val sorted = sortTasks(listOf(first, second, urgent, normal), TaskSort.PRIORITY)

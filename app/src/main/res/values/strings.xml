@@ -123,10 +123,8 @@
     <!-- 任务字段 -->
     <string name="task_title_label">标题</string>
     <string name="task_title_required">标题不能为空</string>
-    <string name="task_notes_label">备注（可选）</string>
     <string name="task_priority_label">优先级</string>
     <string name="task_list_label">所属清单</string>
-    <string name="task_date_label">日期与时间</string>
     <string name="task_planned_date_label">计划日期</string>
     <string name="task_planned_time_label">计划时间</string>
     <string name="planned_time_needs_date">先设置计划日期</string>
@@ -134,9 +132,6 @@
     <string name="task_due_date_label">截止日期</string>
     <string name="task_due_time_label">截止时间</string>
     <string name="dialog_time_picker_title">选择截止时间</string>
-    <string name="priority_normal">普通</string>
-    <string name="priority_high">高</string>
-    <string name="priority_urgent">紧急</string>
 
     <!-- 任务详情 -->
     <string name="task_detail_title">任务详情</string>
@@ -161,9 +156,19 @@
     <string name="event_deleted">删除</string>
     <string name="event_restored">恢复</string>
 
-    <!-- 编辑器 -->
-    <string name="editor_title_new">新建任务</string>
+    <!-- 编辑器：顶部 ✕ 与 ↑、工具条的四组、优先级两个开关（照创建任务UI的图） -->
     <string name="editor_title_edit">编辑任务</string>
+    <string name="editor_tab_date">日期</string>
+    <string name="editor_tab_list">清单</string>
+    <string name="editor_tab_notes">备注</string>
+    <string name="editor_add_date">添加日期</string>
+    <string name="editor_add_notes">添加备注</string>
+    <string name="editor_quick_next_week">下周</string>
+    <string name="editor_quick_next_month">下个月</string>
+    <string name="editor_quick_pick_date">选日期</string>
+    <string name="editor_toggle_important">重要</string>
+    <string name="editor_toggle_urgent">紧急</string>
+    <string name="editor_priority_result">落在「%1$s」这一格</string>
 
     <!-- 空状态 -->
     <string name="empty_inbox">收件箱还没有任务，点右下角的按钮新建一个</string>

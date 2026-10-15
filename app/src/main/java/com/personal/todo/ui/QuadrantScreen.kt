@@ -35,8 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.Task
-import com.personal.todo.model.Quadrant
-import com.personal.todo.model.Schedule
+import com.personal.todo.model.Priority
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
@@ -48,10 +47,10 @@ private val QuadrantCardShape = RoundedCornerShape(14.dp)
  * with a coloured roman numeral badge, the tasks that belong to it and - when it
  * is empty - the grey "没有任务" in the middle.
  *
- * The grouping follows the rule of [Schedule.quadrantOf]: important is the
- * priority, urgent is "due today or overdue". Grouping is a view over the stored
- * dates, so a task can drift into another quadrant as the day passes without any
- * of its dates changing.
+ * A task's quadrant *is* its stored [Priority]: 重要 and 紧急 are two switches the
+ * user sets in the editor, not something derived from a due date. A task
+ * therefore only ever changes box when the user moves it, never because a day
+ * passed.
  */
 @Composable
 fun QuadrantScreen(
@@ -69,13 +68,12 @@ fun QuadrantScreen(
 
     // Open tasks first, then the finished ones faded below: the screenshots show
     // the finished tasks of a quadrant the same way.
-    val grouped = remember(open, completed, nowMillis, zone) {
-        val byQuadrant = mutableMapOf<Quadrant, MutableList<Task>>()
+    val grouped = remember(open, completed) {
+        val byPriority = mutableMapOf<Priority, MutableList<Task>>()
         (open + completed).forEach { task ->
-            val quadrant = Schedule.quadrantOf(nowMillis, task.priority, task.dueDate, task.dueTime, zone)
-            byQuadrant.getOrPut(quadrant) { mutableListOf() }.add(task)
+            byPriority.getOrPut(task.priority) { mutableListOf() }.add(task)
         }
-        byQuadrant
+        byPriority
     }
 
     Column(
@@ -89,8 +87,8 @@ fun QuadrantScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             QuadrantCard(
-                quadrant = Quadrant.IMPORTANT_URGENT,
-                tasks = grouped[Quadrant.IMPORTANT_URGENT].orEmpty(),
+                priority = Priority.IMPORTANT_URGENT,
+                tasks = grouped[Priority.IMPORTANT_URGENT].orEmpty(),
                 nowMillis = nowMillis,
                 zone = zone,
                 onOpenTask = onOpenTask,
@@ -99,8 +97,8 @@ fun QuadrantScreen(
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
             QuadrantCard(
-                quadrant = Quadrant.IMPORTANT_NOT_URGENT,
-                tasks = grouped[Quadrant.IMPORTANT_NOT_URGENT].orEmpty(),
+                priority = Priority.IMPORTANT_NOT_URGENT,
+                tasks = grouped[Priority.IMPORTANT_NOT_URGENT].orEmpty(),
                 nowMillis = nowMillis,
                 zone = zone,
                 onOpenTask = onOpenTask,
@@ -114,8 +112,8 @@ fun QuadrantScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             QuadrantCard(
-                quadrant = Quadrant.NOT_IMPORTANT_URGENT,
-                tasks = grouped[Quadrant.NOT_IMPORTANT_URGENT].orEmpty(),
+                priority = Priority.NOT_IMPORTANT_URGENT,
+                tasks = grouped[Priority.NOT_IMPORTANT_URGENT].orEmpty(),
                 nowMillis = nowMillis,
                 zone = zone,
                 onOpenTask = onOpenTask,
@@ -124,8 +122,8 @@ fun QuadrantScreen(
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
             QuadrantCard(
-                quadrant = Quadrant.NOT_IMPORTANT_NOT_URGENT,
-                tasks = grouped[Quadrant.NOT_IMPORTANT_NOT_URGENT].orEmpty(),
+                priority = Priority.NOT_IMPORTANT_NOT_URGENT,
+                tasks = grouped[Priority.NOT_IMPORTANT_NOT_URGENT].orEmpty(),
                 nowMillis = nowMillis,
                 zone = zone,
                 onOpenTask = onOpenTask,
@@ -139,7 +137,7 @@ fun QuadrantScreen(
 
 @Composable
 private fun QuadrantCard(
-    quadrant: Quadrant,
+    priority: Priority,
     tasks: List<Task>,
     nowMillis: Long,
     zone: ZoneId,
@@ -149,7 +147,7 @@ private fun QuadrantCard(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
-    val accent = quadrantColor(quadrant)
+    val accent = priorityColor(priority)
 
     Column(
         modifier = modifier
@@ -168,14 +166,14 @@ private fun QuadrantCard(
                     .padding(horizontal = 6.dp, vertical = 1.dp)
             ) {
                 Text(
-                    text = stringResource(quadrantNumeralRes(quadrant)),
+                    text = stringResource(priorityNumeralRes(priority)),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White
                 )
             }
             Spacer(Modifier.width(8.dp))
             Text(
-                text = stringResource(quadrantLabelRes(quadrant)),
+                text = priorityLabel(priority),
                 style = MaterialTheme.typography.labelLarge,
                 color = accent
             )
@@ -269,28 +267,10 @@ private fun QuadrantTaskRow(
     }
 }
 
-/** Ⅰ red, Ⅱ amber, Ⅲ blue, Ⅳ green - the badges of the screenshots. */
-@Composable
-private fun quadrantColor(quadrant: Quadrant): Color {
-    val colors = LocalTodoColors.current
-    return when (quadrant) {
-        Quadrant.IMPORTANT_URGENT -> colors.barUrgent
-        Quadrant.IMPORTANT_NOT_URGENT -> colors.barHigh
-        Quadrant.NOT_IMPORTANT_URGENT -> colors.accent
-        Quadrant.NOT_IMPORTANT_NOT_URGENT -> colors.barNormal
-    }
-}
-
-private fun quadrantLabelRes(quadrant: Quadrant): Int = when (quadrant) {
-    Quadrant.IMPORTANT_URGENT -> R.string.quadrant_important_urgent
-    Quadrant.IMPORTANT_NOT_URGENT -> R.string.quadrant_important_not_urgent
-    Quadrant.NOT_IMPORTANT_URGENT -> R.string.quadrant_not_important_urgent
-    Quadrant.NOT_IMPORTANT_NOT_URGENT -> R.string.quadrant_not_important_not_urgent
-}
-
-private fun quadrantNumeralRes(quadrant: Quadrant): Int = when (quadrant) {
-    Quadrant.IMPORTANT_URGENT -> R.string.quadrant_numeral_1
-    Quadrant.IMPORTANT_NOT_URGENT -> R.string.quadrant_numeral_2
-    Quadrant.NOT_IMPORTANT_URGENT -> R.string.quadrant_numeral_3
-    Quadrant.NOT_IMPORTANT_NOT_URGENT -> R.string.quadrant_numeral_4
+/** 角标上的罗马数字：Ⅰ 红、Ⅱ 琥珀、Ⅲ 蓝、Ⅳ 绿，颜色见 [priorityColor]。 */
+internal fun priorityNumeralRes(priority: Priority): Int = when (priority) {
+    Priority.IMPORTANT_URGENT -> R.string.quadrant_numeral_1
+    Priority.IMPORTANT_NOT_URGENT -> R.string.quadrant_numeral_2
+    Priority.NOT_IMPORTANT_URGENT -> R.string.quadrant_numeral_3
+    Priority.NOT_IMPORTANT_NOT_URGENT -> R.string.quadrant_numeral_4
 }

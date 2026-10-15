@@ -34,6 +34,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * `active_timer.listNameSnapshot`: the 清单 a session's task was in. Both are
  * nullable, so sessions (and a running timer) recorded before the upgrade simply
  * have no list and are reported as 未关联 - nothing is guessed.
+ *
+ * Version 7 changes what `tasks.priority` holds, not its shape: 优先级 is now the
+ * four quadrants (重要 / 紧急 are two dimensions the user sets), so the old three
+ * values NORMAL / HIGH / URGENT are rewritten into the four quadrant names. No
+ * column is added or dropped, so every other table is untouched.
  */
 @Database(
     entities = [
@@ -45,7 +50,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Tag::class,
         TaskTag::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -184,8 +189,24 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 -> v7: 优先级变成四象限。表结构一点没动，只把已经存下来的三个旧值改写成
+         * 四个象限名——归一化之后，读取端的 [com.personal.todo.model.Priority.fromStored]
+         * 就不需要再认识旧名字了。
+         *
+         * 映射：NORMAL → 不重要不紧急、HIGH → 重要不紧急、URGENT → 重要且紧急（原来的
+         * 「高」和「紧急」都算重要，所以两档都落在「重要」里）。
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE `tasks` SET `priority` = 'IMPORTANT_URGENT' WHERE `priority` = 'URGENT'")
+                db.execSQL("UPDATE `tasks` SET `priority` = 'IMPORTANT_NOT_URGENT' WHERE `priority` = 'HIGH'")
+                db.execSQL("UPDATE `tasks` SET `priority` = 'NOT_IMPORTANT_NOT_URGENT' WHERE `priority` = 'NORMAL'")
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
     }
 }

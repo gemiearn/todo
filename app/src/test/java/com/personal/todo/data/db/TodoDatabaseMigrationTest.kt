@@ -48,7 +48,7 @@ class TodoDatabaseMigrationTest {
         try {
             val task = requireNotNull(db.taskDao().getById(1L))
             assertEquals("迁移前的任务", task.title)
-            assertEquals(Priority.HIGH, task.priority)
+            assertEquals("「HIGH」这一路迁移下来会变成「重要不紧急」", Priority.IMPORTANT_NOT_URGENT, task.priority)
             assertNull("旧任务在升级后不应被猜测出日期", task.plannedDate)
             assertNull(task.dueDate)
             assertNull(task.dueTime)
@@ -289,6 +289,81 @@ class TodoDatabaseMigrationTest {
     }
 
     /**
+     * v6 -> v7: 优先级从三档变成四象限。表结构一个字段都没动，只是把旧值重写掉了，
+     * 所以这里验的是映射本身。
+     */
+    @Test
+    fun migratingFromVersion6RewritesTheThreeOldPrioritiesIntoQuadrants() = runBlocking {
+        val name = "migration-6-to-7.db"
+        context.deleteDatabase(name)
+        createVersion6Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            assertEquals(
+                Priority.NOT_IMPORTANT_NOT_URGENT,
+                requireNotNull(db.taskDao().getById(1L)).priority
+            )
+            assertEquals(
+                Priority.IMPORTANT_NOT_URGENT,
+                requireNotNull(db.taskDao().getById(2L)).priority
+            )
+            assertEquals(
+                Priority.IMPORTANT_URGENT,
+                requireNotNull(db.taskDao().getById(3L)).priority
+            )
+            assertEquals("标题与其它字段一点没被动", "任务0", db.taskDao().getById(1L)?.title)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * Builds a file backed database exactly as version 6 would have left it: the
+     * DDL of `schemas/.../6.json` and three tasks carrying the old priorities.
+     */
+    private fun createVersion6Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V5_TASK_LISTS)
+            sqlite.execSQL(V5_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V6_FOCUS_SESSIONS)
+            sqlite.execSQL(V6_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V6_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', 1, 0, 1000, 1000)"
+            )
+            listOf("NORMAL", "HIGH", "URGENT").forEachIndexed { index, priority ->
+                sqlite.execSQL(
+                    "INSERT INTO tasks (title, notes, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                        "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime) " +
+                        "VALUES (?, NULL, 1, NULL, ?, NULL, NULL, 0, 1000, 1000, NULL, NULL, NULL, NULL)",
+                    arrayOf<Any?>("任务$index", priority)
+                )
+            }
+            sqlite.version = 6
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
      * Builds a file backed database exactly as version 1 of the app would have:
      * same DDL, same indices, same room_master_table identity hash.
      */
@@ -384,6 +459,23 @@ class TodoDatabaseMigrationTest {
             "CREATE TABLE IF NOT EXISTS `active_timer` (`id` INTEGER NOT NULL, `mode` TEXT NOT NULL, " +
                 "`phase` TEXT NOT NULL DEFAULT 'FOCUS', `taskId` INTEGER, `taskTitleSnapshot` TEXT, " +
                 "`plannedSeconds` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, " +
+                "`lastResumeAtElapsed` INTEGER NOT NULL, `accumulatedFocusSeconds` INTEGER NOT NULL, " +
+                "`running` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+
+        /** The identity hash `schemas/.../6.json` records for version 6. */
+        const val V6_IDENTITY_HASH = "2cde2772d9ed663cb919cf565ce4c92f"
+
+        const val V6_FOCUS_SESSIONS =
+            "CREATE TABLE IF NOT EXISTS `focus_sessions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`taskId` INTEGER, `taskTitleSnapshot` TEXT, `listNameSnapshot` TEXT, `mode` TEXT NOT NULL, " +
+                "`startedAt` INTEGER NOT NULL, `endedAt` INTEGER NOT NULL, `plannedSeconds` INTEGER NOT NULL, " +
+                "`actualFocusSeconds` INTEGER NOT NULL, `status` TEXT NOT NULL, `note` TEXT, " +
+                "FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        const val V6_ACTIVE_TIMER =
+            "CREATE TABLE IF NOT EXISTS `active_timer` (`id` INTEGER NOT NULL, `mode` TEXT NOT NULL, " +
+                "`phase` TEXT NOT NULL DEFAULT 'FOCUS', `taskId` INTEGER, `taskTitleSnapshot` TEXT, " +
+                "`listNameSnapshot` TEXT, `plannedSeconds` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, " +
                 "`lastResumeAtElapsed` INTEGER NOT NULL, `accumulatedFocusSeconds` INTEGER NOT NULL, " +
                 "`running` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
 

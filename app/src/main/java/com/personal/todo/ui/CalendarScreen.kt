@@ -547,7 +547,7 @@ private fun DayCell(
                     modifier = Modifier
                         .size(DotSize)
                         .clip(CircleShape)
-                        .background(dotColor(task.priority))
+                        .background(priorityColor(task.priority))
                         .testTag(dayDotTag(date, task.id))
                 )
                 Spacer(Modifier.width(3.dp))
@@ -660,7 +660,7 @@ private fun DayEntry(task: Task, onClick: () -> Unit) {
             modifier = Modifier
                 .size(5.dp)
                 .clip(CircleShape)
-                .background(dotColor(task.priority))
+                .background(priorityColor(task.priority))
         )
         Spacer(Modifier.width(4.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -822,17 +822,6 @@ private fun MiniDay(
 }
 
 // ---------------------------------------------------------------- shared bits
-
-/** The colour of a task dot: the same priority colours a task card carries. */
-@Composable
-private fun dotColor(priority: Priority): Color {
-    val colors = LocalTodoColors.current
-    return when (priority) {
-        Priority.NORMAL -> colors.barNormal
-        Priority.HIGH -> colors.barHigh
-        Priority.URGENT -> colors.barUrgent
-    }
-}
 
 /**
  * Tasks grouped by every day they cover inside [start]..[end].

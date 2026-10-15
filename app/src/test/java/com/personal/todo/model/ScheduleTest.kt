@@ -167,42 +167,4 @@ class ScheduleTest {
         )
     }
 
-    // ------------------------------------------------------------- 四象限
-
-    @Test
-    fun quadrantsFollowTheImportantAndUrgentRule() {
-        val now = atTime(LocalDateTime.of(2026, 10, 14, 9, 0))
-
-        assertEquals(
-            Quadrant.IMPORTANT_URGENT,
-            Schedule.quadrantOf(now, Priority.HIGH, dueToday, null, shanghai)
-        )
-        assertEquals(
-            Quadrant.IMPORTANT_URGENT,
-            Schedule.quadrantOf(now, Priority.URGENT, dueToday.minusDays(1), null, shanghai)
-        )
-        assertEquals(
-            Quadrant.IMPORTANT_NOT_URGENT,
-            Schedule.quadrantOf(now, Priority.HIGH, null, null, shanghai)
-        )
-        assertEquals(
-            Quadrant.NOT_IMPORTANT_URGENT,
-            Schedule.quadrantOf(now, Priority.NORMAL, dueToday, null, shanghai)
-        )
-        assertEquals(
-            Quadrant.NOT_IMPORTANT_NOT_URGENT,
-            Schedule.quadrantOf(now, Priority.NORMAL, dueToday.plusDays(5), null, shanghai)
-        )
-    }
-
-    @Test
-    fun urgentPriorityAloneIsImportantButNotUrgent() {
-        val now = atTime(LocalDateTime.of(2026, 10, 14, 9, 0))
-
-        assertTrue(Schedule.isImportant(Priority.URGENT))
-        assertFalse(
-            "紧急由截止日期决定，单独的优先级不构成紧急",
-            Schedule.isUrgent(now, dueDate = null, dueTime = null, zone = shanghai)
-        )
-    }
 }
