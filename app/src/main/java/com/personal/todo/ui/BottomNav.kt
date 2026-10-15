@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,6 +51,9 @@ enum class HomeTab(val route: String, @StringRes val labelRes: Int) {
 /** The tag the smoke tests use to reach a tab, since the icons carry no text. */
 internal fun tabTag(tab: HomeTab): String = "tab-${tab.route}"
 
+/** The box every tab icon is centred in, so all four line up. */
+private val TabHeight = 40.dp
+
 /**
  * The bottom bar of the screenshots: no labels, one rounded square icon per
  * tab, the selected one filled with the blue accent. [todayDayOfMonth] is the
@@ -68,7 +72,8 @@ fun TodoBottomBar(
             .fillMaxWidth()
             .background(colors.canvas)
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(vertical = 6.dp)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         HomeTab.entries.forEach { tab ->
             TabIcon(
@@ -100,7 +105,10 @@ private fun TabIcon(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClickLabel = label, role = Role.Tab, onClick = onClick)
-            .padding(vertical = 8.dp),
+            // Every tab is the same box with the icon centred in it: a tab whose
+            // icon is smaller (更多 is three small dots) would otherwise sit higher
+            // than its neighbours.
+            .height(TabHeight),
         contentAlignment = Alignment.Center
     ) {
         when (tab) {
@@ -167,18 +175,20 @@ private fun QuadrantTabIcon(color: Color) {
     }
 }
 
-/** 更多: the three dots of the screenshot. */
+/** 更多: the three dots of the screenshot, inside the same box the other tabs draw in. */
 @Composable
 private fun MoreTabIcon(color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        repeat(3) { index ->
-            if (index > 0) Spacer(Modifier.width(3.dp))
-            Box(
-                modifier = Modifier
-                    .size(4.dp)
-                    .clip(CircleShape)
-                    .background(color)
-            )
+    Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            repeat(3) { index ->
+                if (index > 0) Spacer(Modifier.width(3.dp))
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                )
+            }
         }
     }
 }

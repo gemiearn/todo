@@ -62,6 +62,8 @@
     <string name="date_overdue">已逾期</string>
     <string name="date_overdue_days">逾期 %1$d 天</string>
     <string name="date_month_day">%1$d月%2$d日</string>
+    <!-- 任务同时有计划日期和截止日期时，卡片刻画它的起止两头 -->
+    <string name="date_range">%1$s – %2$s</string>
     <string name="weekday_mon">周一</string>
     <string name="weekday_tue">周二</string>
     <string name="weekday_wed">周三</string>
@@ -100,7 +102,6 @@
     <string name="calendar_view_month">月</string>
     <string name="calendar_view_week">周</string>
     <string name="calendar_view_three_day">三日</string>
-    <string name="calendar_range">%1$s – %2$s</string>
     <string name="action_switch_view">切换视图</string>
     <string name="action_timeline_on">按时间线显示</string>
     <string name="action_timeline_off">按列表显示</string>
@@ -195,6 +196,8 @@
 
     <!-- 专注（番茄钟） -->
     <string name="focus_title">专注</string>
+    <!-- 「更多」页里的入口名，带上「番茄钟」才找得到 -->
+    <string name="more_entry_focus">专注（番茄钟）</string>
     <string name="focus_mode_stopwatch">正向计时</string>
     <string name="focus_mode_countdown">倒计时</string>
     <string name="focus_mode_pomodoro">番茄钟</string>

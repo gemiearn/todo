@@ -157,6 +157,10 @@ private fun weekdayRes(dayOfWeek: DayOfWeek): Int = when (dayOfWeek) {
  * its overdue state), otherwise the planned date, otherwise the day it was
  * finished. Returns the text together with the colour of that state, so the
  * card and the quadrant row draw the same date the same way.
+ *
+ * A task that has both a planned date and a due date is a span, not a moment: it
+ * is on every day between the two, so the card names both ends. A date line that
+ * only named the due end hid the fact that the task is already running.
  */
 @Composable
 internal fun taskDateLabel(task: Task, nowMillis: Long, zone: ZoneId): Pair<String?, Color> {
@@ -164,19 +168,25 @@ internal fun taskDateLabel(task: Task, nowMillis: Long, zone: ZoneId): Pair<Stri
     val completed = task.completedAt != null
     val overdue = !completed && Schedule.isOverdue(nowMillis, task.dueDate, task.dueTime, zone)
 
-    val label = when {
-        task.dueDate != null ->
-            Schedule.dueLabel(nowMillis, task.dueDate, task.dueTime, zone)
+    val today = Schedule.todayOf(nowMillis, zone)
+    val plannedLabel = Schedule.dateLabel(task.plannedDate, today)
+    val dueLabel = Schedule.dueLabel(nowMillis, task.dueDate, task.dueTime, zone)
+    val label = if (task.dueDate != null) dueLabel else plannedLabel
 
-        else -> Schedule.dateLabel(task.plannedDate, Schedule.todayOf(nowMillis, zone))
+    val text = when {
+        task.plannedDate != null && task.dueDate != null -> {
+            val start = dateLabelText(plannedLabel)
+            val end = dateLabelText(dueLabel)
+            if (start != null && end != null) stringResource(R.string.date_range, start, end) else end
+        }
+
+        // A finished task that never had a date still shows when it was finished.
+        else -> dateLabelText(label) ?: task.completedAt?.let { completedAtText(it, zone) }
     }
-    // A finished task that never had a date still shows when it was finished.
-    val text = dateLabelText(label)
-        ?: task.completedAt?.let { completedAtText(it, zone) }
     val color = when {
         completed -> colors.doneInk
         overdue -> colors.dateOverdue
-        label == DateLabel.Today -> colors.dateToday
+        label == DateLabel.Today || plannedLabel == DateLabel.Today -> colors.dateToday
         else -> colors.dateMuted
     }
     return text to color

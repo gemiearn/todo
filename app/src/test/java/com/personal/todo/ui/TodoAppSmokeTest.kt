@@ -126,6 +126,23 @@ class TodoAppSmokeTest {
         }
     }
 
+    /**
+     * 专注（番茄钟） is reached from 更多. This path had no test at all, and the entry
+     * used to be called plain 专注, which is a name nobody starts a timer from.
+     */
+    @Test
+    fun theFocusPageOpensFromTheMoreTab() {
+        launchApp()
+
+        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("专注（番茄钟）").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("开始专注").assertExists()
+        compose.onNodeWithText("先选一个要专注的任务").assertExists()
+    }
+
     @Test
     fun openingTheMoreTabRepeatedlyKeepsTheShellStable() {
         launchApp()

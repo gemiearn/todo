@@ -364,13 +364,13 @@ private fun calendarTitle(view: CalendarView, selectedDate: LocalDate, visibleMo
         CalendarView.MONTH -> stringResource(monthNameRes(visibleMonth.monthValue))
         CalendarView.YEAR -> stringResource(R.string.calendar_year, selectedDate.year)
         CalendarView.WEEK -> stringResource(
-            R.string.calendar_range,
+            R.string.date_range,
             monthDayText(weekOf(selectedDate).first()),
             monthDayText(weekOf(selectedDate).last())
         )
 
         CalendarView.THREE_DAY -> stringResource(
-            R.string.calendar_range,
+            R.string.date_range,
             monthDayText(selectedDate),
             monthDayText(selectedDate.plusDays(2))
         )

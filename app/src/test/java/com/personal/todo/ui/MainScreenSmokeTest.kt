@@ -9,10 +9,12 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
+import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.ui.theme.TodoPomodoroTheme
 import java.time.ZoneId
@@ -168,6 +170,43 @@ class MainScreenSmokeTest {
         compose.onNodeWithTag(CalendarTimelineTag).performClick()
         compose.waitForIdle()
         compose.onNodeWithTag(DayTimelineTag).assertDoesNotExist()
+    }
+
+    /**
+     * A task that runs from one date to another is on every day between them, so its
+     * card names both ends - a card that only named the due date hid the start, and
+     * the task looked like it began on its deadline.
+     */
+    @Test
+    fun aTaskCardNamesBothEndsOfItsRange() {
+        val today = tasks.today()
+        val spanning = Task(
+            id = 1L,
+            title = "跨期任务",
+            listId = 1L,
+            createdAt = 0L,
+            updatedAt = 0L,
+            plannedDate = today.minusDays(9),
+            dueDate = today.plusDays(9)
+        )
+
+        compose.setContent {
+            TodoPomodoroTheme {
+                TaskCard(
+                    task = spanning,
+                    subtaskCount = 0,
+                    checked = false,
+                    onCheckedChange = {},
+                    onClick = {},
+                    nowMillis = System.currentTimeMillis(),
+                    zone = ZoneId.systemDefault()
+                )
+            }
+        }
+
+        compose.onNodeWithText("跨期任务").assertExists()
+        // The dash only shows up when the card names two dates.
+        compose.onNodeWithText("–", substring = true).assertExists()
     }
 
     /** An empty day reads the way the reference screenshot has it. */

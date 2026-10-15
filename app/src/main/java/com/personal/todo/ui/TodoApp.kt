@@ -817,7 +817,7 @@ internal fun MoreScreen(
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         MoreEntry(
-            label = stringResource(R.string.focus_title),
+            label = stringResource(R.string.more_entry_focus),
             onClick = { onOpen(ROUTE_FOCUS) }
         )
         MoreEntry(
