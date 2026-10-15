@@ -36,6 +36,7 @@
     <string name="action_show_completed">展开已完成任务</string>
     <string name="action_hide_completed">收起已完成任务</string>
     <string name="action_pick">选择</string>
+    <string name="action_change">更换</string>
     <string name="action_clear">清除</string>
     <string name="action_confirm">确定</string>
     <string name="action_close">关闭</string>
@@ -200,7 +201,9 @@
     <string name="focus_minutes_choice">%1$d 分钟</string>
     <string name="focus_pomodoro_plan">默认 %1$d 分钟专注、%2$d 分钟短休息，每 %3$d 个番茄后长休息 %4$d 分钟。休息时间不计入专注统计。</string>
     <string name="focus_stopwatch_hint">正向计时从零开始累计，由你决定什么时候结束。</string>
-    <string name="focus_task_none">未关联任务</string>
+    <string name="focus_task_required">先选一个要专注的任务</string>
+    <string name="focus_task_picker_empty">没有可专注的任务，先新建一个任务吧</string>
+    <string name="focus_pomodoro_index">今日第 %1$d 个番茄</string>
     <string name="focus_link_task">关联任务</string>
     <string name="focus_dialog_pick_task_title">选择要专注的任务</string>
     <string name="focus_action_start">开始专注</string>

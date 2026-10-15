@@ -41,7 +41,7 @@ object FocusDurations {
     const val CountdownMinutes = 15
 
     /** The choices the 倒计时 mode offers. */
-    val CountdownChoices = listOf(5, 15, 25)
+    val CountdownChoices = listOf(5, 15, 25, 45)
 }
 
 /**
@@ -117,22 +117,36 @@ class FocusViewModel(
         plannedMinutes = minutes
     }
 
-    /** Links the session to a task, or unlinks it when [task] is null. */
-    fun linkTask(task: Task?) {
-        linkedTaskId = task?.id
-        linkedTaskTitle = task?.title
+    /**
+     * Links the session to the task it is working on.
+     *
+     * There is no "no task" choice on purpose: a session that is not attached to a
+     * real task cannot be reported per task later, so the numbers would slowly stop
+     * meaning anything. A session always runs on a task the user picked from the
+     * inbox or a list.
+     */
+    fun linkTask(task: Task) {
+        linkedTaskId = task.id
+        linkedTaskTitle = task.title
     }
 
     // ---------------------------------------------------------------- actions
 
+    /**
+     * Starts the session. Without a linked task nothing happens - the button that
+     * calls this is disabled until one is picked, and this is the second half of
+     * the same rule, so no path can start an unattached session.
+     */
     fun start() {
+        val taskId = linkedTaskId ?: return
+        val title = linkedTaskTitle
         viewModelScope.launch {
             val target = if (mode.timed) plannedMinutes * 60 else 0
             focusRepository.startTimer(
                 mode = mode,
                 plannedSeconds = target,
-                taskId = linkedTaskId,
-                taskTitleSnapshot = linkedTaskTitle
+                taskId = taskId,
+                taskTitleSnapshot = title
             )
         }
     }

@@ -45,6 +45,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -58,8 +59,10 @@ import com.personal.todo.R
 import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.Task
+import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusStatus
+import com.personal.todo.model.Schedule
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.FocusDurations
 import com.personal.todo.viewmodel.FocusViewModel
@@ -68,6 +71,12 @@ import java.time.ZoneId
 
 private val RingSize = 220.dp
 private val RingStroke = 14.dp
+
+/** Tags the smoke tests use to drive the focus screen; the controls carry no text of their own. */
+internal const val FocusStartTag = "focus-start"
+internal const val FocusTaskRowTag = "focus-task-row"
+
+internal fun focusModeTag(mode: FocusMode): String = "focus-mode-${mode.name.lowercase()}"
 
 /**
  * The 专注 screen: the three timers of the app - 正向计时, 倒计时 and 番茄钟 -
@@ -81,6 +90,7 @@ private val RingStroke = 14.dp
 @Composable
 fun FocusScreen(
     viewModel: FocusViewModel,
+    lists: List<TaskList>,
     onBack: () -> Unit
 ) {
     val timer by viewModel.timer.collectAsStateWithLifecycle()
@@ -148,6 +158,12 @@ fun FocusScreen(
                     timer = active,
                     focusSeconds = focusSeconds,
                     remaining = remaining,
+                    // A pomodoro counts where it is in the day's run of them.
+                    pomodoroIndex = if (active.mode == FocusMode.POMODORO) {
+                        stats.todayPomodoroCount + 1
+                    } else {
+                        null
+                    },
                     colors = colors,
                     onPause = viewModel::pause,
                     onResume = viewModel::resume,
@@ -170,12 +186,21 @@ fun FocusScreen(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                 )
             } else {
+                // The history is the day's work, so it is grouped by the day it
+                // happened: a flat list of clock times is hard to read back.
+                val today = Schedule.todayOf(System.currentTimeMillis(), viewModel.zone)
+                val byDay = sessions.groupBy { Schedule.todayOf(it.startedAt, viewModel.zone) }
                 LazyColumn(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(sessions, key = { it.id }) { session ->
-                        SessionRow(session = session, zone = viewModel.zone)
+                    byDay.forEach { (date, ofDay) ->
+                        item(key = "history-day-${date.toEpochDay()}") {
+                            HistoryDayHeader(label = calendarDateText(date, today))
+                        }
+                        items(ofDay, key = { it.id }) { session ->
+                            SessionRow(session = session, zone = viewModel.zone)
+                        }
                     }
                 }
             }
@@ -185,12 +210,9 @@ fun FocusScreen(
     if (taskPickerOpen) {
         TaskPickerDialog(
             tasks = openTasks,
+            lists = lists,
             onPick = {
                 viewModel.linkTask(it)
-                taskPickerOpen = false
-            },
-            onClear = {
-                viewModel.linkTask(null)
                 taskPickerOpen = false
             },
             onDismiss = { taskPickerOpen = false }
@@ -242,15 +264,7 @@ private fun SetupPanel(
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FocusMode.entries.forEach { entry ->
-                FilterChip(
-                    selected = viewModel.mode == entry,
-                    onClick = { viewModel.selectMode(entry) },
-                    label = { Text(stringResource(modeLabelRes(entry))) }
-                )
-            }
-        }
+        ModeSegments(selected = viewModel.mode, onSelect = viewModel::selectMode)
 
         Spacer(Modifier.height(12.dp))
 
@@ -286,37 +300,98 @@ private fun SetupPanel(
 
         Spacer(Modifier.height(16.dp))
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onPickTask)
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = viewModel.linkedTaskTitle
-                    ?: stringResource(R.string.focus_task_none),
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = stringResource(R.string.focus_link_task),
-                style = MaterialTheme.typography.labelLarge,
-                color = colors.accent
-            )
-        }
+        TaskRow(title = viewModel.linkedTaskTitle, onPick = onPickTask)
 
         Spacer(Modifier.height(12.dp))
 
+        // 计时必须绑在一个真实任务上：没有一个任务，就没有可统计的对象，所以
+        // 选任务之前这个按钮根本点不动。
         Button(
             onClick = viewModel::start,
-            modifier = Modifier.fillMaxWidth()
+            enabled = viewModel.linkedTaskId != null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(FocusStartTag)
         ) {
             Text(stringResource(R.string.focus_action_start))
         }
+    }
+}
+
+/** The three timers as one segmented control, the shape the reference apps use. */
+@Composable
+private fun ModeSegments(
+    selected: FocusMode,
+    onSelect: (FocusMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.groupHeader)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        FocusMode.entries.forEach { mode ->
+            val isSelected = mode == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isSelected) colors.accent else Color.Transparent)
+                    .clickable { onSelect(mode) }
+                    .testTag(focusModeTag(mode))
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(modeLabelRes(mode)),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isSelected) Color.White else colors.dateMuted
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The task this session works on. It is the first thing the screen asks for, and
+ * [title] stays null until one is picked - there is no "none" to fall back on.
+ */
+@Composable
+private fun TaskRow(title: String?, onPick: () -> Unit) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.card)
+            .clickable(onClick = onPick)
+            .testTag(FocusTaskRowTag)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.focus_link_task),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.dateMuted
+            )
+            Text(
+                text = title ?: stringResource(R.string.focus_task_required),
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (title == null) colors.dateMuted else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(
+            text = stringResource(if (title == null) R.string.action_pick else R.string.action_change),
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.accent
+        )
     }
 }
 
@@ -328,6 +403,7 @@ private fun RunningPanel(
     timer: ActiveTimer,
     focusSeconds: Int,
     remaining: Int?,
+    pomodoroIndex: Int?,
     colors: com.personal.todo.ui.theme.TodoColors,
     onPause: () -> Unit,
     onResume: () -> Unit,
@@ -358,6 +434,13 @@ private fun RunningPanel(
                     style = MaterialTheme.typography.labelMedium,
                     color = colors.dateMuted
                 )
+                pomodoroIndex?.let { index ->
+                    Text(
+                        text = stringResource(R.string.focus_pomodoro_index, index),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.accent
+                    )
+                }
                 timer.taskTitleSnapshot?.let { title ->
                     Text(
                         text = title,
@@ -433,6 +516,17 @@ private fun ProgressRing(fraction: Float, color: Color) {
 
 // -------------------------------------------------------------- the history
 
+/** The day a group of sessions belongs to. */
+@Composable
+private fun HistoryDayHeader(label: String) {
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = LocalTodoColors.current.dateMuted,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp)
+    )
+}
+
 @Composable
 private fun SessionRow(session: FocusSession, zone: ZoneId) {
     val colors = LocalTodoColors.current
@@ -492,42 +586,74 @@ private fun modeLabelRes(mode: FocusMode): Int = when (mode) {
 
 // --------------------------------------------------------------- the picker
 
+/**
+ * Picks the task to focus on, grouped by the list it lives in - 收件箱 first, since
+ * that is where a task lives before it has a home.
+ *
+ * There is deliberately no "no task" choice: a session always runs on a real task,
+ * so nothing here can produce an unattached one.
+ */
 @Composable
 private fun TaskPickerDialog(
     tasks: List<Task>,
+    lists: List<TaskList>,
     onPick: (Task) -> Unit,
-    onClear: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val orderedLists = lists.sortedByDescending { it.isInbox }
+    val grouped = orderedLists
+        .map { list -> list to tasks.filter { it.listId == list.id } }
+        .filter { it.second.isNotEmpty() }
+    // Should a task ever outlive the list it was grouped by, it still has to be
+    // reachable rather than silently missing from the picker.
+    val groupedTasks = grouped.flatMap { it.second }.toSet()
+    val unlisted = tasks.filterNot { it in groupedTasks }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.focus_dialog_pick_task_title)) },
         text = {
             if (tasks.isEmpty()) {
-                Text(stringResource(R.string.empty_inbox))
+                Text(stringResource(R.string.focus_task_picker_empty))
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(tasks, key = { it.id }) { task ->
-                        Text(
-                            text = task.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onPick(task) }
-                                .padding(vertical = 8.dp)
-                        )
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    grouped.forEach { (list, ofList) ->
+                        item(key = "list-${list.id}") { PickerHeader(list.name) }
+                        items(ofList, key = { it.id }) { task -> TaskPickRow(task, onPick) }
                     }
+                    items(unlisted, key = { it.id }) { task -> TaskPickRow(task, onPick) }
                 }
             }
         },
+        // Picking a task is the action itself, so 取消 is the only button left.
         confirmButton = {
-            TextButton(onClick = onClear) { Text(stringResource(R.string.focus_task_none)) }
-        },
-        dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
+    )
+}
+
+@Composable
+private fun PickerHeader(name: String) {
+    Text(
+        text = name,
+        style = MaterialTheme.typography.labelMedium,
+        color = LocalTodoColors.current.dateMuted,
+        modifier = Modifier.padding(start = 10.dp, top = 8.dp, bottom = 2.dp)
+    )
+}
+
+@Composable
+private fun TaskPickRow(task: Task, onPick: (Task) -> Unit) {
+    Text(
+        text = task.title,
+        style = MaterialTheme.typography.bodyLarge,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onPick(task) }
+            .padding(horizontal = 10.dp, vertical = 9.dp)
     )
 }
 

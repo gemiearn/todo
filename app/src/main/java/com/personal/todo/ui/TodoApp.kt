@@ -218,11 +218,16 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
 
     BackHandler(enabled = nav.canPop()) { nav.pop() }
 
+    // 清单 names are needed by more than one pushed screen - the task detail screen
+    // and the focus picker. The shell view model is therefore created once, here,
+    // for every route: the same default key hands out the same instance the tab
+    // screens create for themselves, so nothing is duplicated.
+    val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
+    val lists by shellViewModel.lists.collectAsStateWithLifecycle()
+
     when (kind) {
         ROUTE_TASK -> {
             val taskId = requireNotNull(argument) { "任务路由缺少任务 id: $route" }
-            val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
-            val lists by shellViewModel.lists.collectAsStateWithLifecycle()
             val detailViewModel: TaskDetailViewModel = viewModel(
                 key = "detail-$taskId",
                 factory = TaskDetailViewModel.factory(repository, taskId)
@@ -268,7 +273,11 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
                 key = ROUTE_FOCUS,
                 factory = FocusViewModel.factory(focusRepository, repository)
             )
-            FocusScreen(viewModel = focusViewModel, onBack = { nav.pop() })
+            FocusScreen(
+                viewModel = focusViewModel,
+                lists = lists,
+                onBack = { nav.pop() }
+            )
         }
 
         ROUTE_CRASH -> CrashLogScreen(onBack = { nav.pop() })
