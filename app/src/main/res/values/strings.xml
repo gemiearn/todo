@@ -198,10 +198,24 @@
     <string name="focus_title">专注</string>
     <!-- 「更多」页里的入口名，带上「番茄钟」才找得到 -->
     <string name="more_entry_focus">专注（番茄钟）</string>
+    <string name="more_entry_stats">专注统计</string>
+    <!-- 统计页（照滴答清单/番茄ToDo那一页） -->
+    <string name="focus_stats_open">统计</string>
+    <string name="stats_card_today">今天</string>
+    <string name="stats_card_week">本周</string>
+    <string name="stats_card_total">累计</string>
+    <string name="stats_pomodoros">%1$d 个番茄</string>
+    <string name="stats_trend_title">最近 7 天（分钟）</string>
+    <string name="stats_top_tasks_title">时间都去哪了</string>
+    <string name="stats_heatmap_title">近 12 周</string>
+    <string name="stats_heatmap_less">浅＝少</string>
+    <string name="stats_heatmap_more">深＝多</string>
+    <string name="stats_empty">还没有专注记录。去专注一次，这里就会长出趋势和热力图。</string>
+    <string name="focus_task_none_label">未关联任务</string>
     <string name="focus_mode_stopwatch">正向计时</string>
     <string name="focus_mode_countdown">倒计时</string>
     <string name="focus_mode_pomodoro">番茄钟</string>
-    <string name="focus_minutes_choice">%1$d 分钟</string>
+    <string name="focus_minutes_choice">%1$d分钟</string>
     <string name="focus_stopwatch_hint">正向计时从零开始累计，由你决定什么时候结束。</string>
     <string name="focus_task_required">先选一个要专注的任务</string>
     <string name="focus_task_picker_empty">没有可专注的任务，先新建一个任务吧</string>
@@ -218,13 +232,14 @@
     <string name="focus_param_short_break">短休息</string>
     <string name="focus_param_long_break">长休息</string>
     <string name="focus_param_cycle">长休息间隔</string>
-    <string name="focus_cycle_value">%1$d 个番茄</string>
+    <string name="focus_cycle_value">%1$d个番茄</string>
     <!-- 休息阶段：不计入专注统计，所以文案与「专注中」分开 -->
     <string name="focus_break_short_running">短休息中</string>
     <string name="focus_break_long_running">长休息中</string>
     <string name="focus_action_skip_break">跳过休息</string>
     <!-- 背景白噪音 -->
     <string name="focus_sound_title">背景白噪音</string>
+    <string name="focus_sound_hint">点一下就能试听，计时开始后会循环播放</string>
     <string name="focus_sound_none">关闭</string>
     <string name="focus_sound_rain">雨声</string>
     <string name="focus_sound_waves">海浪</string>

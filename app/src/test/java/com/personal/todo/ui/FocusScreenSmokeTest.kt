@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
@@ -82,9 +83,16 @@ class FocusScreenSmokeTest {
     ) {
         compose.setContent {
             TodoPomodoroTheme {
-                FocusScreen(viewModel = viewModel, lists = lists, onBack = {})
+                FocusScreen(viewModel = viewModel, lists = lists, onBack = {}, onOpenStats = {})
             }
         }
+    }
+
+    /** The page scrolls as one column, so a control low on it has to be reached first. */
+    private fun clickStart() {
+        compose.onNodeWithTag(FocusStartTag).performScrollTo()
+        compose.waitForIdle()
+        compose.onNodeWithTag(FocusStartTag).performClick()
     }
 
     /** Picking a task from the picker; it is the only way a session can start. */
@@ -172,7 +180,7 @@ class FocusScreenSmokeTest {
         compose.waitForIdle()
 
         pickTask("写季度报告")
-        compose.onNodeWithTag(FocusStartTag).performClick()
+        clickStart()
         compose.waitUntilNodeCount(hasText("专注中"), 1, TimeoutMillis)
 
         assertEquals(1_200, runBlocking { focus.observeActiveTimer().first()?.plannedSeconds })
@@ -246,7 +254,7 @@ class FocusScreenSmokeTest {
 
         compose.onNodeWithText("专注时长").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("45 分钟").performClick()
+        compose.onNodeWithText("45分钟").performClick()
         compose.waitForIdle()
 
         assertEquals(45, store.read().focusMinutes)
@@ -271,7 +279,7 @@ class FocusScreenSmokeTest {
         launchFocus()
         pickTask("写季度报告")
 
-        compose.onNodeWithText("开始专注").performClick()
+        clickStart()
         // Starting is asynchronous (it writes the session), so the running panel
         // appears a moment later - wait for it instead of for an idle frame.
         compose.waitUntilNodeCount(hasText("专注中"), 1, TimeoutMillis)

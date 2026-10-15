@@ -127,20 +127,40 @@ class TodoAppSmokeTest {
     }
 
     /**
-     * 专注（番茄钟） is reached from 更多. This path had no test at all, and the entry
-     * used to be called plain 专注, which is a name nobody starts a timer from.
+     * 专注 is a root of the bottom bar, not a pushed page. Reached either way it keeps
+     * the tab strip, so there is always a way out - pushed, its back arrow had nothing
+     * to pop when it was the stack root, and the tab strip disappeared entirely.
      */
     @Test
-    fun theFocusPageOpensFromTheMoreTab() {
+    fun theFocusPageKeepsTheTabStripWhicheverWayItIsOpened() {
         launchApp()
+
+        compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("开始专注").assertExists()
+        compose.onNodeWithText("先选一个要专注的任务").assertExists()
+        compose.onNodeWithTag(tabTag(HomeTab.Today)).assertExists()
 
         compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
         compose.waitForIdle()
         compose.onNodeWithText("专注（番茄钟）").performClick()
         compose.waitForIdle()
-
         compose.onNodeWithText("开始专注").assertExists()
-        compose.onNodeWithText("先选一个要专注的任务").assertExists()
+        compose.onNodeWithTag(tabTag(HomeTab.Today)).assertExists()
+    }
+
+    /** 统计 is its own page, pushed with a back arrow, reached from 更多 or from 专注. */
+    @Test
+    fun theStatisticsPageOpensFromTheMoreTab() {
+        launchApp()
+
+        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("专注统计").performClick()
+        compose.waitForIdle()
+
+        // 还没有专注记录时，它老老实实说没有。
+        compose.onNodeWithText("还没有专注记录", substring = true).assertExists()
     }
 
     @Test

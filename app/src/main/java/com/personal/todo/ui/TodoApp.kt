@@ -105,7 +105,7 @@ private const val ROUTE_TRASH = "trash"
 private const val ROUTE_LIST = "list"
 private const val ROUTE_FUTURE = "future"
 private const val ROUTE_OVERDUE = "overdue"
-private const val ROUTE_FOCUS = "focus"
+private const val ROUTE_STATS = "stats"
 private const val ROUTE_CRASH = "crash"
 private const val ROUTE_TASK = "task"
 private const val ROUTE_NEW = "new"
@@ -226,12 +226,13 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
     val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
     val lists by shellViewModel.lists.collectAsStateWithLifecycle()
 
-    // 专注 is reachable both from 更多 (pushed, with a back arrow) and from its own
-    // bottom bar tab, so its view model and its settings live here - once, for every
-    // route - instead of being created inside one of the two branches.
+    // 专注 is a root of the bottom bar (今天/日历/四象限/专注/更多), so its view model
+    // and settings are created here - once, for every route. It is *not* a pushed
+    // route: pushed, it would be a page of its own with no tab strip, and its back
+    // arrow would have nothing to pop when it is the stack root.
     val focusSettings = remember(context) { FocusSettingsStore(context) }
     val focusViewModel: FocusViewModel = viewModel(
-        key = ROUTE_FOCUS,
+        key = HomeTab.Focus.route,
         factory = FocusViewModel.factory(focusRepository, repository, focusSettings)
     )
 
@@ -278,9 +279,11 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
             )
         }
 
-        ROUTE_FOCUS -> FocusScreen(
-            viewModel = focusViewModel,
-            lists = lists,
+        ROUTE_STATS -> FocusStatsScreen(
+            // 走专注页那个 view model 已经收集着的 sessions，不再额外开一条 Room 查询。
+            sessions = focusViewModel.sessions,
+            zone = focusRepository.zone,
+            today = repository.today(),
             onBack = { nav.pop() }
         )
 
@@ -686,6 +689,7 @@ internal fun MainScreen(
                     lists = lists,
                     // A tab root: the shell draws the top bar and the tab strip.
                     onBack = null,
+                    onOpenStats = { nav.push(ROUTE_STATS) },
                     modifier = Modifier.padding(innerPadding)
                 )
 
@@ -706,7 +710,10 @@ internal fun MainScreen(
                     // button, so they are pushed on top; the other entries are
                     // root views.
                     onOpen = { target ->
-                        if (target == ROUTE_FOCUS || target == ROUTE_CRASH) {
+                        // 崩溃日志 and the statistics are pushed pages: they open on
+                        // top of where the user is. Every tab target resets the stack
+                        // instead, which is what a bottom bar is expected to do.
+                        if (target == ROUTE_CRASH || target == ROUTE_STATS) {
                             nav.push(target)
                         } else {
                             nav.resetTo(target)
@@ -844,7 +851,15 @@ internal fun MoreScreen(
     Column(modifier = modifier.fillMaxSize()) {
         MoreEntry(
             label = stringResource(R.string.more_entry_focus),
-            onClick = { onOpen(ROUTE_FOCUS) }
+            // Switching to the 专注 tab, not pushing it: pushing would put a page with
+            // no tab strip on top of the stack and leave its back arrow with nothing
+            // to pop.
+            onClick = { onOpen(HomeTab.Focus.route) }
+        )
+
+        MoreEntry(
+            label = stringResource(R.string.more_entry_stats),
+            onClick = { onOpen(ROUTE_STATS) }
         )
         MoreEntry(
             label = stringResource(R.string.nav_completed),

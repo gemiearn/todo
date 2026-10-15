@@ -142,3 +142,112 @@ fun focusStatsOf(sessions: List<FocusSession>, today: LocalDate, zone: ZoneId): 
 /** The local day an absolute instant belongs to, in the device's time zone. */
 fun localDateOf(epochMillis: Long, zone: ZoneId): LocalDate =
     Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate()
+
+/** 专注量的一个小结：时长与番茄数。 */
+data class FocusTotals(val seconds: Int, val pomodoros: Int)
+
+/** 某一天的专注量，趋势图与热力图的格子都用它。 */
+data class FocusDay(val date: LocalDate, val seconds: Int, val pomodoros: Int)
+
+/**
+ * 一个任务的专注量。标题用的是当时的快照：任务后来改了名或被删掉，这份排行仍然
+ * 读得懂；[title] 为空表示那条记录本来就没有关联任务。
+ */
+data class FocusTaskFocus(val title: String?, val seconds: Int, val sessions: Int)
+
+/**
+ * 统计页的数据，形状照着滴答清单 / 番茄ToDo 那一页来：三张小节（今天 / 本周 /
+ * 累计）、最近几天的趋势、按任务的排行、以及最近若干周的打卡热力图。
+ *
+ * Everything is derived from the stored sessions, so 休息 never shows up here - a
+ * break is a phase of the timer, not a session.
+ */
+data class FocusReport(
+    val today: FocusTotals,
+    val week: FocusTotals,
+    val total: FocusTotals,
+    /** 从早到晚，最后一个永远是今天。 */
+    val lastDays: List<FocusDay>,
+    /** 按专注时长降序，只留前几个。 */
+    val topTasks: List<FocusTaskFocus>,
+    /** 从最早的一周开始，每周 7 天（周一起）。 */
+    val heatmapWeeks: List<List<FocusDay>>
+)
+
+/**
+ * Aggregates the sessions of [today] and before into a [FocusReport].
+ *
+ * The rules match [focusStatsOf] exactly: an interrupted session still counts its
+ * real focus seconds, but only a completed 番茄钟 counts as a 番茄. Nothing here is
+ * stored separately, so the numbers can never drift away from the sessions.
+ */
+fun focusReportOf(
+    sessions: List<FocusSession>,
+    today: LocalDate,
+    zone: ZoneId,
+    days: Int = ReportDays,
+    weeks: Int = ReportWeeks,
+    topTasks: Int = ReportTopTasks
+): FocusReport {
+    val weekStart = today.minusDays((today.dayOfWeek.value - 1).toLong())
+    val firstDay = today.minusDays((days - 1).toLong())
+    val heatmapStart = weekStart.minusWeeks((weeks - 1).toLong())
+
+    val secondsByDay = mutableMapOf<LocalDate, Int>()
+    val pomodorosByDay = mutableMapOf<LocalDate, Int>()
+    // 同一个任务可能改过名，所以按 id 归并；没有关联任务的记录按当时的标题归并。
+    val byTask = linkedMapOf<String, FocusTaskFocus>()
+
+    sessions.forEach { session ->
+        val day = localDateOf(session.startedAt, zone)
+        secondsByDay[day] = (secondsByDay[day] ?: 0) + session.actualFocusSeconds
+        if (session.mode == FocusMode.POMODORO && session.status == FocusStatus.COMPLETED) {
+            pomodorosByDay[day] = (pomodorosByDay[day] ?: 0) + 1
+        }
+
+        val key = session.taskId?.let { "id:$it" } ?: "title:${session.taskTitleSnapshot.orEmpty()}"
+        val seen = byTask[key]
+        byTask[key] = FocusTaskFocus(
+            title = seen?.title ?: session.taskTitleSnapshot,
+            seconds = (seen?.seconds ?: 0) + session.actualFocusSeconds,
+            sessions = (seen?.sessions ?: 0) + 1
+        )
+    }
+
+    fun dayOf(date: LocalDate) = FocusDay(
+        date = date,
+        // 今天之后的格子是空的：热力图最后一周会画到未来几天。
+        seconds = if (date.isAfter(today)) 0 else secondsByDay[date] ?: 0,
+        pomodoros = if (date.isAfter(today)) 0 else pomodorosByDay[date] ?: 0
+    )
+
+    fun totalsBetween(from: LocalDate, to: LocalDate): FocusTotals {
+        var seconds = 0
+        var pomodoros = 0
+        var day = from
+        while (!day.isAfter(to)) {
+            seconds += secondsByDay[day] ?: 0
+            pomodoros += pomodorosByDay[day] ?: 0
+            day = day.plusDays(1)
+        }
+        return FocusTotals(seconds, pomodoros)
+    }
+
+    val heatmapDays = (0 until weeks * DaysPerWeek).map { heatmapStart.plusDays(it.toLong()) }
+
+    return FocusReport(
+        today = totalsBetween(today, today),
+        week = totalsBetween(weekStart, today),
+        total = FocusTotals(secondsByDay.values.sum(), pomodorosByDay.values.sum()),
+        lastDays = (0 until days).map { dayOf(firstDay.plusDays(it.toLong())) },
+        topTasks = byTask.values.sortedByDescending { it.seconds }.take(topTasks),
+        heatmapWeeks = heatmapDays.chunked(DaysPerWeek).map { week -> week.map(::dayOf) }
+    )
+}
+
+private const val DaysPerWeek = 7
+
+/** 趋势图看最近一周，热力图看最近一个季度。 */
+private const val ReportDays = 7
+private const val ReportWeeks = 12
+private const val ReportTopTasks = 5

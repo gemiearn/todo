@@ -46,6 +46,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,6 +88,7 @@ import com.personal.todo.viewmodel.FocusDurations
 import com.personal.todo.viewmodel.FocusViewModel
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 
 private val RingSize = 240.dp
 private val RingStroke = 20.dp
@@ -127,6 +129,7 @@ fun FocusScreen(
     viewModel: FocusViewModel,
     lists: List<TaskList>,
     onBack: (() -> Unit)?,
+    onOpenStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val timer by viewModel.timer.collectAsStateWithLifecycle()
@@ -202,20 +205,34 @@ fun FocusScreen(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             item(key = "stats") {
-                StatsHeader(
-                    todayText = stringResource(
-                        R.string.focus_stats_today,
-                        durationText(stats.todayFocusSeconds)
-                    ),
-                    pomodoroText = stringResource(
-                        R.string.focus_stats_pomodoros,
-                        stats.todayPomodoroCount
-                    ),
-                    weekText = stringResource(
-                        R.string.focus_stats_week,
-                        durationText(stats.weekFocusSeconds)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    StatsHeader(
+                        todayText = stringResource(
+                            R.string.focus_stats_today,
+                            durationText(stats.todayFocusSeconds)
+                        ),
+                        pomodoroText = stringResource(
+                            R.string.focus_stats_pomodoros,
+                            stats.todayPomodoroCount
+                        ),
+                        weekText = stringResource(
+                            R.string.focus_stats_week,
+                            durationText(stats.weekFocusSeconds)
+                        ),
+                        modifier = Modifier.weight(1f)
                     )
-                )
+                    // 统计是另一页（照滴答清单点左上角统计图标的做法），入口就放在这张
+                    // 小结旁边，不用去「更多」里绕。
+                    TextButton(
+                        onClick = onOpenStats,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Text(stringResource(R.string.focus_stats_open))
+                    }
+                }
             }
 
             item(key = "panel") {
@@ -294,10 +311,15 @@ fun FocusScreen(
 // ------------------------------------------------------------------ the stats
 
 @Composable
-private fun StatsHeader(todayText: String, pomodoroText: String, weekText: String) {
+private fun StatsHeader(
+    todayText: String,
+    pomodoroText: String,
+    weekText: String,
+    modifier: Modifier = Modifier
+) {
     val colors = LocalTodoColors.current
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .clip(RoundedCornerShape(14.dp))
@@ -615,18 +637,37 @@ private fun CountdownLengthPicker(
 ) {
     val colors = LocalTodoColors.current
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // The presets and the picked length share one row, both starting where the
+        // slider starts: a floating label in the middle of its own row lined up with
+        // nothing.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             FocusDurations.CountdownChoices.forEach { choice ->
                 FilterChip(
                     selected = minutes == choice,
                     onClick = { onSelect(choice) },
-                    label = { Text(stringResource(R.string.focus_minutes_choice, choice)) },
+                    label = {
+                        Text(
+                            text = stringResource(R.string.focus_minutes_choice, choice),
+                            maxLines = 1
+                        )
+                    },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = colors.focusSurface,
                         selectedLabelColor = colors.focusAccent
                     )
                 )
             }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.focus_length_selected, lengthText(minutes)),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.focusAccent,
+                maxLines = 1
+            )
         }
 
         Spacer(Modifier.height(4.dp))
@@ -650,12 +691,6 @@ private fun CountdownLengthPicker(
                 text = stringResource(R.string.focus_minutes_choice, FocusDurations.MinMinutes),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.dateMuted
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = stringResource(R.string.focus_length_selected, lengthText(minutes)),
-                style = MaterialTheme.typography.labelLarge,
-                color = colors.focusAccent
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -774,6 +809,27 @@ private fun ParameterCard(
 @Composable
 private fun SoundPicker(selected: FocusSound, onSelect: (FocusSound) -> Unit) {
     val colors = LocalTodoColors.current
+    val context = LocalContext.current
+
+    // 点一下就要听得见。The picker only exists before a session starts, so nothing is
+    // playing yet: without a preview a tap would look like a dead chip.
+    var preview by remember { mutableStateOf<FocusSound?>(null) }
+    DisposableEffect(preview) {
+        val sound = preview
+        val player = if (sound != null && sound != FocusSound.NONE) {
+            runCatching { createAmbiencePlayer(context, sound, looping = false) }.getOrNull()
+        } else {
+            null
+        }
+        onDispose { releaseAmbiencePlayer(player) }
+    }
+    LaunchedEffect(preview) {
+        if (preview != null) {
+            delay(SoundPreviewMillis)
+            preview = null
+        }
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = stringResource(R.string.focus_sound_title),
@@ -785,7 +841,10 @@ private fun SoundPicker(selected: FocusSound, onSelect: (FocusSound) -> Unit) {
             FocusSound.entries.forEach { sound ->
                 FilterChip(
                     selected = sound == selected,
-                    onClick = { onSelect(sound) },
+                    onClick = {
+                        onSelect(sound)
+                        preview = sound
+                    },
                     label = { Text(stringResource(sound.labelRes)) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = colors.focusSurface,
@@ -794,7 +853,30 @@ private fun SoundPicker(selected: FocusSound, onSelect: (FocusSound) -> Unit) {
                 )
             }
         }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = stringResource(R.string.focus_sound_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.dateMuted
+        )
     }
+}
+
+/** The ambience player, or null when the sound has no file (关闭) or cannot be played. */
+private fun createAmbiencePlayer(
+    context: android.content.Context,
+    sound: FocusSound,
+    looping: Boolean
+): MediaPlayer? = MediaPlayer.create(context, sound.soundRes)?.apply {
+    isLooping = looping
+    setVolume(AmbienceVolume, AmbienceVolume)
+    start()
+}
+
+private fun releaseAmbiencePlayer(player: MediaPlayer?) {
+    val playing = player ?: return
+    runCatching { if (playing.isPlaying) playing.stop() }
+    playing.release()
 }
 
 /**
@@ -809,24 +891,19 @@ private fun AmbientSound(sound: FocusSound, playing: Boolean) {
     val context = LocalContext.current
     DisposableEffect(sound, playing) {
         val player = if (playing && sound.soundRes != 0) {
-            MediaPlayer.create(context, sound.soundRes)?.apply {
-                isLooping = true
-                setVolume(AmbienceVolume, AmbienceVolume)
-                start()
-            }
+            runCatching { createAmbiencePlayer(context, sound, looping = true) }.getOrNull()
         } else {
             null
         }
-        onDispose {
-            val loopingPlayer = player ?: return@onDispose
-            runCatching { if (loopingPlayer.isPlaying) loopingPlayer.stop() }
-            loopingPlayer.release()
-        }
+        onDispose { releaseAmbiencePlayer(player) }
     }
 }
 
 /** Ambience sits behind the timer, never in front of it. */
-private const val AmbienceVolume = 0.35f
+private const val AmbienceVolume = 0.5f
+
+/** How long a tapped ambience plays as a preview. */
+private const val SoundPreviewMillis = 2_500L
 
 /** How much of the ring is filled before the session starts. */
 private fun plannedFraction(mode: FocusMode, minutes: Int): Float = when (mode) {

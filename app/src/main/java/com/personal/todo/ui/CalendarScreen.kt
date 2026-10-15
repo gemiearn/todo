@@ -893,7 +893,8 @@ private fun monthNameRes(month: Int): Int = when (month) {
     else -> R.string.month_12
 }
 
-private fun weekdayNarrowRes(dayOfWeek: DayOfWeek): Int = when (dayOfWeek) {
+/** The single-character weekday names of the calendar header; the statistics page uses them too. */
+internal fun weekdayNarrowRes(dayOfWeek: DayOfWeek): Int = when (dayOfWeek) {
     DayOfWeek.MONDAY -> R.string.weekday_narrow_mon
     DayOfWeek.TUESDAY -> R.string.weekday_narrow_tue
     DayOfWeek.WEDNESDAY -> R.string.weekday_narrow_wed
