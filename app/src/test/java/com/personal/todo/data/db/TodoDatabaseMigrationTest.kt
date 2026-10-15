@@ -11,6 +11,7 @@ import com.personal.todo.model.TaskEventType
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -51,6 +52,7 @@ class TodoDatabaseMigrationTest {
             assertNull("旧任务在升级后不应被猜测出日期", task.plannedDate)
             assertNull(task.dueDate)
             assertNull(task.dueTime)
+            assertNull("计划时间同样是空的，不会被猜", task.plannedTime)
 
             assertEquals(
                 listOf(TaskEventType.CREATED),
@@ -86,11 +88,13 @@ class TodoDatabaseMigrationTest {
     }
 
     /**
-     * v2 -> v3 (spec section 7.2): the focus timer tables arrive while the tasks,
-     * their dates and their events stay exactly as they were.
+     * v2 -> v4 in one go: the focus tables of v3 and the planned-time column plus
+     * the tag tables of v4 all arrive while the tasks, their dates and their
+     * events stay exactly as they were. This is the chain an install that jumps
+     * several versions at once runs.
      */
     @Test
-    fun migratingFromVersion2KeepsTheTaskDataAndAddsTheFocusTables() = runBlocking {
+    fun migratingFromVersion2KeepsTheTaskDataAndAddsTheFocusAndTagTables() = runBlocking {
         val name = "migration-2-to-3.db"
         context.deleteDatabase(name)
         createVersion2Database(name)
@@ -104,12 +108,13 @@ class TodoDatabaseMigrationTest {
             assertEquals(LocalDate.of(2026, 10, 14), task.plannedDate)
             assertEquals(LocalDate.of(2026, 10, 15), task.dueDate)
             assertEquals(LocalTime.of(9, 30), task.dueTime)
+            assertNull("旧任务的计划时间是空的", task.plannedTime)
             assertEquals(
                 listOf(TaskEventType.CREATED),
                 db.taskEventDao().getForTask(1L).map { it.eventType }
             )
 
-            // The new tables are usable immediately, and a session can even be
+            // The focus tables are usable immediately, and a session can even be
             // linked to a task that existed before the upgrade.
             assertTrue(db.focusDao().getSessions().isEmpty())
             assertNull(db.focusDao().getActiveTimer())
@@ -135,6 +140,18 @@ class TodoDatabaseMigrationTest {
             assertEquals(FocusStatus.INTERRUPTED, session.status)
             assertEquals("迁移前的任务", session.taskTitleSnapshot)
             assertEquals(task.id, session.taskId)
+
+            // The tag tables are new and work right away: a pre-existing task can
+            // be tagged, and the link is readable through the join.
+            assertTrue(db.tagDao().observeTags().first().isEmpty())
+            val tagId = db.tagDao().insert(
+                Tag(name = "等回复", color = 0xFF3D7BF7.toInt(), createdAt = 3_000L, updatedAt = 3_000L)
+            )
+            db.tagDao().link(TaskTag(taskId = task.id, tagId = tagId))
+            assertEquals(
+                listOf("等回复"),
+                db.tagDao().observeTagsOf(task.id).first().map { it.name }
+            )
         } finally {
             db.close()
         }

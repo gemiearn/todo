@@ -58,6 +58,12 @@ data class Task(
     val updatedAt: Long,
     /** Local date the user plans to work on it; purely informational. */
     val plannedDate: LocalDate? = null,
+    /**
+     * Local time the user plans to start it. Together with [plannedDate] it is
+     * what the day timeline orders by - the moment the work is meant to begin,
+     * which is a different question from the deadline below.
+     */
+    val plannedTime: LocalTime? = null,
     /** Local date it is due; the only field that can make a task overdue. */
     val dueDate: LocalDate? = null,
     /** Local time it is due; null means "at the end of [dueDate]". */

@@ -21,6 +21,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * Version 3 adds the focus timer of section 5: `focus_sessions` (the finished
  * history, one row per session) and `active_timer` (the single recoverable row
  * of a running session). Both are new tables, so no existing row is touched.
+ *
+ * Version 4 adds `tasks.plannedTime` (the moment work is meant to start, which
+ * the day timeline orders by) and the tag tables `tags` / `task_tags`. The new
+ * column is nullable and the two tables are new, so again nothing is rewritten.
  */
 @Database(
     entities = [
@@ -28,9 +32,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Task::class,
         TaskEvent::class,
         FocusSession::class,
-        ActiveTimer::class
+        ActiveTimer::class,
+        Tag::class,
+        TaskTag::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -43,6 +49,8 @@ abstract class TodoDatabase : RoomDatabase() {
     abstract fun taskEventDao(): TaskEventDao
 
     abstract fun focusDao(): FocusDao
+
+    abstract fun tagDao(): TagDao
 
     companion object {
         const val DATABASE_NAME = "todo.db"
@@ -106,7 +114,42 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 -> v4: the planned time of a task, plus tags. `plannedTime` is a
+         * nullable `HH:mm` text column like `dueTime`, and the two tag tables
+         * start empty - no existing task, list, event or focus session is
+         * rewritten, so nothing can be lost on the upgrade.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `plannedTime` TEXT")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `tags` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`color` INTEGER NOT NULL, " +
+                        "`sortOrder` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `task_tags` (" +
+                        "`taskId` INTEGER NOT NULL, " +
+                        "`tagId` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`taskId`, `tagId`), " +
+                        "FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE RESTRICT , " +
+                        "FOREIGN KEY(`tagId`) REFERENCES `tags`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE RESTRICT )"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` " +
+                        "ON `task_tags` (`tagId`)"
+                )
+            }
+        }
+
         /** Every migration the app ships, in order. */
-        val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        val ALL_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
     }
 }
