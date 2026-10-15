@@ -377,6 +377,14 @@ internal fun MainScreen(
     var calendarView by rememberSaveable { mutableStateOf(CalendarView.MONTH) }
     var timelineOn by rememberSaveable { mutableStateOf(false) }
 
+    // The calendar reads its days through this. It is remembered rather than built
+    // inline at the call: a lambda rebuilt on every recomposition is a new
+    // `remember` key inside the grid, which restarts the query and blinks the task
+    // dots away.
+    val calendarTasksInRange = remember(repository) {
+        { start: LocalDate, end: LocalDate -> repository.observeOpenTasksSpanning(start, end) }
+    }
+
     val visibleTasks = remember(tasks, searchQuery, sort) {
         sortTasks(filterTasks(tasks, searchQuery), sort)
     }
@@ -622,7 +630,7 @@ internal fun MainScreen(
                         onSelectView = { calendarView = it },
                         timelineOn = timelineOn,
                         onToggleTimeline = { timelineOn = !timelineOn },
-                        tasksInRange = { start, end -> repository.observeOpenTasksSpanning(start, end) },
+                        tasksInRange = calendarTasksInRange,
                         onSelectDate = onSelectDate,
                         onOpenLists = { scope.launch { drawerState.open() } },
                         onOpenTask = onOpenTask,

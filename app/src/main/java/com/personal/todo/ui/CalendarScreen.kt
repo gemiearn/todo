@@ -88,6 +88,9 @@ internal fun calendarViewOptionTag(view: CalendarView): String = "calendar-view-
 /** The header of one day column of the 周 / 三日 views. */
 internal fun calendarDayColumnTag(date: LocalDate): String = "calendar-day-column-${date.toEpochDay()}"
 
+/** One task dot of one day of the month grid: the smoke tests read the span off it. */
+internal fun dayDotTag(date: LocalDate, taskId: Long): String = "dot-${date.toEpochDay()}-$taskId"
+
 /** How many months can be swiped before and after the month the screen opens on. */
 private const val MonthsAround = 60
 
@@ -467,13 +470,15 @@ private fun MonthGrid(
     val firstOfMonth = month.atDay(1)
     // The week starts on Monday, as the screenshots show it.
     val firstCell = firstOfMonth.minusDays((firstOfMonth.dayOfWeek.value - 1).toLong())
+    val lastCell = firstCell.plusDays((WeeksPerMonth * DaysPerWeek - 1).toLong())
 
+    // The grid asks for the six weeks it draws, not just its own month: a span that
+    // starts in the previous month has to keep its dots as they cross the edge
+    // instead of stopping dead at the 1st.
     val monthTasks by remember(month, tasksInRange) {
-        tasksInRange(firstOfMonth, month.atEndOfMonth())
+        tasksInRange(firstCell, lastCell)
     }.collectAsStateWithLifecycle(emptyList())
-    val dotsByDate = remember(monthTasks, month) {
-        tasksByDate(monthTasks, firstOfMonth, month.atEndOfMonth())
-    }
+    val dotsByDate = remember(monthTasks) { tasksByDate(monthTasks, firstCell, lastCell) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         repeat(WeeksPerMonth) { week ->
@@ -485,7 +490,7 @@ private fun MonthGrid(
                         inMonth = YearMonth.from(date) == month,
                         selected = date == selectedDate,
                         today = date == today,
-                        dots = if (YearMonth.from(date) == month) dotsByDate[date].orEmpty() else emptyList(),
+                        dots = dotsByDate[date].orEmpty(),
                         onClick = { onSelectDate(date) },
                         modifier = Modifier.weight(1f)
                     )
@@ -543,6 +548,7 @@ private fun DayCell(
                         .size(DotSize)
                         .clip(CircleShape)
                         .background(dotColor(task.priority))
+                        .testTag(dayDotTag(date, task.id))
                 )
                 Spacer(Modifier.width(3.dp))
             }

@@ -17,6 +17,7 @@ import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.ui.theme.TodoPomodoroTheme
+import java.time.YearMonth
 import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -151,6 +152,53 @@ class MainScreenSmokeTest {
 
         compose.onNodeWithTag(calendarDayColumnTag(today)).assertExists()
         compose.onNodeWithTag(calendarDayColumnTag(today.plusDays(1))).assertExists()
+    }
+
+    /**
+     * 跨期任务要在计划日到截止日之间的每一天都有小圆点，而不是只有截止那天有。
+     * 这是用户在 0.2.0 验收过的行为，日历页重写之后必须仍然成立。
+     */
+    @Test
+    fun aSpanningTaskDotsEveryDayBetweenItsEnds() {
+        val today = tasks.today()
+        val month = YearMonth.from(today)
+        // Kept inside the month the grid opens on, so the whole span is on screen.
+        val planned = maxOf(today.minusDays(3), month.atDay(1))
+        val due = minOf(today.plusDays(3), month.atEndOfMonth())
+        val spanId = runBlocking {
+            tasks.createTask("跨期任务", tasks.ensureInbox(), plannedDate = planned, dueDate = due)
+        }
+
+        launch(HomeTab.Calendar.route, HomeTab.Calendar.route)
+
+        var day = planned
+        while (!day.isAfter(due)) {
+            compose.onNodeWithTag(dayDotTag(day, spanId), useUnmergedTree = true).assertExists()
+            day = day.plusDays(1)
+        }
+        compose.onNodeWithTag(dayDotTag(planned.minusDays(1), spanId), useUnmergedTree = true)
+            .assertDoesNotExist()
+    }
+
+    /**
+     * 跨月的区间不能在本月页面被「截断」：上个月末尾的那几个格子（月历第一行的
+     * 前置日期）也要带点，否则一条 10/28–11/2 的待办看起来就像只在尾部出现过。
+     */
+    @Test
+    fun aSpanAcrossTheMonthEdgeKeepsItsDots() {
+        val month = YearMonth.from(tasks.today())
+        val firstOfMonth = month.atDay(1)
+        val firstCell = firstOfMonth.minusDays((firstOfMonth.dayOfWeek.value - 1).toLong())
+        val due = firstOfMonth.plusDays(2)
+        val spanId = runBlocking {
+            tasks.createTask("跨月任务", tasks.ensureInbox(), plannedDate = firstCell, dueDate = due)
+        }
+
+        launch(HomeTab.Calendar.route, HomeTab.Calendar.route)
+
+        compose.onNodeWithTag(dayDotTag(firstCell, spanId), useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag(dayDotTag(firstOfMonth, spanId), useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag(dayDotTag(due, spanId), useUnmergedTree = true).assertExists()
     }
 
     /** The 时间线 toggle swaps the day panel of the month view for the time axis. */
