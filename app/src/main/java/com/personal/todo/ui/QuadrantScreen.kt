@@ -44,11 +44,12 @@ import kotlinx.coroutines.flow.Flow
 private val QuadrantCardShape = RoundedCornerShape(14.dp)
 
 /**
- * How strong a quadrant tints its own card. It is deliberately faint: the tint is
- * what makes the page feel light and colourful, and anything stronger would fight
- * the task text printed on top of it.
+ * How strong a quadrant tints its own card. It is deliberately noticeable rather
+ * than barely-there: 色系 is a real choice the user makes, and a tint nobody can
+ * see makes the setting look broken. Still faint enough to leave the task text
+ * perfectly readable on top of it.
  */
-private const val QuadrantTintAlpha = 0.10f
+private const val QuadrantTintAlpha = 0.20f
 
 /**
  * The 四象限 page of the screenshots: a two by two grid of white cards, each

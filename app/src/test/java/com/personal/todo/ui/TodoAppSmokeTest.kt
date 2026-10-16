@@ -233,6 +233,21 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("保存").assertExists()
     }
 
+    /** 统计入口在专注页右上角的图标里，点它就进统计页。 */
+    @Test
+    fun theStatsEntrySitsInTheFocusTopBar() {
+        launchApp()
+
+        compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(FocusStatsEntryTag).assertExists()
+        compose.onNodeWithTag(FocusStatsEntryTag).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(FocusStatsTag).assertExists()
+    }
+
     /** 设置页是推入页：从更多进去，主题三选都在。 */
     @Test
     fun theSettingsPageOpensFromTheMoreTab() {

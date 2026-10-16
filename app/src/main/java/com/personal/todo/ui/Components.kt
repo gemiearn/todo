@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -250,6 +251,29 @@ fun TagChip(name: String, color: Int, modifier: Modifier = Modifier) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+/**
+ * 统计入口的图标：三根高低不同的柱子。手画而不用图标库里的柱状图，是因为这个项目只
+ * 依赖 material-icons-core，那里面没有图表类的图标。
+ */
+@Composable
+fun StatsGlyph(tint: Color, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.size(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        listOf(0.45f, 0.72f, 1f).forEach { fraction ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(fraction)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(tint)
+            )
+        }
     }
 }
 

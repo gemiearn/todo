@@ -69,6 +69,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -477,6 +478,7 @@ internal fun MainScreen(
     val listDeletedMessage = stringResource(R.string.message_list_deleted)
     val undoLabel = stringResource(R.string.action_undo)
     val filterDescription = stringResource(R.string.filter_action)
+    val statsDescription = stringResource(R.string.focus_stats_open)
 
     // Deleting a task always soft deletes it and offers undo. Parents that
     // still have subtasks ask once before, because the subtasks go to the trash
@@ -612,6 +614,18 @@ internal fun MainScreen(
                             }
                         },
                         actions = {
+                            // 专注页的统计入口放在右上角：页签根的顶栏是外壳画的，所以
+                            // 由外壳在这里补一个图标。
+                            if (!searchActive && showsFocusChrome) {
+                                IconButton(
+                                    onClick = { nav.push(ROUTE_STATS) },
+                                    modifier = Modifier
+                                        .testTag(FocusStatsEntryTag)
+                                        .semantics { contentDescription = statsDescription }
+                                ) {
+                                    StatsGlyph(tint = LocalTodoColors.current.dateMuted)
+                                }
+                            }
                             // While the search field is open it owns the whole bar.
                             if (!searchActive && !showsFocusChrome) {
                                 // 显示范围筛选：只在有任务列表的路由上出现；日历用自己的
@@ -773,7 +787,6 @@ internal fun MainScreen(
                     lists = lists,
                     // A tab root: the shell draws the top bar and the tab strip.
                     onBack = null,
-                    onOpenStats = { nav.push(ROUTE_STATS) },
                     modifier = Modifier.padding(innerPadding)
                 )
 

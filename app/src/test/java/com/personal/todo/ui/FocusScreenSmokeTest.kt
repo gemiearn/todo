@@ -86,7 +86,7 @@ class FocusScreenSmokeTest {
     ) {
         compose.setContent {
             TodoPomodoroTheme {
-                FocusScreen(viewModel = viewModel, lists = lists, onBack = {}, onOpenStats = {})
+                FocusScreen(viewModel = viewModel, lists = lists, onBack = {})
             }
         }
     }
@@ -177,10 +177,10 @@ class FocusScreenSmokeTest {
         compose.waitForIdle()
         compose.onNodeWithText("25:00").assertExists()
 
-        // 拖拽：从圆环正右方转到正下方，转过的角度会把时长改大。分几步移动，因为一次
-        // 跳到位时手势只会收到「越过 slop 的那一点点」位移。
+        // 拖拽：从圆环正右方转到正下方，转过的角度会把时长改大。按点必须落在圆环那一圈
+        // （外沿往里一点），分几步移动——一次跳到位时手势只会收到「越过 slop 的那点点」。
         compose.onNodeWithTag(FocusLengthRingTag).performTouchInput {
-            val radius = width / 2f * 0.7f
+            val radius = width / 2f * 0.9f
             down(Offset(center.x + radius, center.y))
             moveTo(Offset(center.x + radius * 0.8f, center.y + radius * 0.6f))
             moveTo(Offset(center.x + radius * 0.3f, center.y + radius * 0.95f))
@@ -197,6 +197,26 @@ class FocusScreenSmokeTest {
         val planned = runBlocking { focus.observeActiveTimer().first()?.plannedSeconds }
         assertTrue("拖拽应该把时长改大，实际是 $planned", planned != null && planned > 1_500)
         assertEquals("时长仍然落在 5 分钟一档上", 0, planned!! % 300)
+    }
+
+    /** 按在圆环中间（不是那一圈）拖动不改时长：圆心那一片是留给页面滚动的。 */
+    @Test
+    fun draggingInsideTheRingLeavesTheLengthAlone() {
+        launchFocus()
+        compose.onNodeWithTag(focusModeTag(FocusMode.COUNTDOWN)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("15:00").assertExists()
+
+        compose.onNodeWithTag(FocusLengthRingTag).performTouchInput {
+            // 离外沿远远的，根本不在圆环那一圈上。
+            down(Offset(center.x + width * 0.1f, center.y))
+            moveTo(Offset(center.x + width * 0.1f, center.y + width * 0.1f))
+            moveTo(Offset(center.x, center.y + width * 0.2f))
+            up()
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("15:00").assertExists()
     }
 
     /** 番茄钟的时长在自己的参数卡里选、正计时没有目标，所以圆环只有倒计时能拖。 */

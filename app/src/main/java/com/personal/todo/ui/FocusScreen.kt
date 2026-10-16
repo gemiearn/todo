@@ -4,7 +4,9 @@ import android.media.MediaPlayer
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +60,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +88,7 @@ import com.personal.todo.viewmodel.FocusViewModel
 import java.time.Instant
 import java.time.ZoneId
 import kotlin.math.atan2
+import kotlin.math.hypot
 import kotlinx.coroutines.delay
 
 private val RingSize = 240.dp
@@ -104,6 +108,9 @@ internal const val FocusTaskRowTag = "focus-task-row"
  * 不是控件——一个不能用的控件不该出现在树里。
  */
 internal const val FocusLengthRingTag = "focus-length-ring"
+
+/** 专注页右上角的统计入口；它画在外壳的顶栏里（见 MainScreen）。 */
+internal const val FocusStatsEntryTag = "focus-stats-entry"
 
 /** The scrolling column of the focus page: the tests use it to reach the history. */
 internal const val FocusListTag = "focus-list"
@@ -128,7 +135,6 @@ fun FocusScreen(
     viewModel: FocusViewModel,
     lists: List<TaskList>,
     onBack: (() -> Unit)?,
-    onOpenStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val timer by viewModel.timer.collectAsStateWithLifecycle()
@@ -204,34 +210,22 @@ fun FocusScreen(
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             item(key = "stats") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StatsHeader(
-                        todayText = stringResource(
-                            R.string.focus_stats_today,
-                            durationText(stats.todayFocusSeconds)
-                        ),
-                        pomodoroText = stringResource(
-                            R.string.focus_stats_pomodoros,
-                            stats.todayPomodoroCount
-                        ),
-                        weekText = stringResource(
-                            R.string.focus_stats_week,
-                            durationText(stats.weekFocusSeconds)
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-                    // 统计是另一页（照滴答清单点左上角统计图标的做法），入口就放在这张
-                    // 小结旁边，不用去「更多」里绕。
-                    TextButton(
-                        onClick = onOpenStats,
-                        modifier = Modifier.padding(end = 8.dp)
-                    ) {
-                        Text(stringResource(R.string.focus_stats_open))
-                    }
-                }
+                // 统计入口挪到右上角的图标里（页签根的顶栏是外壳画的），这张小结因此独占一行。
+                StatsHeader(
+                    todayText = stringResource(
+                        R.string.focus_stats_today,
+                        durationText(stats.todayFocusSeconds)
+                    ),
+                    pomodoroText = stringResource(
+                        R.string.focus_stats_pomodoros,
+                        stats.todayPomodoroCount
+                    ),
+                    weekText = stringResource(
+                        R.string.focus_stats_week,
+                        durationText(stats.weekFocusSeconds)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             item(key = "panel") {
@@ -552,7 +546,7 @@ private fun PlannedRing(
     val colors = LocalTodoColors.current
     val draggable = mode == FocusMode.COUNTDOWN
     // Called whether or not it is used, so the composition never has a conditional slot.
-    val dragModifier = Modifier.ringDrag(minutes, onSetMinutes)
+    val dragModifier = Modifier.ringBandDrag(minutes, onSetMinutes)
 
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         FocusRing(
@@ -584,30 +578,34 @@ private fun PlannedRing(
 }
 
 /**
- * 在圆环上拖拽调倒计时时长。
+ * 在圆环的**那一圈上**拖拽调倒计时时长。
  *
- * 角度映射：一整圈 360° 正好覆盖 5–300 分钟这个范围，并且每 5 分钟吸附一档——刻度和
- * 原来的滑条完全一样，只是手势换到了圆环上。只认「从按下的那一点转过了多少度」，所以
- * 手指按住不动不会把值改掉。
+ * 只认圆环的描边那一带（半径从 `外沿 − 1.5 条描边` 到外沿），圆心那一大片留给页面
+ * 滚动——按在圆环上才改时长，按在中间照旧上下滚页。角度映射：一整圈 360° 正好覆盖
+ * 5–300 分钟，每 5 分钟吸附一档，只认「从按下的那一点转过了多少度」。
  */
 @Composable
-private fun Modifier.ringDrag(minutes: Int, onMinutes: (Int) -> Unit): Modifier {
+private fun Modifier.ringBandDrag(minutes: Int, onMinutes: (Int) -> Unit): Modifier {
     // 拖拽时 minutes 一直在变，pointerInput 的 key 必须是常量：key 一变成新值，手势监听
     // 就会重启，手指还没抬起来拖拽就断了。所以用 rememberUpdatedState 把最新的值和回调
     // 带进那个不会重启的协程里。
     val latestMinutes = rememberUpdatedState(minutes)
     val latestOnMinutes = rememberUpdatedState(onMinutes)
+    val strokePx = with(LocalDensity.current) { RingStroke.toPx() }
     return this.then(
-        remember {
+        remember(strokePx) {
             Modifier.pointerInput(Unit) {
-                var startAngle = 0f
-                var startMinutes = 0
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        startAngle = ringAngle(offset, size.width, size.height)
-                        startMinutes = latestMinutes.value
-                    },
-                    onDrag = { change, _ ->
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val outer = size.width / 2f
+                    val inner = outer - strokePx * BandToleranceStrokes
+                    // 按在圆心那一片：不认，把手势留给页面滚动。
+                    val radius = ringRadius(down.position, size.width, size.height)
+                    if (radius < inner || radius > outer) return@awaitEachGesture
+
+                    val startAngle = ringAngle(down.position, size.width, size.height)
+                    val startMinutes = latestMinutes.value
+                    drag(down.id) { change ->
                         val turned = degreesBetween(
                             from = startAngle,
                             to = ringAngle(change.position, size.width, size.height)
@@ -615,16 +613,24 @@ private fun Modifier.ringDrag(minutes: Int, onMinutes: (Int) -> Unit): Modifier 
                         latestOnMinutes.value(
                             roundToStep(startMinutes + turned / 360f * MinutesPerTurn)
                         )
+                        change.consume()
                     }
-                )
+                }
             }
         }
     )
 }
 
+/** 圆环那一圈的判定往外放宽几条描边，好让手指更容易按中。 */
+private const val BandToleranceStrokes = 1.5f
+
 /** One full turn of the ring covers the whole countdown range. */
 private const val MinutesPerTurn =
     (FocusDurations.MaxMinutes - FocusDurations.MinMinutes).toFloat()
+
+/** 触点到圆心的距离。 */
+private fun ringRadius(offset: Offset, width: Int, height: Int): Float =
+    hypot(offset.x - width / 2f, offset.y - height / 2f)
 
 /** 触点在圆环里的角度：0° 在正右方，顺时针为正。 */
 private fun ringAngle(offset: Offset, width: Int, height: Int): Float = Math.toDegrees(
@@ -645,18 +651,22 @@ private fun degreesBetween(from: Float, to: Float): Float {
 /**
  * 倒计时的那四个快捷档。
  *
- * 精确选值的活儿交给圆环上的拖拽（见 [ringDrag]）：快捷档负责「常用的那几个」，
+ * 精确选值的活儿交给圆环那一圈上的拖拽（见 [ringBandDrag]）：快捷档负责「常用的那几个」，
  * 拖拽负责「其它任何值」，两者写的是同一个时长。
+ *
+ * 这里只放那四个档、不再跟着一句「已选 X」：圆环中间已经大字写着当前时长，再挂一句
+ * 就会把那行挤爆（45 分钟后面那句在窄屏上根本看不到）。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CountdownLengthPicker(
     minutes: Int,
     onSelect: (Int) -> Unit
 ) {
     val colors = LocalTodoColors.current
-    Row(
+    // 会换行：窄屏上宁可掉到第二行，也不能把最后一个档推出去。
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         FocusDurations.CountdownChoices.forEach { choice ->
@@ -675,13 +685,6 @@ private fun CountdownLengthPicker(
                 )
             )
         }
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = stringResource(R.string.focus_length_selected, lengthText(minutes)),
-            style = MaterialTheme.typography.labelLarge,
-            color = colors.focusAccent,
-            maxLines = 1
-        )
     }
 }
 
@@ -1236,16 +1239,4 @@ private fun durationText(seconds: Int): String = when {
     seconds < 60 -> stringResource(R.string.focus_duration_seconds, seconds)
     seconds % 60 == 0 -> stringResource(R.string.focus_duration_minutes, seconds / 60)
     else -> stringResource(R.string.focus_duration_minutes_seconds, seconds / 60, seconds % 60)
-}
-
-/** A session length in words: 「45 分钟」/「2 小时」/「2 小时 15 分」. */
-@Composable
-private fun lengthText(minutes: Int): String {
-    val hours = minutes / 60
-    val rest = minutes % 60
-    return when {
-        hours == 0 -> stringResource(R.string.focus_duration_minutes, rest)
-        rest == 0 -> stringResource(R.string.focus_duration_hours, hours)
-        else -> stringResource(R.string.focus_duration_hours_minutes, hours, rest)
-    }
 }

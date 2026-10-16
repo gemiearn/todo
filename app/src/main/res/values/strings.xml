@@ -328,10 +328,9 @@
     <string name="focus_link_task">专注任务</string>
     <string name="focus_task_list">所属清单 · %1$s</string>
     <!-- 圆环里的提示：怎么改时长、休息口径、正向计时的自由度 -->
-    <string name="focus_ring_drag_hint">拖动圆环可调整时长</string>
+    <string name="focus_ring_drag_hint">拖动圆环那一圈可调整时长</string>
     <string name="focus_ring_break_hint">休息不计入专注统计</string>
     <string name="focus_ring_stopwatch_hint">由你决定何时结束</string>
-    <string name="focus_length_selected">已选 %1$s</string>
     <!-- 番茄钟的四个参数卡片（照 ui-5） -->
     <string name="focus_param_focus">专注时长</string>
     <string name="focus_param_short_break">短休息</string>
@@ -350,8 +349,6 @@
     <string name="focus_sound_waves">海浪</string>
     <string name="focus_sound_cafe">咖啡馆</string>
     <string name="focus_sound_fire">柴火</string>
-    <string name="focus_duration_hours">%1$d 小时</string>
-    <string name="focus_duration_hours_minutes">%1$d 小时 %2$d 分</string>
     <string name="focus_dialog_pick_task_title">选择要专注的任务</string>
     <string name="focus_action_start">开始专注</string>
     <string name="focus_action_pause">暂停</string>
