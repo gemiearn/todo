@@ -167,6 +167,20 @@ class TaskEditorViewModel(
         if (value != null && plannedDate == null) plannedDate = today
     }
 
+    /**
+     * 在编辑器里就地新建一个标签，建完立刻勾在这条任务上。
+     *
+     * 省得为了打一个还不存在的标签退出到「更多 - 标签管理」再回来：标签管理页那套
+     * 新建/改名/改色弹层在这里原样复用，走的是同一个 repository 入口。
+     */
+    fun createTag(name: String, color: Int) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val tagId = repository.createTag(name, color)
+            selectedTagIds = selectedTagIds + tagId
+        }
+    }
+
     /** 勾上 / 取消一个标签。标签是多值属性，两者互不影响。 */
     fun onToggleTag(tagId: Long) {
         selectedTagIds = if (tagId in selectedTagIds) {

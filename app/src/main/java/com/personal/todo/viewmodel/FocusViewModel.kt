@@ -19,6 +19,7 @@ import com.personal.todo.data.db.Task
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusPhase
 import com.personal.todo.model.FocusStats
+import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.model.FocusTiming
 import com.personal.todo.model.TaskSort
 import com.personal.todo.model.focusStatsOf
@@ -198,18 +199,24 @@ class FocusViewModel(
      * [listName] is the 清单 the task is in right now. It is stored with the
      * session so the statistics page can rank time by list later, even after the
      * task has moved somewhere else.
+     *
+     * [tagNames] are the 标签 the task carries right now, for the same reason: the
+     * statistics page can filter the whole page by one tag afterwards, and moving
+     * or renaming a tag later never rewrites what already happened.
      */
-    fun start(listName: String? = null) {
+    fun start(listName: String? = null, tagNames: List<String> = emptyList()) {
         val taskId = linkedTaskId ?: return
         val title = linkedTaskTitle
         val target = if (mode.timed) plannedLengthMinutes * 60 else 0
+        val tagSnapshot = FocusTagSnapshot.encode(tagNames)
         viewModelScope.launch {
             focusRepository.startTimer(
                 mode = mode,
                 plannedSeconds = target,
                 taskId = taskId,
                 taskTitleSnapshot = title,
-                listNameSnapshot = listName
+                listNameSnapshot = listName,
+                tagNamesSnapshot = tagSnapshot
             )
         }
     }

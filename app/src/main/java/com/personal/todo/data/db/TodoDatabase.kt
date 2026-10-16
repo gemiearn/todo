@@ -44,6 +44,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * task keeps its rule, and every occurrence it produces is a task of its own
  * (spec section 4.5), pointing back at its source. Both are nullable, so every
  * task that already exists simply does not repeat.
+ *
+ * Version 9 adds `focus_sessions.tagNamesSnapshot` and
+ * `active_timer.tagNamesSnapshot`: the 标签 a session's task carried when it
+ * started, joined by the Unit Separator so the 统计页 can filter by one tag. Both
+ * are nullable, so sessions (and a running timer) recorded before the upgrade
+ * simply have no tags - nothing is guessed.
  */
 @Database(
     entities = [
@@ -55,7 +61,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Tag::class,
         TaskTag::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -226,6 +232,18 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 -> v9: 一段专注开始时，它绑定的任务身上带着哪些标签。两张表上都可空，
+         * 所以升级前记下的 session、以及此刻正在跑的计时器，回来都是「没有标签」——
+         * 这正是它们的情况；统计页按标签筛的时候自然把它们算作未打标签那一类。
+         */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `focus_sessions` ADD COLUMN `tagNamesSnapshot` TEXT")
+                db.execSQL("ALTER TABLE `active_timer` ADD COLUMN `tagNamesSnapshot` TEXT")
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -234,7 +252,8 @@ abstract class TodoDatabase : RoomDatabase() {
             MIGRATION_4_5,
             MIGRATION_5_6,
             MIGRATION_6_7,
-            MIGRATION_7_8
+            MIGRATION_7_8,
+            MIGRATION_8_9
         )
     }
 }

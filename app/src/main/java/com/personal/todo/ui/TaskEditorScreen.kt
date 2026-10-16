@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
@@ -53,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -64,6 +66,7 @@ import com.personal.todo.R
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Priority
+import com.personal.todo.ui.theme.DefaultTagColor
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
@@ -74,6 +77,9 @@ internal const val EditorTitleTag = "editor-title"
 
 /** The tag the smoke tests use to reach the icon toolbar of the editor. */
 internal const val EditorToolbarTag = "editor-toolbar"
+
+/** The tag the smoke tests use to reach the「新建标签」入口 of the editor's 标签 group. */
+internal const val EditorNewTagTag = "editor-new-tag"
 
 /**
  * The four groups the icon toolbar switches between. The reference strips the
@@ -580,6 +586,9 @@ private fun DimensionSwitch(label: String, checked: Boolean, onCheckedChange: (B
 @Composable
 private fun ListGroup(viewModel: TaskEditorViewModel, lists: List<TaskList>, tags: List<Tag>) {
     val colors = LocalTodoColors.current
+    // 新建标签的弹层挂在编辑器里：建完立刻勾上这条任务，不必先跑去「标签管理」再回来。
+    var creatingTag by remember { mutableStateOf(false) }
+
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text(
             text = stringResource(R.string.task_list_label),
@@ -601,35 +610,73 @@ private fun ListGroup(viewModel: TaskEditorViewModel, lists: List<TaskList>, tag
             color = colors.dateMuted
         )
         Spacer(Modifier.height(6.dp))
+
+        // 「新建标签」放在标签列表最上面，一眼能看到、也少滚一屏。
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { creatingTag = true }
+                .testTag(EditorNewTagTag)
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(R.string.tag_new),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.accent
+            )
+        }
+
         if (tags.isEmpty()) {
             Text(
                 text = stringResource(R.string.tags_empty_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.dateMuted
             )
-            return@Column
-        }
-        tags.forEach { tag ->
-            val selected = tag.id in viewModel.selectedTagIds
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.onToggleTag(tag.id) }
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TagChip(name = tag.name, color = tag.color)
-                Spacer(Modifier.weight(1f))
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = { viewModel.onToggleTag(tag.id) },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = colors.accent,
-                        checkmarkColor = Color.White
+        } else {
+            tags.forEach { tag ->
+                val selected = tag.id in viewModel.selectedTagIds
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.onToggleTag(tag.id) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TagChip(name = tag.name, color = tag.color)
+                    Spacer(Modifier.weight(1f))
+                    Checkbox(
+                        checked = selected,
+                        onCheckedChange = { viewModel.onToggleTag(tag.id) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = colors.accent,
+                            checkmarkColor = Color.White
+                        )
                     )
-                )
+                }
             }
         }
+    }
+
+    if (creatingTag) {
+        TagEditDialog(
+            title = stringResource(R.string.tag_new),
+            initialName = "",
+            initialColor = DefaultTagColor.toArgb(),
+            onConfirm = { name, color ->
+                viewModel.createTag(name, color)
+                creatingTag = false
+            },
+            onDismiss = { creatingTag = false }
+        )
     }
 }
 

@@ -4,6 +4,7 @@ import androidx.room.Room
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusStatus
+import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.model.FocusTiming
 import java.time.ZoneId
 import kotlinx.coroutines.flow.first
@@ -217,5 +218,27 @@ class FocusRepositoryTest {
         val session = onlySession()
         assertEquals("软删除任务不会动专注记录", taskId, session.taskId)
         assertEquals("快照让历史仍然可读", "写报告", session.taskTitleSnapshot)
+    }
+
+    /** 开始时任务身上的标签随 session 一起存下来，统计页才筛得动。 */
+    @Test
+    fun theTagSnapshotOfTheLinkedTaskTravelsWithTheSession() = runBlocking {
+        val tasks = TaskRepository(db, "收件箱", now = { wallClock }, zone = shanghai)
+        val taskId = tasks.createTask("写报告", tasks.ensureInbox())
+
+        focus.startTimer(
+            mode = FocusMode.POMODORO,
+            plannedSeconds = 1_500,
+            taskId = taskId,
+            taskTitleSnapshot = "写报告",
+            listNameSnapshot = "工作",
+            tagNamesSnapshot = FocusTagSnapshot.encode(listOf("等回复", "重要"))
+        )
+        advance(1_500)
+        assertTrue(focus.finishTimer())
+
+        val session = onlySession()
+        assertEquals(listOf("等回复", "重要"), FocusTagSnapshot.names(session.tagNamesSnapshot))
+        assertTrue(FocusTagSnapshot.matches(session.tagNamesSnapshot, "等回复"))
     }
 }

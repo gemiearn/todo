@@ -1,8 +1,10 @@
 package com.personal.todo.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,11 +48,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -120,8 +128,11 @@ private const val DaysPerWeek = 7
 private const val YearColumns = 3
 private const val YearRows = 4
 
-/** The day circle of one mini month of the year view. */
-private val MiniDaySize = 18.dp
+/** 年视图里小月份名那一行的高度；它下面才是 6×7 的日期格子。 */
+private val MiniMonthLabelHeight = 14.dp
+
+/** 月份名与它所在格左边缘的距离。 */
+private val MonthLabelGap = 4.dp
 
 /** Width of the left column that carries the week numbers when they are shown. */
 private val WeekNumberWidth = 26.dp
@@ -874,8 +885,14 @@ private fun sortDayEntries(tasks: List<Task>): List<Task> =
 // ---------------------------------------------------------------- year view
 
 /**
- * 年: twelve mini months. A tap on a day is a way in, not a place to stay, so it
- * selects that day and returns to the month view.
+ * 年: twelve mini months, all drawn by a *single* Canvas.
+ *
+ * 原来是「12 个 MiniMonth，每个里 42 个 MiniDay 组合项」——一年 504 个节点，切到年视图
+ * 要一两秒。改成一张 Canvas 之后，格子和数字都只是 draw 指令，节点数掉到 1，跟
+ * [FocusStatsScreen] 的年度热力图是同一个路子。数字的字型量一次就够，31 个数字复用。
+ *
+ * A tap on a day is a way in, not a place to stay, so it selects that day and
+ * returns to the month view; the hit test walks the same grid math the drawing does.
  */
 @Composable
 private fun YearView(
@@ -887,6 +904,8 @@ private fun YearView(
     onPickDate: (LocalDate) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalTodoColors.current
+    val onSurface = MaterialTheme.colorScheme.onSurface
     val yearStart = LocalDate.of(year, 1, 1)
     val yearEnd = LocalDate.of(year, 12, 31)
 
@@ -895,59 +914,94 @@ private fun YearView(
     }.collectAsStateWithLifecycle(emptyList())
     val tasksByDay = remember(yearTasks, year) { tasksByDate(yearTasks, yearStart, yearEnd) }
 
-    Column(modifier = modifier.fillMaxWidth().testTag(calendarBodyTag(CalendarView.YEAR))) {
-        repeat(YearRows) { row ->
-            Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                repeat(YearColumns) { column ->
-                    MiniMonth(
-                        month = YearMonth.of(year, row * YearColumns + column + 1),
-                        tasksByDay = tasksByDay,
-                        selectedDate = selectedDate,
-                        today = today,
-                        weekStartsMonday = weekStartsMonday,
-                        onPickDate = onPickDate,
-                        modifier = Modifier.weight(1f)
-                    )
+    // 字型只量两样：1..31 这组日期数字，和十二个月份名。量一次整年复用，不必每格都量。
+    val measurer = rememberTextMeasurer()
+    val labelStyle = TextStyle(color = colors.dateMuted)
+    val monthNames = (1..12).map { stringResource(monthNameRes(it)) }
+    val dayTexts = remember(measurer, labelStyle) {
+        (1..31).map { measurer.measure(it.toString(), labelStyle) }
+    }
+    val monthLabels = remember(measurer, labelStyle, monthNames) {
+        monthNames.map { measurer.measure(it, labelStyle) }
+    }
+
+    val accent = colors.accent
+    val muted = colors.dateMuted
+    val labelHeight = MiniMonthLabelHeight
+    val todayRingWidth = 1.dp
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag(calendarBodyTag(CalendarView.YEAR))
+            .pointerInput(year, weekStartsMonday) {
+                detectTapGestures { offset ->
+                    yearDateAt(
+                        x = offset.x,
+                        y = offset.y,
+                        width = size.width.toFloat(),
+                        height = size.height.toFloat(),
+                        labelHeight = labelHeight.toPx(),
+                        year = year,
+                        weekStartsMonday = weekStartsMonday
+                    )?.let(onPickDate)
                 }
             }
-        }
-    }
-}
+    ) {
+        val blockWidth = size.width / YearColumns
+        val blockHeight = size.height / YearRows
+        val labelHeightPx = labelHeight.toPx()
+        val cellWidth = blockWidth / DaysPerWeek
+        val cellHeight = (blockHeight - labelHeightPx) / WeeksPerMonth
+        val circleRadius = minOf(cellWidth, cellHeight) * 0.42f
 
-/** One of the twelve small months of the year view; a day with tasks is blue. */
-@Composable
-private fun MiniMonth(
-    month: YearMonth,
-    tasksByDay: Map<LocalDate, List<Task>>,
-    selectedDate: LocalDate,
-    today: LocalDate,
-    weekStartsMonday: Boolean,
-    onPickDate: (LocalDate) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalTodoColors.current
-    val firstOfMonth = month.atDay(1)
-    val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))
+        repeat(YearRows * YearColumns) { index ->
+            val month = index + 1
+            val left = (index % YearColumns) * blockWidth
+            val top = (index / YearColumns) * blockHeight
 
-    Column(modifier = modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
-        Text(
-            text = stringResource(monthNameRes(month.monthValue)),
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.dateMuted,
-            maxLines = 1
-        )
-        repeat(WeeksPerMonth) { week ->
-            Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            drawText(
+                monthLabels[index],
+                color = muted,
+                topLeft = Offset(left + MonthLabelGap.toPx(), top)
+            )
+
+            val firstOfMonth = YearMonth.of(year, month).atDay(1)
+            val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))
+            repeat(WeeksPerMonth) { week ->
                 repeat(DaysPerWeek) { dayOfWeek ->
                     val date = firstCell.plusDays((week * DaysPerWeek + dayOfWeek).toLong())
-                    MiniDay(
-                        date = date,
-                        inMonth = YearMonth.from(date) == month,
-                        selected = date == selectedDate,
-                        today = date == today,
-                        hasTasks = tasksByDay.containsKey(date),
-                        onClick = { onPickDate(date) },
-                        modifier = Modifier.weight(1f)
+                    val centerX = left + dayOfWeek * cellWidth + cellWidth / 2f
+                    val centerY = top + labelHeightPx + week * cellHeight + cellHeight / 2f
+                    val center = Offset(centerX, centerY)
+                    val inMonth = YearMonth.from(date).monthValue == month
+                    val isSelected = inMonth && date == selectedDate
+
+                    if (isSelected) {
+                        drawCircle(color = accent, radius = circleRadius, center = center)
+                    } else if (inMonth && date == today) {
+                        drawCircle(
+                            color = accent,
+                            radius = circleRadius,
+                            center = center,
+                            style = Stroke(width = todayRingWidth.toPx())
+                        )
+                    }
+
+                    val text = dayTexts[date.dayOfMonth - 1]
+                    val textColor = when {
+                        !inMonth -> muted
+                        isSelected -> Color.White
+                        date == today || tasksByDay.containsKey(date) -> accent
+                        else -> onSurface
+                    }
+                    drawText(
+                        text,
+                        color = textColor,
+                        topLeft = Offset(
+                            centerX - text.size.width / 2f,
+                            centerY - text.size.height / 2f
+                        )
                     )
                 }
             }
@@ -955,56 +1009,44 @@ private fun MiniMonth(
     }
 }
 
-@Composable
-private fun MiniDay(
-    date: LocalDate,
-    inMonth: Boolean,
-    selected: Boolean,
-    today: Boolean,
-    hasTasks: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val colors = LocalTodoColors.current
-    // A day of a neighbouring month only keeps the grid in shape: it carries no
-    // circle and is not clickable, which holds the year view - twelve months at
-    // once - down to the nodes it actually needs.
-    if (!inMonth) {
-        Box(modifier = modifier.fillMaxHeight(), contentAlignment = Alignment.Center) {
-            Text(
-                text = date.dayOfMonth.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.dateMuted
-            )
-        }
-        return
-    }
+/**
+ * 年视图里一个点落在哪一天；落在月份名那一行、或点在整个网格之外时返回 null。
+ *
+ * 画和点必须用同一套格子算法，否则看上去点中的格子跟实际选中的那一天会错位——所以这里
+ * 只有这一份几何计算，[YearView] 的 Canvas 和它的手势都调它。
+ */
+private fun yearDateAt(
+    x: Float,
+    y: Float,
+    width: Float,
+    height: Float,
+    labelHeight: Float,
+    year: Int,
+    weekStartsMonday: Boolean
+): LocalDate? {
+    if (width <= 0f || height <= 0f || x < 0f || y < 0f || x >= width || y >= height) return null
 
-    Box(
-        modifier = modifier.fillMaxHeight().clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .size(MiniDaySize)
-                .clip(CircleShape)
-                .background(if (selected) colors.accent else Color.Transparent)
-                .then(
-                    if (today && !selected) Modifier.border(1.dp, colors.accent, CircleShape) else Modifier
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = date.dayOfMonth.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = when {
-                    selected -> Color.White
-                    today || hasTasks -> colors.accent
-                    else -> MaterialTheme.colorScheme.onSurface
-                }
-            )
-        }
-    }
+    val blockWidth = width / YearColumns
+    val blockHeight = height / YearRows
+    val column = (x / blockWidth).toInt().coerceIn(0, YearColumns - 1)
+    val row = (y / blockHeight).toInt().coerceIn(0, YearRows - 1)
+    val month = row * YearColumns + column + 1
+
+    // 月份名那一行只是标题，点它不算选日期。
+    val withinBlockY = y - row * blockHeight
+    if (withinBlockY < labelHeight) return null
+
+    val cellWidth = blockWidth / DaysPerWeek
+    val cellHeight = (blockHeight - labelHeight) / WeeksPerMonth
+    if (cellHeight <= 0f) return null
+    val week = ((withinBlockY - labelHeight) / cellHeight).toInt().coerceIn(0, WeeksPerMonth - 1)
+    val day = ((x - column * blockWidth) / cellWidth).toInt().coerceIn(0, DaysPerWeek - 1)
+
+    val firstOfMonth = YearMonth.of(year, month).atDay(1)
+    val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))
+    val date = firstCell.plusDays((week * DaysPerWeek + day).toLong())
+    // 邻月那几天只是撑住格子，点它们不算选择。
+    return if (YearMonth.from(date).monthValue == month) date else null
 }
 
 // ---------------------------------------------------------------- shared bits

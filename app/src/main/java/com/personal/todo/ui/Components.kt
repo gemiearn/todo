@@ -231,9 +231,12 @@ internal fun calendarDateText(date: LocalDate, today: LocalDate): String = when 
 }
 
 /**
- * One small chip for a tag: a translucent fill of the tag's own colour with its
- * name in the same colour. The same shape is used on the task card, in the
- * detail screen and in the tag management page.
+ * One small chip for a tag: the tag's own colour as a solid fill with its name in
+ * a contrasting ink. The same shape is used on the task card, in the detail
+ * screen and in the tag management page.
+ *
+ * 原来是「15% 透明底 + 同色字」，颜色太淡，一条任务卡上几个标签几乎看不出区别；
+ * 改成实心色底后每个标签都很显眼，字色用 [onPriorityColor] 按底色亮度挑深/白。
  */
 @Composable
 fun TagChip(name: String, color: Int, modifier: Modifier = Modifier) {
@@ -241,13 +244,13 @@ fun TagChip(name: String, color: Int, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(chip.copy(alpha = 0.15f))
+            .background(chip)
             .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
         Text(
             text = name,
             style = MaterialTheme.typography.labelSmall,
-            color = chip,
+            color = onPriorityColor(chip),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )

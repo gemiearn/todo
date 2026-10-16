@@ -86,7 +86,7 @@ class FocusScreenSmokeTest {
     ) {
         compose.setContent {
             TodoPomodoroTheme {
-                FocusScreen(viewModel = viewModel, lists = lists, onBack = {})
+                FocusScreen(viewModel = viewModel, lists = lists, taskTags = emptyMap(), onBack = {})
             }
         }
     }

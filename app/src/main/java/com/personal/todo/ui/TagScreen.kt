@@ -185,9 +185,13 @@ private fun TagRow(tag: Tag, onEdit: () -> Unit, onDelete: () -> Unit) {
     }
 }
 
-/** 新建 / 编辑标签：一个名字格子加一排色块。 */
+/**
+ * 新建 / 编辑标签：一个名字格子加一排色块。
+ *
+ * `internal` 而不再 `private`：任务编辑器里也要能就地新建一个标签，两处复用同一个弹层。
+ */
 @Composable
-private fun TagEditDialog(
+internal fun TagEditDialog(
     title: String,
     initialName: String,
     initialColor: Int,

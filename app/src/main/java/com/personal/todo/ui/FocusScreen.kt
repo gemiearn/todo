@@ -76,6 +76,7 @@ import com.personal.todo.data.FocusSettings
 import com.personal.todo.data.FocusSound
 import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.FocusMode
@@ -128,12 +129,16 @@ internal fun focusModeTag(mode: FocusMode): String = "focus-mode-${mode.name.low
  * [onBack] null means this screen *is* a root of the bottom bar: the shell already
  * draws the top bar and the tab strip around it, so this screen draws neither and
  * only fills the space it is given.
+ *
+ * [taskTags] is the tag list of every task, keyed by task id: starting a session
+ * snapshots the linked task's tags with it, so the 统计页 can filter by tag later.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FocusScreen(
     viewModel: FocusViewModel,
     lists: List<TaskList>,
+    taskTags: Map<Long, List<Tag>>,
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
@@ -149,6 +154,12 @@ fun FocusScreen(
     val linkedListName = remember(viewModel.linkedTaskId, openTasks, lists) {
         openTasks.firstOrNull { it.id == viewModel.linkedTaskId }
             ?.let { task -> lists.firstOrNull { it.id == task.listId }?.name }
+    }
+
+    // 同理，开始专注的这一刻把任务身上的标签也快照下来；统计页按标签筛的时候才不会把
+    // 以前那段算错。
+    val linkedTagNames = remember(viewModel.linkedTaskId, taskTags) {
+        taskTags[viewModel.linkedTaskId].orEmpty().map { it.name }
     }
 
     var taskPickerOpen by remember { mutableStateOf(false) }
@@ -233,6 +244,7 @@ fun FocusScreen(
                     SetupPanel(
                         viewModel = viewModel,
                         linkedListName = linkedListName,
+                        linkedTagNames = linkedTagNames,
                         onPickTask = { taskPickerOpen = true }
                     )
                 } else {
@@ -343,6 +355,7 @@ private fun StatCell(text: String, modifier: Modifier) {
 private fun SetupPanel(
     viewModel: FocusViewModel,
     linkedListName: String?,
+    linkedTagNames: List<String>,
     onPickTask: () -> Unit
 ) {
     val colors = LocalTodoColors.current
@@ -402,9 +415,9 @@ private fun SetupPanel(
         // 计时必须绑在一个真实任务上：没有一个任务，就没有可统计的对象，所以
         // 选任务之前这个按钮根本点不动。
         Button(
-            // 开始的这一刻把清单名一起记进 session，统计页就能按清单排行——
-            // 任务以后换了清单，也不会改写已经发生的这段专注。
-            onClick = { viewModel.start(linkedListName) },
+            // 开始的这一刻把清单名和标签一起记进 session，统计页就能按清单排行、按标签
+            // 筛整页——任务以后换了清单或改了标签，也不会改写已经发生的这段专注。
+            onClick = { viewModel.start(linkedListName, linkedTagNames) },
             enabled = viewModel.linkedTaskId != null,
             colors = ButtonDefaults.buttonColors(containerColor = colors.focusAccent),
             modifier = Modifier

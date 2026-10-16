@@ -23,6 +23,12 @@ import com.personal.todo.model.FocusStatus
  * rewrite what already happened. It is null for sessions recorded before the
  * column existed, and those are reported as 未关联.
  *
+ * [tagNamesSnapshot] is the same idea once more for the 标签 the task carried when
+ * the session started: the names are joined by the Unit Separator
+ * ([com.personal.todo.model.FocusTagSnapshot]), so the 统计页 can filter the whole
+ * page by one tag without a link table. Null means "no tags" - both for a session
+ * whose task had none and for every session recorded before the column existed.
+ *
  * [plannedSeconds] is the target of a timed mode and 0 for 正向计时, which has
  * no target. [actualFocusSeconds] is the real focus time; for a session that was
  * stopped early it is smaller than the target, and [status] says so.
@@ -44,6 +50,8 @@ data class FocusSession(
     val taskId: Long? = null,
     val taskTitleSnapshot: String? = null,
     val listNameSnapshot: String? = null,
+    /** 开始时任务身上的标签名，Unit Separator 连成一串；见 [com.personal.todo.model.FocusTagSnapshot]。 */
+    val tagNamesSnapshot: String? = null,
     val mode: FocusMode,
     val startedAt: Long,
     val endedAt: Long,
@@ -78,6 +86,8 @@ data class ActiveTimer(
     val taskTitleSnapshot: String? = null,
     /** The 清单 the linked task was in when the session started; see [FocusSession]. */
     val listNameSnapshot: String? = null,
+    /** The 标签 the linked task carried when the session started; see [FocusSession]. */
+    val tagNamesSnapshot: String? = null,
     /** Target of a timed mode, 0 for 正向计时. */
     val plannedSeconds: Int,
     val startedAt: Long,

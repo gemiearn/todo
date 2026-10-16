@@ -3,6 +3,7 @@ package com.personal.todo.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -77,6 +79,7 @@ import com.personal.todo.model.FocusRankBy
 import com.personal.todo.model.FocusRankEntry
 import com.personal.todo.model.FocusTrendBar
 import com.personal.todo.model.FocusTrendUnit
+import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.model.focusDailyAverage
 import com.personal.todo.model.focusHourBars
 import com.personal.todo.model.focusPeriodOf
@@ -95,6 +98,9 @@ import kotlinx.coroutines.flow.Flow
 
 /** The tag the smoke tests use to reach the page's list. */
 internal const val FocusStatsTag = "focus-stats"
+
+/** The tag the smoke tests use to reach the 按标签筛选 chip row. */
+internal const val FocusStatsTagFilterTag = "focus-stats-tag-filter"
 
 private val DonutSize = 132.dp
 private val DonutStroke = 16.dp
@@ -137,10 +143,19 @@ fun FocusStatsScreen(
     sessions: Flow<List<FocusSession>>,
     zone: ZoneId,
     today: LocalDate,
+    tagNames: List<String>,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val all by sessions.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // 整页按标签筛：选一个标签，五张卡都只看那一段记录。空串代表「全部」——用一个哨兵
+    // 而不是 null，是因为 rememberSaveable 对可空状态的存取更容易出岔子。
+    var tagFilter by rememberSaveable { mutableStateOf("") }
+    val visible = remember(all, tagFilter) {
+        if (tagFilter.isEmpty()) all
+        else all.filter { FocusTagSnapshot.matches(it.tagNamesSnapshot, tagFilter) }
+    }
 
     // 每张卡都停在一个周期上，左右两个箭头挪的就是它。锚点存的是 epochDay / 年份，
     // 这样转屏之后还在同一页。详情卡多一个「自定义」，起止日另存两个 epochDay。
@@ -208,74 +223,97 @@ fun FocusStatsScreen(
                     }
                 }
             } else {
-                item(key = "detail") {
-                    DetailCard(
-                        sessions = all,
-                        segment = detailSegment,
-                        period = detailPeriod,
-                        unit = detailUnit,
-                        customStart = customStart,
-                        customEnd = customEnd,
-                        rankBy = rankBy,
-                        today = today,
-                        zone = zone,
-                        onSelectSegment = { detailSegmentIndex = it.ordinal },
-                        onStep = { step ->
-                            detailUnit?.let { moved ->
-                                detailEpoch = focusPeriodOf(moved, LocalDate.ofEpochDay(detailEpoch))
-                                    .shift(moved, step.toLong())
-                                    .start
-                                    .toEpochDay()
-                            }
-                        },
-                        onPickCustomStart = { customStartEpoch = it.toEpochDay() },
-                        onPickCustomEnd = { customEndEpoch = it.toEpochDay() },
-                        onSelectRank = { rankIndex = it.ordinal }
-                    )
+                // 有标签表才给筛选行：一个标签都没有时这行只会是个死控件，不放。
+                if (tagNames.isNotEmpty()) {
+                    item(key = "tag-filter") {
+                        StatsTagFilterRow(
+                            tagNames = tagNames,
+                            selected = tagFilter,
+                            onSelect = { tagFilter = it }
+                        )
+                    }
                 }
-                item(key = "trend") {
-                    TrendCard(
-                        sessions = all,
-                        unit = trendUnit,
-                        anchor = LocalDate.ofEpochDay(trendEpoch),
-                        today = today,
-                        zone = zone,
-                        onSelectUnit = { trendUnitIndex = it.ordinal },
-                        onStep = { step ->
-                            val anchor = LocalDate.ofEpochDay(trendEpoch)
-                            trendEpoch = when (trendUnit) {
-                                FocusTrendUnit.WEEK -> anchor.plusWeeks(step.toLong())
-                                FocusTrendUnit.MONTH -> anchor.plusMonths(step.toLong())
-                                FocusTrendUnit.YEAR -> anchor.plusYears(step.toLong())
-                            }.toEpochDay()
+                if (visible.isEmpty()) {
+                    // 有记录、但这个标签下一段都没有：说清楚是被筛掉了，不是从没专注过。
+                    item(key = "filter-empty") {
+                        StatsCard(title = stringResource(R.string.more_entry_stats)) {
+                            Text(
+                                text = stringResource(R.string.stats_tag_filter_empty),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = LocalTodoColors.current.dateMuted
+                            )
                         }
-                    )
-                }
-                item(key = "timeline") {
-                    TimelineCard(
-                        sessions = all,
-                        anchor = LocalDate.ofEpochDay(timelineEpoch),
-                        today = today,
-                        zone = zone,
-                        onStep = { timelineEpoch = LocalDate.ofEpochDay(timelineEpoch).plusWeeks(it.toLong()).toEpochDay() }
-                    )
-                }
-                item(key = "hours") {
-                    HoursCard(
-                        sessions = all,
-                        anchor = LocalDate.ofEpochDay(hoursEpoch),
-                        today = today,
-                        zone = zone,
-                        onStep = { hoursEpoch = LocalDate.ofEpochDay(hoursEpoch).plusMonths(it.toLong()).toEpochDay() }
-                    )
-                }
-                item(key = "year") {
-                    YearCard(
-                        sessions = all,
-                        year = year,
-                        zone = zone,
-                        onStep = { year += it }
-                    )
+                    }
+                } else {
+                    item(key = "detail") {
+                        DetailCard(
+                            sessions = visible,
+                            segment = detailSegment,
+                            period = detailPeriod,
+                            unit = detailUnit,
+                            customStart = customStart,
+                            customEnd = customEnd,
+                            rankBy = rankBy,
+                            today = today,
+                            zone = zone,
+                            onSelectSegment = { detailSegmentIndex = it.ordinal },
+                            onStep = { step ->
+                                detailUnit?.let { moved ->
+                                    detailEpoch = focusPeriodOf(moved, LocalDate.ofEpochDay(detailEpoch))
+                                        .shift(moved, step.toLong())
+                                        .start
+                                        .toEpochDay()
+                                }
+                            },
+                            onPickCustomStart = { customStartEpoch = it.toEpochDay() },
+                            onPickCustomEnd = { customEndEpoch = it.toEpochDay() },
+                            onSelectRank = { rankIndex = it.ordinal }
+                        )
+                    }
+                    item(key = "trend") {
+                        TrendCard(
+                            sessions = visible,
+                            unit = trendUnit,
+                            anchor = LocalDate.ofEpochDay(trendEpoch),
+                            today = today,
+                            zone = zone,
+                            onSelectUnit = { trendUnitIndex = it.ordinal },
+                            onStep = { step ->
+                                val anchor = LocalDate.ofEpochDay(trendEpoch)
+                                trendEpoch = when (trendUnit) {
+                                    FocusTrendUnit.WEEK -> anchor.plusWeeks(step.toLong())
+                                    FocusTrendUnit.MONTH -> anchor.plusMonths(step.toLong())
+                                    FocusTrendUnit.YEAR -> anchor.plusYears(step.toLong())
+                                }.toEpochDay()
+                            }
+                        )
+                    }
+                    item(key = "timeline") {
+                        TimelineCard(
+                            sessions = visible,
+                            anchor = LocalDate.ofEpochDay(timelineEpoch),
+                            today = today,
+                            zone = zone,
+                            onStep = { timelineEpoch = LocalDate.ofEpochDay(timelineEpoch).plusWeeks(it.toLong()).toEpochDay() }
+                        )
+                    }
+                    item(key = "hours") {
+                        HoursCard(
+                            sessions = visible,
+                            anchor = LocalDate.ofEpochDay(hoursEpoch),
+                            today = today,
+                            zone = zone,
+                            onStep = { hoursEpoch = LocalDate.ofEpochDay(hoursEpoch).plusMonths(it.toLong()).toEpochDay() }
+                        )
+                    }
+                    item(key = "year") {
+                        YearCard(
+                            sessions = visible,
+                            year = year,
+                            zone = zone,
+                            onStep = { year += it }
+                        )
+                    }
                 }
             }
         }
@@ -1191,6 +1229,44 @@ private fun Segments(labels: List<String>, selectedIndex: Int, onSelect: (Int) -
                     color = if (isSelected) colors.focusAccent else colors.dateMuted
                 )
             }
+        }
+    }
+}
+
+/**
+ * 统计页顶部的「按标签筛」：一行胶囊，「全部」加每个标签。
+ *
+ * 这一行筛的是整页——达成率环、总时长、排行、趋势、时间线、热力图都只看筛出来的那
+ * 一段记录。只留单选：这一页看的是「这段时间我到底在哪些标签上花了时间」，一次只看
+ * 一个标签最清楚，多选拼在一起的数反而不好读。
+ */
+@Composable
+private fun StatsTagFilterRow(
+    tagNames: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .testTag(FocusStatsTagFilterTag),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ToggleChip(
+            label = stringResource(R.string.stats_tag_filter_all),
+            selected = selected.isEmpty(),
+            accent = colors.focusAccent,
+            onClick = { onSelect("") }
+        )
+        tagNames.forEach { name ->
+            ToggleChip(
+                label = name,
+                selected = selected == name,
+                accent = colors.focusAccent,
+                onClick = { onSelect(name) }
+            )
         }
     }
 }

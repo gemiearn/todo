@@ -2,6 +2,7 @@ package com.personal.todo.ui
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -40,8 +42,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -68,11 +68,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -249,8 +253,10 @@ fun TodoApp(
     val lists by shellViewModel.lists.collectAsStateWithLifecycle()
 
     // 标签管理是推入页。它的 view model 在这里无条件建一次（WhileSubscribed 的 flow
-    // 没人订阅时不会查库），避免在 when 分支里条件创建把组合槽位错开。
+    // 没人订阅时不会查库），避免在 when 分支里条件创建把组合槽位错开。统计页按标签筛
+    // 也用同一份标签表，所以在这里把它收下来。
     val tagViewModel: TagViewModel = viewModel(factory = TagViewModel.factory(repository))
+    val allTags by tagViewModel.tags.collectAsStateWithLifecycle()
 
     // 专注 is a root of the bottom bar (今天/日历/四象限/专注/更多), so its view model
     // and settings are created here - once, for every route. It is *not* a pushed
@@ -297,6 +303,8 @@ fun TodoApp(
             sessions = focusViewModel.sessions,
             zone = focusRepository.zone,
             today = repository.today(),
+            // 「按标签筛」的那一行胶囊就是这些标签名。
+            tagNames = allTags.map { it.name },
             onBack = { nav.pop() }
         )
 
@@ -560,7 +568,13 @@ internal fun MainScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
+            // 抽屉不铺满全屏：只占屏幕约六成，拉出来时原来的界面还露在外面一点，
+            // 一眼看得出「这是一层盖上去的面板」，也留了半边随时能点回去。
+            ModalDrawerSheet(
+                modifier = Modifier.width(
+                    LocalConfiguration.current.screenWidthDp.dp * DrawerWidthFraction
+                )
+            ) {
                 ListsDrawer(
                     lists = lists,
                     openTaskCounts = openTaskCounts,
@@ -785,6 +799,8 @@ internal fun MainScreen(
                 HomeTab.Focus.route -> FocusScreen(
                     viewModel = focusViewModel,
                     lists = lists,
+                    // 每条任务身上的标签，开始专注时随 session 一起快照下来（统计页按标签筛）。
+                    taskTags = tagsByTask,
                     // A tab root: the shell draws the top bar and the tab strip.
                     onBack = null,
                     modifier = Modifier.padding(innerPadding)
@@ -1098,6 +1114,9 @@ private fun MoreEntry(label: String, trailing: Int? = null, onClick: () -> Unit)
 
 // ---------------------------------------------------------------- the drawer
 
+/** 抽屉占屏幕宽度的比例：拉出来只盖住约六成，原来的界面还露在外面一点。 */
+private const val DrawerWidthFraction = 0.6f
+
 @Composable
 private fun ListsDrawer(
     lists: List<TaskList>,
@@ -1111,63 +1130,57 @@ private fun ListsDrawer(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(vertical = 12.dp)
+            .padding(vertical = 10.dp)
     ) {
         Text(
             text = stringResource(R.string.drawer_title),
             style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
         )
 
         // 智能清单: the date driven views of spec section 4.1. They are queries,
         // not folders - nothing here moves a task or a date.
-        SmartListEntry(
-            labelRes = R.string.nav_today,
-            route = HomeTab.Today.route,
-            currentRoute = currentRoute,
-            onSelect = onSelect
+        DrawerRow(
+            label = stringResource(R.string.nav_today),
+            selected = currentRoute == HomeTab.Today.route,
+            onClick = { onSelect(HomeTab.Today.route) }
         )
-        SmartListEntry(
-            labelRes = R.string.nav_future,
-            route = ROUTE_FUTURE,
-            currentRoute = currentRoute,
-            onSelect = onSelect
+        DrawerRow(
+            label = stringResource(R.string.nav_future),
+            selected = currentRoute == ROUTE_FUTURE,
+            onClick = { onSelect(ROUTE_FUTURE) }
         )
-        SmartListEntry(
-            labelRes = R.string.nav_overdue,
-            route = ROUTE_OVERDUE,
-            currentRoute = currentRoute,
-            onSelect = onSelect
+        DrawerRow(
+            label = stringResource(R.string.nav_overdue),
+            selected = currentRoute == ROUTE_OVERDUE,
+            onClick = { onSelect(ROUTE_OVERDUE) }
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
 
         LazyColumn(modifier = Modifier.weight(1f)) {
             item(key = ROUTE_INBOX) {
-                NavigationDrawerItem(
-                    label = { Text(stringResource(R.string.list_inbox_name)) },
-                    badge = { CountBadge(openTaskCounts[inboxId ?: 0L] ?: 0) },
+                DrawerRow(
+                    label = stringResource(R.string.list_inbox_name),
                     selected = currentRoute == ROUTE_INBOX,
-                    onClick = { onSelect(ROUTE_INBOX) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    badge = openTaskCounts[inboxId ?: 0L] ?: 0,
+                    onClick = { onSelect(ROUTE_INBOX) }
                 )
             }
             items(lists.filter { !it.isInbox }, key = { it.id }) { list ->
-                NavigationDrawerItem(
-                    label = { Text(list.name) },
-                    badge = { CountBadge(openTaskCounts[list.id] ?: 0) },
+                DrawerRow(
+                    label = list.name,
                     selected = currentRoute == listRoute(list.id),
-                    onClick = { onSelect(listRoute(list.id)) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    badge = openTaskCounts[list.id] ?: 0,
+                    onClick = { onSelect(listRoute(list.id)) }
                 )
             }
         }
 
-        NavigationDrawerItem(
-            label = { Text(stringResource(R.string.nav_completed)) },
+        DrawerRow(
+            label = stringResource(R.string.nav_completed),
             selected = currentRoute == ROUTE_COMPLETED,
-            onClick = { onSelect(ROUTE_COMPLETED) },
-            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+            onClick = { onSelect(ROUTE_COMPLETED) }
         )
         // 回收站 deliberately has no entry here: it lives in 更多, so the drawer
         // stays a plain list of lists (spec section 4.2 still requires the trash
@@ -1178,25 +1191,47 @@ private fun ListsDrawer(
     }
 }
 
+/**
+ * 抽屉里的一行。
+ *
+ * 不用 material3 的 NavigationDrawerItem：它自带 56dp 的最小高度和一整套竖向内边距，
+ * 清单多了以后一屏只能看见七八行。这里换成精简行（整行约 36dp），配合半屏宽的抽屉，
+ * 一屏能多看几行，也更接近用户要的「紧凑一点」。
+ */
 @Composable
-private fun SmartListEntry(
-    labelRes: Int,
-    route: String,
-    currentRoute: String,
-    onSelect: (String) -> Unit
+private fun DrawerRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    badge: Int = 0
 ) {
-    NavigationDrawerItem(
-        label = { Text(stringResource(labelRes)) },
-        selected = currentRoute == route,
-        onClick = { onSelect(route) },
-        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-    )
-}
-
-@Composable
-private fun CountBadge(count: Int) {
-    if (count > 0) {
-        Text(stringResource(R.string.list_task_count, count))
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 1.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) colors.accent else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (badge > 0) {
+            Text(
+                text = stringResource(R.string.list_task_count, badge),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.dateMuted,
+                maxLines = 1
+            )
+        }
     }
 }
 

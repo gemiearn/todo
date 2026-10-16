@@ -16,6 +16,7 @@ import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.ui.theme.TodoPomodoroTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -295,5 +296,47 @@ class TodoAppSmokeTest {
 
         compose.onNodeWithText("起始日期").assertExists()
         compose.onNodeWithText("结束日期").assertExists()
+    }
+
+    /**
+     * 统计页顶上多了一行「按标签筛」：选一个标签，整页只算那一段记录。选了没有记录的
+     * 标签时，页面会明说「这个标签下还没有专注记录」，而不是装作从没专注过。
+     */
+    @Test
+    fun theStatsPageCanBeFilteredByTag() {
+        runBlocking {
+            val taskId = tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
+            val workTag = tasks.createTag("工作", 0xFF3D7BF7.toInt())
+            tasks.createTag("个人", 0xFF3DBE7B.toInt())
+            tasks.setTaskTags(taskId, listOf(workTag))
+            focus.startTimer(
+                mode = FocusMode.POMODORO,
+                plannedSeconds = 1_500,
+                taskId = taskId,
+                taskTitleSnapshot = "写季度报告",
+                listNameSnapshot = "收件箱",
+                tagNamesSnapshot = FocusTagSnapshot.encode(listOf("工作"))
+            )
+            focus.finishTimer()
+        }
+
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("专注统计").performClick()
+        compose.waitForIdle()
+
+        compose.waitUntilNodeCount(hasText("专注详情"), 1, TimeoutMillis)
+        compose.onNodeWithTag(FocusStatsTagFilterTag).assertExists()
+
+        // 选一个没有记录的标签：整页被筛空，只剩那句实话。
+        compose.onNodeWithText("个人").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("这个标签下还没有专注记录").assertExists()
+
+        // 回到「全部」：详情卡又回来了。
+        compose.onNodeWithText("全部").performClick()
+        compose.waitForIdle()
+        compose.waitUntilNodeCount(hasText("专注详情"), 1, TimeoutMillis)
     }
 }

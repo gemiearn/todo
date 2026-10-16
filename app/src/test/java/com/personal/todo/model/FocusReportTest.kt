@@ -288,4 +288,20 @@ class FocusReportTest {
         assertEquals(2025, weeks.first().first().date.year)
         assertEquals(0, weeks.first().first().seconds)
     }
+
+    /**
+     * 统计页「按标签筛」靠的就是这段快照编码：名字连成一串、读回来一个不少，
+     * 匹配只认整名。没有标签时必须返回 null，别写一个空串把自己伪装成有标签。
+     */
+    @Test
+    fun theTagSnapshotJoinsNamesAndMatchesWholeNamesOnly() {
+        assertNull("没有标签就不写空串", FocusTagSnapshot.encode(emptyList()))
+        assertNull(FocusTagSnapshot.encode(listOf("  ", "")))
+
+        val snapshot = FocusTagSnapshot.encode(listOf("工作", "重要", "工作"))
+        assertEquals("去重、去掉空白后按写进去的顺序", listOf("工作", "重要"), FocusTagSnapshot.names(snapshot))
+        assertTrue(FocusTagSnapshot.matches(snapshot, "重要"))
+        assertTrue(!FocusTagSnapshot.matches(snapshot, "个"))
+        assertTrue("没有标签的记录不会被任何一个标签选中", !FocusTagSnapshot.matches(null, "工作"))
+    }
 }
