@@ -19,7 +19,9 @@ class TaskQueryTest {
         priority: Priority = Priority.NOT_IMPORTANT_NOT_URGENT,
         createdAt: Long = id,
         plannedDate: LocalDate? = null,
-        dueDate: LocalDate? = null
+        dueDate: LocalDate? = null,
+        repeatRule: RepeatRule? = null,
+        recurrenceSourceId: Long? = null
     ) = Task(
         id = id,
         title = title,
@@ -29,8 +31,48 @@ class TaskQueryTest {
         createdAt = createdAt,
         updatedAt = createdAt,
         plannedDate = plannedDate,
-        dueDate = dueDate
+        dueDate = dueDate,
+        repeatRule = repeatRule,
+        recurrenceSourceId = recurrenceSourceId
     )
+
+    // ------------------------------------------------------- 重复任务的收敛
+
+    @Test
+    fun aRepeatingSeriesOnlyShowsItsNearestOpenOccurrence() {
+        val source = task(1, plannedDate = LocalDate.of(2026, 10, 15), repeatRule = RepeatRule(RepeatKind.DAILY))
+        val second = task(2, plannedDate = LocalDate.of(2026, 10, 16), recurrenceSourceId = 1L)
+        val third = task(3, plannedDate = LocalDate.of(2026, 10, 17), recurrenceSourceId = 1L)
+        val plain = task(9, title = "单独的任务")
+
+        val visible = nearestOpenOccurrencePerSeries(listOf(source, second, third, plain))
+        assertEquals("一串只露最近那条，别的任务照旧", listOf(1L, 9L), visible.map { it.id })
+    }
+
+    @Test
+    fun theNextOccurrenceTakesOverWhenTheNearestOneIsGone() {
+        val source = task(1, plannedDate = LocalDate.of(2026, 10, 15), repeatRule = RepeatRule(RepeatKind.DAILY))
+        val second = task(2, plannedDate = LocalDate.of(2026, 10, 16), recurrenceSourceId = 1L)
+        val third = task(3, plannedDate = LocalDate.of(2026, 10, 17), recurrenceSourceId = 1L)
+
+        // 15 号做完之后打开态的查询就不会再带它进来，接上的是 16 号
+        assertEquals(listOf(2L), nearestOpenOccurrencePerSeries(listOf(second, third)).map { it.id })
+        // 两条都还没做时，最近的还是 15 号
+        assertEquals(listOf(1L), nearestOpenOccurrencePerSeries(listOf(source, second)).map { it.id })
+    }
+
+    @Test
+    fun tasksThatDoNotRepeatAreNeverGrouped() {
+        val a = task(1, plannedDate = LocalDate.of(2026, 10, 15))
+        val b = task(2, title = "另一个任务")
+        val c = task(3, title = "第三个任务")
+
+        assertEquals(
+            "没有规则的任务一条都不会被并掉",
+            listOf(1L, 2L, 3L),
+            nearestOpenOccurrencePerSeries(listOf(a, b, c)).map { it.id }
+        )
+    }
 
     // ---------------------------------------------------------------- 搜索
 

@@ -64,3 +64,45 @@ fun sortTasks(tasks: List<Task>, sort: TaskSort): List<Task> = when (sort) {
  * task without any date has no place in the dated part of the order.
  */
 private fun orderDate(task: Task): LocalDate? = task.plannedDate ?: task.dueDate
+
+/**
+ * 重复任务在库里是「每一次一条独立任务」（说明文档 4.5），但打开态的视图只该看到
+ * **最近那一条还没做完的**——滴答清单也是这样：未来的那几次都在，列表里只露一个。
+ *
+ * 一次都没剩下（全做完了、或全被删了）时，这一串就整个从打开态视图里消失；历次完成
+ * 各自留在「已完成」里，历史一点不受影响。不重复的任务原样透传，绝不会被并到一起。
+ *
+ * 这里只是「挑哪一条显示」，不改任何数据——所以日历仍然按天画它自己的点，那里每天
+ * 一个才是对的。
+ */
+fun nearestOpenOccurrencePerSeries(tasks: List<Task>): List<Task> {
+    val nearest = mutableMapOf<Long, Task>()
+    tasks.forEach { task ->
+        val series = seriesIdOf(task) ?: return@forEach
+        val current = nearest[series]
+        if (current == null || isEarlierThan(task, current)) nearest[series] = task
+    }
+    return tasks.filter { task ->
+        val series = seriesIdOf(task) ?: return@filter true
+        nearest[series]?.id == task.id
+    }
+}
+
+/** 一条任务属于哪一串重复任务；不重复的任务是 null，永远单独出现。 */
+private fun seriesIdOf(task: Task): Long? = when {
+    task.recurrenceSourceId != null -> task.recurrenceSourceId
+    task.repeatRule != null -> task.id
+    else -> null
+}
+
+/** 同一个串里挑「最近那一条」：先比计划日期，再比 id，结果才是确定的。 */
+private fun isEarlierThan(a: Task, b: Task): Boolean {
+    val left = a.plannedDate
+    val right = b.plannedDate
+    return when {
+        left != null && right != null -> if (left != right) left < right else a.id < b.id
+        left != null -> true
+        right != null -> false
+        else -> a.id < b.id
+    }
+}

@@ -36,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.Task
 import com.personal.todo.model.Priority
+import com.personal.todo.model.nearestOpenOccurrencePerSeries
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
@@ -66,11 +67,15 @@ fun QuadrantScreen(
     val open by openTasks.collectAsStateWithLifecycle(emptyList())
     val completed by completedTasks.collectAsStateWithLifecycle(emptyList())
 
+    // 一串重复任务在这里也只占一格：只显示最近那条还没做完的。库里那些未来的每一次
+    // 都还在，日历上也照旧按天画——收拢只发生在打开态的列表里。
+    val visibleOpen = remember(open) { nearestOpenOccurrencePerSeries(open) }
+
     // Open tasks first, then the finished ones faded below: the screenshots show
     // the finished tasks of a quadrant the same way.
-    val grouped = remember(open, completed) {
+    val grouped = remember(visibleOpen, completed) {
         val byPriority = mutableMapOf<Priority, MutableList<Task>>()
-        (open + completed).forEach { task ->
+        (visibleOpen + completed).forEach { task ->
             byPriority.getOrPut(task.priority) { mutableListOf() }.add(task)
         }
         byPriority

@@ -6,10 +6,13 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
+import com.personal.todo.model.nearestOpenOccurrencePerSeries
 import java.time.LocalDate
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -46,15 +49,24 @@ class TaskCollectionViewModel(
     collection: TaskCollection
 ) : ViewModel() {
 
+    /**
+     * 打开态的列表里，一串重复任务只露**最近那一条还没做完的**（滴答清单也是这样）：
+     * 库里的每一次都还是各自独立的行，视图只是把同串的收拢成一个。已完成的视图不过
+     * 这道手，历次完成各看各的。
+     */
     val tasks: StateFlow<List<Task>> = when (collection) {
-        TaskCollection.Inbox -> repository.observeInboxTasks()
-        is TaskCollection.ListDetail -> repository.observeOpenTasksInList(collection.listId)
+        TaskCollection.Inbox -> repository.observeInboxTasks().nearestPerSeries()
+        is TaskCollection.ListDetail ->
+            repository.observeOpenTasksInList(collection.listId).nearestPerSeries()
+
         TaskCollection.Completed -> repository.observeCompletedTasks()
         TaskCollection.Trash -> repository.observeDeletedTasks()
-        TaskCollection.Today -> repository.observeTodayTasks()
-        TaskCollection.Future -> repository.observeFutureTasks()
-        TaskCollection.Overdue -> repository.observeOverdueTasks()
-        is TaskCollection.DayView -> repository.observeOpenTasksCovering(collection.date)
+        TaskCollection.Today -> repository.observeTodayTasks().nearestPerSeries()
+        TaskCollection.Future -> repository.observeFutureTasks().nearestPerSeries()
+        TaskCollection.Overdue -> repository.observeOverdueTasks().nearestPerSeries()
+        is TaskCollection.DayView ->
+            repository.observeOpenTasksCovering(collection.date).nearestPerSeries()
+
         TaskCollection.None -> flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -101,3 +113,7 @@ class TaskCollectionViewModel(
         }
     }
 }
+
+/** 一串重复任务只留最近那条未完成的；不重复的任务原样透传。 */
+private fun Flow<List<Task>>.nearestPerSeries(): Flow<List<Task>> =
+    map { nearestOpenOccurrencePerSeries(it) }

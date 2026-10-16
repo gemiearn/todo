@@ -39,7 +39,7 @@ import java.time.temporal.ChronoUnit
  * [now] is injectable so tests can use a deterministic clock, and [zone] so the
  * date boundary of section 4.1 can be tested across time zones.
  */
-private const val RecurrenceHorizonDays = 14
+private const val RecurrenceHorizonDays = 365
 
 class TaskRepository(
     private val db: TodoDatabase,
@@ -297,8 +297,10 @@ class TaskRepository(
      * 实例，不循环复用同一条 Task）。
      *
      * 只补 [today]..[today + horizonDays] 这一段：过去的日期不回溯，打开 app 不该凭空
-     * 长出一排逾期任务。已经生成过的那些天——以及带规则那条任务自己占的那一格——都会
-     * 跳过，所以它幂等，可以在每次回到前台时放心再跑一遍。
+     * 长出一排逾期任务。默认往前铺满**一年**——「每个工作日一直延续」要的就是这个，而
+     * 生成器每次都从「今天」起算，所以冷启动重跑时这个窗口会随日期自然往前滑。已经
+     * 生成过的那些天——以及带规则那条任务自己占的那一格——都会跳过，所以它幂等，可以
+     * 在每次回到前台时放心再跑一遍。
      *
      * 生成出来的那一次带着源的标题、备注、优先级和清单，日期换成这一次的；源如果有
      * 结束日期，实例的结束日期按同样的偏移跟着走（「每周一 9:00-11:00」这种时间段也
