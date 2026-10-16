@@ -232,4 +232,50 @@ class TodoAppSmokeTest {
         compose.waitForIdle()
         compose.onNodeWithText("保存").assertExists()
     }
+
+    /** 设置页是推入页：从更多进去，主题三选都在。 */
+    @Test
+    fun theSettingsPageOpensFromTheMoreTab() {
+        launchApp()
+
+        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("设置").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(SettingsScreenTag).assertExists()
+        compose.onNodeWithText("主题").assertExists()
+        compose.onNodeWithText("跟随系统").assertExists()
+        compose.onNodeWithText("浅色").assertExists()
+        compose.onNodeWithText("深色").assertExists()
+    }
+
+    /** 专注详情的第四个分段「自定义」会亮出起止日两个选择器。 */
+    @Test
+    fun theStatsDetailCardOffersACustomRange() {
+        runBlocking {
+            val taskId = tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
+            focus.startTimer(
+                mode = FocusMode.POMODORO,
+                plannedSeconds = 1_500,
+                taskId = taskId,
+                taskTitleSnapshot = "写季度报告",
+                listNameSnapshot = "收件箱"
+            )
+            focus.finishTimer()
+        }
+
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("专注统计").performClick()
+        compose.waitForIdle()
+
+        compose.waitUntilNodeCount(hasText("专注详情"), 1, TimeoutMillis)
+        compose.onNodeWithText("自定义").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("起始日期").assertExists()
+        compose.onNodeWithText("结束日期").assertExists()
+    }
 }

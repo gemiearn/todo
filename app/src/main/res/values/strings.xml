@@ -45,6 +45,19 @@
     <string name="dialog_exit_message">确定要退出吗？任务和专注记录都已经保存在本机。</string>
     <string name="date_not_set">未设置</string>
 
+    <!-- 设置页（更多入口）：主题三选 + 各功能入口 -->
+    <string name="settings_title">设置</string>
+    <string name="more_entry_settings">设置</string>
+    <string name="settings_section_theme">主题</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_section_more">更多</string>
+    <string name="settings_export">数据导出</string>
+    <string name="settings_export_soon_short">即将推出</string>
+    <string name="settings_export_soon">数据导出还在开发中，完成后这里会提供完整的本地备份。</string>
+    <string name="settings_about_local">所有任务与专注记录都只保存在这台设备上，应用不上传任何数据。</string>
+
     <!-- 搜索与排序 -->
     <string name="action_search">搜索</string>
     <string name="action_close_search">关闭搜索</string>
@@ -263,6 +276,10 @@
     <string name="stats_period_week">周</string>
     <string name="stats_period_month">月</string>
     <string name="stats_period_year">年</string>
+    <!-- 专注详情的第四个分段：自己选起止日 -->
+    <string name="stats_period_custom">自定义</string>
+    <string name="stats_custom_start">起始日期</string>
+    <string name="stats_custom_end">结束日期</string>
     <string name="stats_achievement">专注达成率</string>
     <string name="stats_legend_focus">专注</string>
     <string name="stats_legend_interrupted">中断</string>

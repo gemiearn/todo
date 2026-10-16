@@ -80,6 +80,7 @@ import com.personal.todo.data.CrashLog
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.TaskRepository
+import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
@@ -117,6 +118,7 @@ private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_STATS = "stats"
 private const val ROUTE_CRASH = "crash"
 private const val ROUTE_TAGS = "tags"
+private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_TASK = "task"
 private const val ROUTE_EDIT = "edit"
 
@@ -178,7 +180,12 @@ internal fun rememberNavStack(): NavStack {
 // ---------------------------------------------------------------- app root
 
 @Composable
-fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
+fun TodoApp(
+    repository: TaskRepository,
+    focusRepository: FocusRepository,
+    themeChoice: ThemeChoice = ThemeChoice.SYSTEM,
+    onThemeChoiceChange: (ThemeChoice) -> Unit = {}
+) {
     // 冷启动先把重复任务后面两周那几次补上。生成器幂等（同一天不会生成两遍），所以
     // 每次进来跑一遍是安全的。
     LaunchedEffect(Unit) { repository.materializeRecurrences(repository.today()) }
@@ -292,6 +299,16 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
         ROUTE_CRASH -> CrashLogScreen(onBack = { nav.pop() })
 
         ROUTE_TAGS -> TagScreen(viewModel = tagViewModel, onBack = { nav.pop() })
+
+        ROUTE_SETTINGS -> SettingsScreen(
+            themeChoice = themeChoice,
+            onThemeChoiceChange = onThemeChoiceChange,
+            // 番茄钟参数在专注页自己的卡片里，这里只是把它作为页签切过去。
+            onOpenFocus = { nav.resetTo(HomeTab.Focus.route) },
+            onOpenStats = { nav.push(ROUTE_STATS) },
+            onOpenTags = { nav.push(ROUTE_TAGS) },
+            onBack = { nav.pop() }
+        )
 
         else -> MainScreen(
             repository = repository,
@@ -772,11 +789,13 @@ internal fun MainScreen(
                     // button, so they are pushed on top; the other entries are
                     // root views.
                     onOpen = { target ->
-                        // 崩溃日志 / 统计 / 标签管理 are pushed pages with a back
-                        // arrow: they open on top of where the user is. Every tab
-                        // target resets the stack instead, which is what a bottom
-                        // bar is expected to do.
-                        if (target == ROUTE_CRASH || target == ROUTE_STATS || target == ROUTE_TAGS) {
+                        // 崩溃日志 / 统计 / 标签管理 / 设置 are pushed pages with a
+                        // back arrow: they open on top of where the user is. Every
+                        // tab target resets the stack instead, which is what a
+                        // bottom bar is expected to do.
+                        if (target == ROUTE_CRASH || target == ROUTE_STATS ||
+                            target == ROUTE_TAGS || target == ROUTE_SETTINGS
+                        ) {
                             nav.push(target)
                         } else {
                             nav.resetTo(target)
@@ -968,6 +987,10 @@ internal fun MoreScreen(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
+        MoreEntry(
+            label = stringResource(R.string.more_entry_settings),
+            onClick = { onOpen(ROUTE_SETTINGS) }
+        )
         MoreEntry(
             label = stringResource(R.string.more_entry_focus),
             // Switching to the 专注 tab, not pushing it: pushing would put a page with

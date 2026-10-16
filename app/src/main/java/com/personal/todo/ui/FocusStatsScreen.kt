@@ -24,6 +24,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,7 +34,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -100,6 +104,14 @@ private val YearHeight = 62.dp
 
 private val AxisLabelHeight = 15.dp
 
+/** 专注详情那张卡的四个分段：天 / 周 / 月，外加自己选起止日的「自定义」。 */
+private enum class DetailSegment { DAY, WEEK, MONTH, CUSTOM }
+
+/** LocalDate 与 DatePicker 的 UTC 零时毫秒互转（一天正好 86400000 毫秒）。 */
+private const val MillisPerDay = 86_400_000L
+private fun pickerMillis(date: LocalDate): Long = date.toEpochDay() * MillisPerDay
+private fun dateOfPickerMillis(millis: Long): LocalDate = LocalDate.ofEpochDay(millis / MillisPerDay)
+
 /** 时间线左轴的四个刻度，最佳专注时间下轴的六个刻度。 */
 private val TimelineHours = listOf("00:00", "06:00", "12:00", "18:00")
 private val HoursAxisHours = listOf(0, 4, 8, 12, 16, 20)
@@ -127,9 +139,11 @@ fun FocusStatsScreen(
     val all by sessions.collectAsStateWithLifecycle(initialValue = emptyList())
 
     // 每张卡都停在一个周期上，左右两个箭头挪的就是它。锚点存的是 epochDay / 年份，
-    // 这样转屏之后还在同一页。
-    var detailUnitIndex by rememberSaveable { mutableIntStateOf(FocusPeriodUnit.DAY.ordinal) }
+    // 这样转屏之后还在同一页。详情卡多一个「自定义」，起止日另存两个 epochDay。
+    var detailSegmentIndex by rememberSaveable { mutableIntStateOf(DetailSegment.DAY.ordinal) }
     var detailEpoch by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
+    var customStartEpoch by rememberSaveable { mutableLongStateOf(today.minusDays(6).toEpochDay()) }
+    var customEndEpoch by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
     var rankIndex by rememberSaveable { mutableIntStateOf(FocusRankBy.TASK.ordinal) }
     var trendUnitIndex by rememberSaveable { mutableIntStateOf(FocusTrendUnit.WEEK.ordinal) }
     var trendEpoch by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
@@ -137,7 +151,20 @@ fun FocusStatsScreen(
     var hoursEpoch by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
     var year by rememberSaveable { mutableIntStateOf(today.year) }
 
-    val detailUnit = FocusPeriodUnit.entries[detailUnitIndex]
+    val detailSegment = DetailSegment.entries[detailSegmentIndex]
+    // 「自定义」没有周期可言，所以这一格是 null：它不走 focusPeriodOf，直接用手选的区间。
+    val detailUnit = when (detailSegment) {
+        DetailSegment.DAY -> FocusPeriodUnit.DAY
+        DetailSegment.WEEK -> FocusPeriodUnit.WEEK
+        DetailSegment.MONTH -> FocusPeriodUnit.MONTH
+        DetailSegment.CUSTOM -> null
+    }
+    // 起止日选反了也不报错：小的是头、大的是尾，读的时候归一化。
+    val customStart = LocalDate.ofEpochDay(minOf(customStartEpoch, customEndEpoch))
+    val customEnd = LocalDate.ofEpochDay(maxOf(customStartEpoch, customEndEpoch))
+    val detailPeriod = detailUnit?.let { focusPeriodOf(it, LocalDate.ofEpochDay(detailEpoch)) }
+        ?: FocusPeriod(customStart, customEnd)
+
     val rankBy = FocusRankBy.entries[rankIndex]
     val trendUnit = FocusTrendUnit.entries[trendUnitIndex]
 
@@ -180,17 +207,25 @@ fun FocusStatsScreen(
                 item(key = "detail") {
                     DetailCard(
                         sessions = all,
+                        segment = detailSegment,
+                        period = detailPeriod,
                         unit = detailUnit,
-                        anchor = LocalDate.ofEpochDay(detailEpoch),
+                        customStart = customStart,
+                        customEnd = customEnd,
                         rankBy = rankBy,
                         today = today,
                         zone = zone,
-                        onSelectUnit = { detailUnitIndex = it.ordinal },
+                        onSelectSegment = { detailSegmentIndex = it.ordinal },
                         onStep = { step ->
-                            val moved = focusPeriodOf(detailUnit, LocalDate.ofEpochDay(detailEpoch))
-                                .shift(detailUnit, step.toLong())
-                            detailEpoch = moved.start.toEpochDay()
+                            detailUnit?.let { moved ->
+                                detailEpoch = focusPeriodOf(moved, LocalDate.ofEpochDay(detailEpoch))
+                                    .shift(moved, step.toLong())
+                                    .start
+                                    .toEpochDay()
+                            }
                         },
+                        onPickCustomStart = { customStartEpoch = it.toEpochDay() },
+                        onPickCustomEnd = { customEndEpoch = it.toEpochDay() },
                         onSelectRank = { rankIndex = it.ordinal }
                     )
                 }
@@ -245,43 +280,81 @@ fun FocusStatsScreen(
 
 // ------------------------------------------------------------------ 专注详情
 
-/** 天 / 周 / 月这一个周期：达成率环、图例、周期小结，以及在哪个任务上花的时间最多。 */
+/** 天 / 周 / 月 / 自定义这一个周期：达成率环、图例、周期小结，以及时间花在哪个任务上。 */
 @Composable
 private fun DetailCard(
     sessions: List<FocusSession>,
-    unit: FocusPeriodUnit,
-    anchor: LocalDate,
+    segment: DetailSegment,
+    period: FocusPeriod,
+    unit: FocusPeriodUnit?,
+    customStart: LocalDate,
+    customEnd: LocalDate,
     rankBy: FocusRankBy,
     today: LocalDate,
     zone: ZoneId,
-    onSelectUnit: (FocusPeriodUnit) -> Unit,
+    onSelectSegment: (DetailSegment) -> Unit,
     onStep: (Int) -> Unit,
+    onPickCustomStart: (LocalDate) -> Unit,
+    onPickCustomEnd: (LocalDate) -> Unit,
     onSelectRank: (FocusRankBy) -> Unit
 ) {
     val colors = LocalTodoColors.current
-    val period = focusPeriodOf(unit, anchor)
     val totals = remember(sessions, period, zone) { focusPeriodTotals(sessions, period, zone) }
     val ranking = remember(sessions, period, zone, rankBy) { focusRanking(sessions, period, zone, rankBy) }
 
     StatsCard(
         title = stringResource(R.string.stats_detail_title),
         trailing = {
-            PeriodStepper(
-                label = detailAnchorLabel(unit, period, today),
-                onPrevious = { onStep(-1) },
-                onNext = { onStep(1) }
-            )
+            if (unit == null) {
+                // 自定义没有「上一个 / 下一个」可言，右边就直接说清选的是哪一段。
+                Text(
+                    text = stringResource(R.string.date_range, dateLabel(customStart), dateLabel(customEnd)),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.focusAccent,
+                    maxLines = 1
+                )
+            } else {
+                PeriodStepper(
+                    label = detailAnchorLabel(unit, period, today),
+                    onPrevious = { onStep(-1) },
+                    onNext = { onStep(1) }
+                )
+            }
         }
     ) {
         Segments(
             labels = listOf(
                 stringResource(R.string.stats_period_day),
                 stringResource(R.string.stats_period_week),
-                stringResource(R.string.stats_period_month)
+                stringResource(R.string.stats_period_month),
+                stringResource(R.string.stats_period_custom)
             ),
-            selectedIndex = unit.ordinal,
-            onSelect = { onSelectUnit(FocusPeriodUnit.entries[it]) }
+            selectedIndex = segment.ordinal,
+            onSelect = { onSelectSegment(DetailSegment.entries[it]) }
         )
+
+        if (segment == DetailSegment.CUSTOM) {
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                CustomDateField(
+                    label = stringResource(R.string.stats_custom_start),
+                    date = customStart,
+                    today = today,
+                    onPick = onPickCustomStart,
+                    modifier = Modifier.weight(1f)
+                )
+                CustomDateField(
+                    label = stringResource(R.string.stats_custom_end),
+                    date = customEnd,
+                    today = today,
+                    onPick = onPickCustomEnd,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
 
         Spacer(Modifier.height(14.dp))
         AchievementRing(totals, colors.focusAccent, colors.focusTrack)
@@ -307,6 +380,73 @@ private fun DetailCard(
         RankHeader(rankBy = rankBy, onSelect = onSelectRank)
         Spacer(Modifier.height(8.dp))
         RankList(ranking = ranking, rankBy = rankBy)
+    }
+}
+
+/**
+ * 自定义范围的一个端点：一按弹出日期选择，选完立刻生效。
+ *
+ * DatePicker 报的是 UTC 零点的毫秒，这里按整天的毫秒数换算成 epochDay，不经过设备时
+ * 区——否则东八区的用户选「10 月 16 日」会被时区推到 15 日。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CustomDateField(
+    label: String,
+    date: LocalDate,
+    today: LocalDate,
+    onPick: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    var open by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.dateMuted
+        )
+        Spacer(Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(colors.groupHeader)
+                .clickable { open = true }
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = calendarDateText(date, today),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.focusAccent,
+                maxLines = 1
+            )
+        }
+    }
+
+    if (open) {
+        val state = rememberDatePickerState(initialSelectedDateMillis = pickerMillis(date))
+        DatePickerDialog(
+            onDismissRequest = { open = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        state.selectedDateMillis?.let { onPick(dateOfPickerMillis(it)) }
+                        open = false
+                    }
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { open = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        ) {
+            DatePicker(state = state)
+        }
     }
 }
 
