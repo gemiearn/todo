@@ -44,6 +44,13 @@ import kotlinx.coroutines.flow.Flow
 private val QuadrantCardShape = RoundedCornerShape(14.dp)
 
 /**
+ * How strong a quadrant tints its own card. It is deliberately faint: the tint is
+ * what makes the page feel light and colourful, and anything stronger would fight
+ * the task text printed on top of it.
+ */
+private const val QuadrantTintAlpha = 0.10f
+
+/**
  * The 四象限 page of the screenshots: a two by two grid of white cards, each
  * with a coloured roman numeral badge, the tasks that belong to it and - when it
  * is empty - the grey "没有任务" in the middle.
@@ -157,7 +164,9 @@ private fun QuadrantCard(
     Column(
         modifier = modifier
             .clip(QuadrantCardShape)
+            // 卡片先铺白/深灰底，再罩一层这个象限自己的淡色——「清新」就来自这一层。
             .background(colors.card)
+            .background(accent.copy(alpha = QuadrantTintAlpha))
             .padding(vertical = 12.dp)
     ) {
         Row(
@@ -173,7 +182,7 @@ private fun QuadrantCard(
                 Text(
                     text = stringResource(priorityNumeralRes(priority)),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White
+                    color = onPriorityColor(accent)
                 )
             }
             Spacer(Modifier.width(8.dp))

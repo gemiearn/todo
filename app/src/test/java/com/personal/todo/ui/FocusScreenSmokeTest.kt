@@ -1,5 +1,6 @@
 package com.personal.todo.ui
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -8,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
@@ -25,6 +27,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -156,8 +159,8 @@ class FocusScreenSmokeTest {
     }
 
     /**
-     * 倒计时：四个快捷档之外还有一条 5–300 分钟（最多 5 小时）的滑条，圆环两旁的 ±
-     * 钮按 5 分钟一档改时长，改过的值真的进了这次计时。
+     * 倒计时的时长有两个入口写同一个值：四个快捷档负责精确选值，圆环上拖拽负责其它
+     * 任何值。两种都走一遍，并且确认改过的值真的进了这次计时。
      */
     @Test
     fun theCountdownLengthCanBeSetByHand() {
@@ -165,40 +168,55 @@ class FocusScreenSmokeTest {
         compose.onNodeWithTag(focusModeTag(FocusMode.COUNTDOWN)).performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithTag(FocusMinutesSliderTag).assertExists()
+        // 只有倒计时的圆环才是控件。
+        compose.onNodeWithTag(FocusLengthRingTag).assertExists()
         compose.onNodeWithText("15:00").assertExists()
 
-        compose.onNodeWithTag(FocusPlusTag).performClick()
+        // 快捷档：点一下就落到 25 分钟。
+        compose.onNodeWithText("25分钟").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("20:00").assertExists()
+        compose.onNodeWithText("25:00").assertExists()
 
-        compose.onNodeWithTag(FocusMinusTag).performClick()
+        // 拖拽：从圆环正右方转到正下方，转过的角度会把时长改大。分几步移动，因为一次
+        // 跳到位时手势只会收到「越过 slop 的那一点点」位移。
+        compose.onNodeWithTag(FocusLengthRingTag).performTouchInput {
+            val radius = width / 2f * 0.7f
+            down(Offset(center.x + radius, center.y))
+            moveTo(Offset(center.x + radius * 0.8f, center.y + radius * 0.6f))
+            moveTo(Offset(center.x + radius * 0.3f, center.y + radius * 0.95f))
+            moveTo(Offset(center.x, center.y + radius))
+            up()
+        }
         compose.waitForIdle()
-        compose.onNodeWithText("15:00").assertExists()
-
-        compose.onNodeWithTag(FocusPlusTag).performClick()
-        compose.waitForIdle()
+        compose.onNodeWithText("25:00").assertDoesNotExist()
 
         pickTask("写季度报告")
         clickStart()
         compose.waitUntilNodeCount(hasText("专注中"), 1, TimeoutMillis)
 
-        assertEquals(1_200, runBlocking { focus.observeActiveTimer().first()?.plannedSeconds })
+        val planned = runBlocking { focus.observeActiveTimer().first()?.plannedSeconds }
+        assertTrue("拖拽应该把时长改大，实际是 $planned", planned != null && planned > 1_500)
+        assertEquals("时长仍然落在 5 分钟一档上", 0, planned!! % 300)
     }
 
-    /** 番茄钟的 25 分钟是规格里的默认值，滑条因此只在倒计时出现。 */
+    /** 番茄钟的时长在自己的参数卡里选、正计时没有目标，所以圆环只有倒计时能拖。 */
     @Test
-    fun onlyTheCountdownHasALengthSlider() {
+    fun onlyTheCountdownHasADraggableRing() {
         launchFocus()
 
-        compose.onNodeWithTag(FocusMinutesSliderTag).assertDoesNotExist()
+        compose.onNodeWithTag(FocusLengthRingTag).assertDoesNotExist()
         // 圆环里是番茄钟的长度，设置状态也看得见。
         compose.onNodeWithText("25:00").assertExists()
 
         compose.onNodeWithTag(focusModeTag(FocusMode.COUNTDOWN)).performClick()
         compose.waitForIdle()
+        compose.onNodeWithTag(FocusLengthRingTag).assertExists()
 
-        compose.onNodeWithTag(FocusMinutesSliderTag).assertExists()
+        compose.onNodeWithTag(focusModeTag(FocusMode.STOPWATCH)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(FocusLengthRingTag).assertDoesNotExist()
+        // 正计时没有目标，未启动时停在 0:00:00，而不是番茄钟那个 25 分钟。
+        compose.onNodeWithText("0:00:00").assertExists()
     }
 
     /**

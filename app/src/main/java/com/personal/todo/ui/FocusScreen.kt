@@ -3,8 +3,8 @@ package com.personal.todo.ui
 import android.media.MediaPlayer
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,10 +19,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -39,8 +37,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -50,6 +46,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,11 +56,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,13 +84,11 @@ import com.personal.todo.viewmodel.FocusDurations
 import com.personal.todo.viewmodel.FocusViewModel
 import java.time.Instant
 import java.time.ZoneId
+import kotlin.math.atan2
 import kotlinx.coroutines.delay
 
 private val RingSize = 240.dp
 private val RingStroke = 20.dp
-
-/** The two round ± buttons that sit beside the ring. */
-private val StepButtonSize = 44.dp
 
 /** Even the shortest countdown fills this much of the setup ring, so it never reads as broken. */
 private const val MinVisibleArc = 0.12f
@@ -102,9 +96,14 @@ private const val MinVisibleArc = 0.12f
 /** Tags the smoke tests use to drive the focus screen; the controls carry no text of their own. */
 internal const val FocusStartTag = "focus-start"
 internal const val FocusTaskRowTag = "focus-task-row"
-internal const val FocusMinutesSliderTag = "focus-minutes-slider"
-internal const val FocusPlusTag = "focus-plus"
-internal const val FocusMinusTag = "focus-minus"
+
+/**
+ * 专注时长圆环：只有倒计时才带这个 tag，因为只有它能拖。
+ *
+ * 番茄钟的时长在它自己的参数卡里选、正计时没有目标，所以那两个模式下圆环只是预览，
+ * 不是控件——一个不能用的控件不该出现在树里。
+ */
+internal const val FocusLengthRingTag = "focus-length-ring"
 
 /** The scrolling column of the focus page: the tests use it to reach the history. */
 internal const val FocusListTag = "focus-list"
@@ -373,7 +372,7 @@ private fun SetupPanel(
         PlannedRing(
             mode = viewModel.mode,
             minutes = viewModel.plannedLengthMinutes,
-            onStep = viewModel::stepMinutes
+            onSetMinutes = viewModel::selectMinutes
         )
 
         Spacer(Modifier.height(12.dp))
@@ -536,39 +535,39 @@ private fun FocusTaskRow(
 }
 
 /**
- * The ring before a session starts: it shows the length that is picked, and the two
- * timed modes carry ± buttons beside it because those lengths are the ones the user
- * sets (倒计时 anywhere in 5–300 分钟, 番茄钟's focus block in 5–90).
+ * The ring before a session starts: it shows the length that is picked, and 倒计时 lets
+ * that length be dragged straight on the ring itself.
+ *
+ * The drag replaces the ± buttons and the slider the page used to carry: one gesture on the
+ * thing that already shows the length, instead of three controls writing the same number.
+ * 番茄钟's length lives in its own parameter card and 正向计时 has no target at all, so
+ * neither of those modes makes its ring draggable.
  */
 @Composable
 private fun PlannedRing(
     mode: FocusMode,
     minutes: Int,
-    onStep: (Int) -> Unit
+    onSetMinutes: (Int) -> Unit
 ) {
     val colors = LocalTodoColors.current
-    val bounds = stepBounds(mode)
+    val draggable = mode == FocusMode.COUNTDOWN
+    // Called whether or not it is used, so the composition never has a conditional slot.
+    val dragModifier = Modifier.ringDrag(minutes, onSetMinutes)
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
-    ) {
-        if (bounds != null) {
-            StepButton(
-                symbol = "−",
-                description = stringResource(R.string.focus_action_subtract_minutes),
-                tag = FocusMinusTag,
-                enabled = minutes > bounds.first,
-                onClick = { onStep(-FocusDurations.MinuteStep) }
-            )
-            Spacer(Modifier.width(8.dp))
-        }
-
-        FocusRing(fraction = plannedFraction(mode, minutes), tint = colors.focusAccent) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        FocusRing(
+            fraction = plannedFraction(mode, minutes),
+            tint = colors.focusAccent,
+            modifier = if (draggable) dragModifier.testTag(FocusLengthRingTag) else Modifier
+        ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = clockText(minutes * 60, showHours = minutes >= 60),
+                    // 正向计时没有目标，未启动时就老老实实停在 0:00:00，而不是番茄钟那个
+                    // 25 分钟——那个数字从来不属于它。
+                    text = clockText(
+                        seconds = if (mode == FocusMode.STOPWATCH) 0 else minutes * 60,
+                        showHours = mode == FocusMode.STOPWATCH || minutes >= 60
+                    ),
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Medium
                 )
@@ -581,126 +580,108 @@ private fun PlannedRing(
                 )
             }
         }
-
-        if (bounds != null) {
-            Spacer(Modifier.width(8.dp))
-            StepButton(
-                symbol = "+",
-                description = stringResource(R.string.focus_action_add_minutes),
-                tag = FocusPlusTag,
-                enabled = minutes < bounds.last,
-                onClick = { onStep(FocusDurations.MinuteStep) }
-            )
-        }
     }
 }
 
-/** The range a mode's length may be nudged to; null when the mode has no target. */
-private fun stepBounds(mode: FocusMode): IntRange? = when (mode) {
-    FocusMode.POMODORO -> FocusDurations.MinPomodoroMinutes..FocusDurations.MaxPomodoroMinutes
-    FocusMode.COUNTDOWN -> FocusDurations.MinMinutes..FocusDurations.MaxMinutes
-    FocusMode.STOPWATCH -> null
-}
-
-/** One of the two round ± buttons beside the ring. */
+/**
+ * 在圆环上拖拽调倒计时时长。
+ *
+ * 角度映射：一整圈 360° 正好覆盖 5–300 分钟这个范围，并且每 5 分钟吸附一档——刻度和
+ * 原来的滑条完全一样，只是手势换到了圆环上。只认「从按下的那一点转过了多少度」，所以
+ * 手指按住不动不会把值改掉。
+ */
 @Composable
-private fun StepButton(
-    symbol: String,
-    description: String,
-    tag: String,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    val colors = LocalTodoColors.current
-    Box(
-        modifier = Modifier
-            .size(StepButtonSize)
-            .clip(CircleShape)
-            .background(colors.card)
-            .border(1.dp, colors.focusTrack, CircleShape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .testTag(tag)
-            .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = symbol,
-            style = MaterialTheme.typography.titleLarge,
-            color = if (enabled) colors.focusAccent else colors.dateMuted
-        )
-    }
+private fun Modifier.ringDrag(minutes: Int, onMinutes: (Int) -> Unit): Modifier {
+    // 拖拽时 minutes 一直在变，pointerInput 的 key 必须是常量：key 一变成新值，手势监听
+    // 就会重启，手指还没抬起来拖拽就断了。所以用 rememberUpdatedState 把最新的值和回调
+    // 带进那个不会重启的协程里。
+    val latestMinutes = rememberUpdatedState(minutes)
+    val latestOnMinutes = rememberUpdatedState(onMinutes)
+    return this.then(
+        remember {
+            Modifier.pointerInput(Unit) {
+                var startAngle = 0f
+                var startMinutes = 0
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        startAngle = ringAngle(offset, size.width, size.height)
+                        startMinutes = latestMinutes.value
+                    },
+                    onDrag = { change, _ ->
+                        val turned = degreesBetween(
+                            from = startAngle,
+                            to = ringAngle(change.position, size.width, size.height)
+                        )
+                        latestOnMinutes.value(
+                            roundToStep(startMinutes + turned / 360f * MinutesPerTurn)
+                        )
+                    }
+                )
+            }
+        }
+    )
 }
 
-/** The presets plus the slider that reaches anything up to five hours. */
+/** One full turn of the ring covers the whole countdown range. */
+private const val MinutesPerTurn =
+    (FocusDurations.MaxMinutes - FocusDurations.MinMinutes).toFloat()
+
+/** 触点在圆环里的角度：0° 在正右方，顺时针为正。 */
+private fun ringAngle(offset: Offset, width: Int, height: Int): Float = Math.toDegrees(
+    atan2(
+        (offset.y - height / 2f).toDouble(),
+        (offset.x - width / 2f).toDouble()
+    )
+).toFloat()
+
+/** 从 [from] 转到 [to] 的度数，取最近的那一圈，落在 (-180, 180]。 */
+private fun degreesBetween(from: Float, to: Float): Float {
+    var delta = to - from
+    while (delta <= -180f) delta += 360f
+    while (delta > 180f) delta -= 360f
+    return delta
+}
+
+/**
+ * 倒计时的那四个快捷档。
+ *
+ * 精确选值的活儿交给圆环上的拖拽（见 [ringDrag]）：快捷档负责「常用的那几个」，
+ * 拖拽负责「其它任何值」，两者写的是同一个时长。
+ */
 @Composable
 private fun CountdownLengthPicker(
     minutes: Int,
     onSelect: (Int) -> Unit
 ) {
     val colors = LocalTodoColors.current
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // The presets and the picked length share one row, both starting where the
-        // slider starts: a floating label in the middle of its own row lined up with
-        // nothing.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            FocusDurations.CountdownChoices.forEach { choice ->
-                FilterChip(
-                    selected = minutes == choice,
-                    onClick = { onSelect(choice) },
-                    label = {
-                        Text(
-                            text = stringResource(R.string.focus_minutes_choice, choice),
-                            maxLines = 1
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = colors.focusSurface,
-                        selectedLabelColor = colors.focusAccent
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        FocusDurations.CountdownChoices.forEach { choice ->
+            FilterChip(
+                selected = minutes == choice,
+                onClick = { onSelect(choice) },
+                label = {
+                    Text(
+                        text = stringResource(R.string.focus_minutes_choice, choice),
+                        maxLines = 1
                     )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = colors.focusSurface,
+                    selectedLabelColor = colors.focusAccent
                 )
-            }
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = stringResource(R.string.focus_length_selected, lengthText(minutes)),
-                style = MaterialTheme.typography.labelLarge,
-                color = colors.focusAccent,
-                maxLines = 1
             )
         }
-
-        Spacer(Modifier.height(4.dp))
-        Slider(
-            value = minutes.toFloat(),
-            onValueChange = { raw -> onSelect(roundToStep(raw)) },
-            valueRange = FocusDurations.MinMinutes.toFloat()..FocusDurations.MaxMinutes.toFloat(),
-            steps = (FocusDurations.MaxMinutes - FocusDurations.MinMinutes) / FocusDurations.MinuteStep - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = colors.focusAccent,
-                activeTrackColor = colors.focusAccent,
-                inactiveTrackColor = colors.focusTrack
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag(FocusMinutesSliderTag)
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = stringResource(R.string.focus_length_selected, lengthText(minutes)),
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.focusAccent,
+            maxLines = 1
         )
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(R.string.focus_minutes_choice, FocusDurations.MinMinutes),
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.dateMuted
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = stringResource(R.string.focus_duration_hours, FocusDurations.MaxMinutes / 60),
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.dateMuted
-            )
-        }
     }
 }
 
@@ -909,9 +890,9 @@ private const val SoundPreviewMillis = 2_500L
 
 /** How much of the ring is filled before the session starts. */
 private fun plannedFraction(mode: FocusMode, minutes: Int): Float = when (mode) {
-    // Both timed modes draw how much of their own range this session is, so the ±
-    // buttons and the slider visibly grow or shrink the ring. Even the shortest
-    // session keeps a visible stub instead of an apparently broken empty ring.
+    // Both timed modes draw how much of their own range this session is, so dragging the
+    // countdown ring visibly grows or shrinks it. Even the shortest session keeps a visible
+    // stub instead of an apparently broken empty ring.
     FocusMode.POMODORO ->
         (minutes.toFloat() / FocusDurations.MaxPomodoroMinutes).coerceAtLeast(MinVisibleArc)
 
@@ -924,11 +905,11 @@ private fun plannedFraction(mode: FocusMode, minutes: Int): Float = when (mode) 
 
 private fun plannedHintRes(mode: FocusMode): Int = when (mode) {
     FocusMode.POMODORO -> R.string.focus_ring_break_hint
-    FocusMode.COUNTDOWN -> R.string.focus_slider_hint
+    FocusMode.COUNTDOWN -> R.string.focus_ring_drag_hint
     FocusMode.STOPWATCH -> R.string.focus_ring_stopwatch_hint
 }
 
-/** Snaps a slider reading to the nearest step, so the value is always a real choice. */
+/** Snaps a raw reading to the nearest step, so the length is always a real choice. */
 private fun roundToStep(raw: Float): Int =
     (Math.round(raw / FocusDurations.MinuteStep) * FocusDurations.MinuteStep)
         .coerceIn(FocusDurations.MinMinutes, FocusDurations.MaxMinutes)
@@ -1126,7 +1107,7 @@ private fun SessionRow(session: FocusSession, zone: ZoneId) {
             Text(
                 text = durationText(session.actualFocusSeconds),
                 style = MaterialTheme.typography.labelLarge,
-                color = if (session.status == FocusStatus.COMPLETED) colors.barNormal else colors.dateOverdue
+                color = if (session.status == FocusStatus.COMPLETED) colors.success else colors.dateOverdue
             )
         }
         Text(

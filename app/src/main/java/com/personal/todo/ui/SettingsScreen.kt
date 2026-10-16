@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.personal.todo.R
+import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.launch
@@ -51,6 +52,8 @@ internal const val SettingsScreenTag = "settings-screen"
 fun SettingsScreen(
     themeChoice: ThemeChoice,
     onThemeChoiceChange: (ThemeChoice) -> Unit,
+    colorStyle: ColorStyle,
+    onColorStyleChange: (ColorStyle) -> Unit,
     onOpenFocus: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenTags: () -> Unit,
@@ -85,10 +88,19 @@ fun SettingsScreen(
         ) {
             SectionLabel(stringResource(R.string.settings_section_theme))
             ThemeChoice.entries.forEach { choice ->
-                ThemeRow(
+                ChoiceRow(
                     label = stringResource(themeLabelRes(choice)),
                     selected = choice == themeChoice,
                     onClick = { onThemeChoiceChange(choice) }
+                )
+            }
+
+            SectionLabel(stringResource(R.string.settings_section_color))
+            ColorStyle.entries.forEach { style ->
+                ChoiceRow(
+                    label = stringResource(colorStyleLabelRes(style)),
+                    selected = style == colorStyle,
+                    onClick = { onColorStyleChange(style) }
                 )
             }
 
@@ -132,9 +144,9 @@ private fun SectionLabel(text: String) {
     )
 }
 
-/** 主题的三种选择：选中的那行右边打一个勾。 */
+/** 主题 / 色系的每一行都一样：名字在左，选中的那行右边打一个勾。 */
 @Composable
-private fun ThemeRow(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
     val colors = LocalTodoColors.current
     Row(
         modifier = Modifier
@@ -194,4 +206,10 @@ private fun themeLabelRes(choice: ThemeChoice): Int = when (choice) {
     ThemeChoice.SYSTEM -> R.string.settings_theme_system
     ThemeChoice.LIGHT -> R.string.settings_theme_light
     ThemeChoice.DARK -> R.string.settings_theme_dark
+}
+
+private fun colorStyleLabelRes(style: ColorStyle): Int = when (style) {
+    ColorStyle.CLASSIC -> R.string.settings_color_classic
+    ColorStyle.MACARON -> R.string.settings_color_macaron
+    ColorStyle.MORANDI -> R.string.settings_color_morandi
 }

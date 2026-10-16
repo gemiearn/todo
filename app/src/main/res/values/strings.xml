@@ -52,6 +52,11 @@
     <string name="settings_theme_system">跟随系统</string>
     <string name="settings_theme_light">浅色</string>
     <string name="settings_theme_dark">深色</string>
+    <!-- 色系：只换四象限的四个颜色（卡片底色、任务卡色条、日历圆点），不换应用强调色 -->
+    <string name="settings_section_color">色系</string>
+    <string name="settings_color_classic">经典</string>
+    <string name="settings_color_macaron">马卡龙</string>
+    <string name="settings_color_morandi">莫兰迪</string>
     <string name="settings_section_more">更多</string>
     <string name="settings_export">数据导出</string>
     <string name="settings_export_soon_short">即将推出</string>
@@ -322,8 +327,8 @@
     <string name="focus_pomodoro_index">今日第 %1$d 个番茄</string>
     <string name="focus_link_task">专注任务</string>
     <string name="focus_task_list">所属清单 · %1$s</string>
-    <!-- 圆环里的提示：改时长、休息口径、正向计时的自由度 -->
-    <string name="focus_slider_hint">拖动下面的进度条可调整时长</string>
+    <!-- 圆环里的提示：怎么改时长、休息口径、正向计时的自由度 -->
+    <string name="focus_ring_drag_hint">拖动圆环可调整时长</string>
     <string name="focus_ring_break_hint">休息不计入专注统计</string>
     <string name="focus_ring_stopwatch_hint">由你决定何时结束</string>
     <string name="focus_length_selected">已选 %1$s</string>
@@ -345,8 +350,6 @@
     <string name="focus_sound_waves">海浪</string>
     <string name="focus_sound_cafe">咖啡馆</string>
     <string name="focus_sound_fire">柴火</string>
-    <string name="focus_action_add_minutes">增加 5 分钟</string>
-    <string name="focus_action_subtract_minutes">减少 5 分钟</string>
     <string name="focus_duration_hours">%1$d 小时</string>
     <string name="focus_duration_hours_minutes">%1$d 小时 %2$d 分</string>
     <string name="focus_dialog_pick_task_title">选择要专注的任务</string>

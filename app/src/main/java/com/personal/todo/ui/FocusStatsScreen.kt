@@ -54,6 +54,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextMeasurer
@@ -103,6 +104,9 @@ private val HoursHeight = 150.dp
 private val YearHeight = 62.dp
 
 private val AxisLabelHeight = 15.dp
+
+/** 左轴刻度与柱子之间留的缝。 */
+private val AxisLabelGap = 8.dp
 
 /** 专注详情那张卡的四个分段：天 / 周 / 月，外加自己选起止日的「自定义」。 */
 private enum class DetailSegment { DAY, WEEK, MONTH, CUSTOM }
@@ -939,17 +943,26 @@ private fun HourChart(bars: List<FocusHourBar>, axisMinutes: Int, axisLabels: Li
     val colors = LocalTodoColors.current
     val measurer = rememberTextMeasurer()
     val labelStyle = TextStyle(color = colors.dateMuted)
+    val density = LocalDensity.current
     val accent = colors.focusAccent
     val track = colors.focusTrack
     val muted = colors.dateMuted
     val bottomLabels = HoursAxisHours.map(::hourText)
+
+    // 左轴那几个刻度的宽度并不一样（「0m」和「2h30m」差一倍多）：写死一个 inset 时，长
+    // 的那几个会被挤进柱子区、几个标签的右边缘也对不齐。所以先量出最宽的一个，再据此算
+    // inset——右边缘统一贴在 inset 减一个缝的位置上，谁也压不到柱子。
+    val axisInset = remember(axisMinutes, labelStyle) {
+        val widest = axisLabels.maxOfOrNull { measurer.measure(it, labelStyle).size.width } ?: 0
+        (widest / density.density).dp + AxisLabelGap
+    }
 
     Canvas(modifier = Modifier.fillMaxWidth().height(HoursHeight)) {
         val labelHeight = AxisLabelHeight.toPx()
         val plotTop = 2.dp.toPx()
         val plotBottom = size.height - labelHeight
         val plotHeight = plotBottom - plotTop
-        val leftInset = 46.dp.toPx()
+        val leftInset = axisInset.toPx()
         val plotWidth = size.width - leftInset
         val slot = plotWidth / HoursPerDay.toFloat()
         val dash = PathEffect.dashPathEffect(floatArrayOf(7f, 7f), 0f)
@@ -968,7 +981,7 @@ private fun HourChart(bars: List<FocusHourBar>, axisMinutes: Int, axisLabels: Li
             drawText(
                 measured,
                 topLeft = Offset(
-                    x = (leftInset - 6.dp.toPx() - measured.size.width).coerceAtLeast(0f),
+                    x = leftInset - AxisLabelGap.toPx() - measured.size.width,
                     y = y - measured.size.height / 2f
                 )
             )

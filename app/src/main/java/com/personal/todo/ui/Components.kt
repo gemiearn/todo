@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -115,17 +116,24 @@ fun priorityLabel(priority: Priority): String = stringResource(
     }
 )
 
-/** 四象限的四个颜色：任务卡左边的色条、四象限页的角标都用它。 */
+/** 四象限的四个颜色：任务卡左边的色条、四象限页的角标都用它；随「色系」设置变。 */
 @Composable
 fun priorityColor(priority: Priority): Color {
-    val colors = LocalTodoColors.current
+    val quadrants = LocalTodoColors.current.quadrants
     return when (priority) {
-        Priority.IMPORTANT_URGENT -> colors.barUrgent
-        Priority.IMPORTANT_NOT_URGENT -> colors.barHigh
-        Priority.NOT_IMPORTANT_URGENT -> colors.accent
-        Priority.NOT_IMPORTANT_NOT_URGENT -> colors.barNormal
+        Priority.IMPORTANT_URGENT -> quadrants.importantUrgent
+        Priority.IMPORTANT_NOT_URGENT -> quadrants.importantNotUrgent
+        Priority.NOT_IMPORTANT_URGENT -> quadrants.notImportantUrgent
+        Priority.NOT_IMPORTANT_NOT_URGENT -> quadrants.notImportantNotUrgent
     }
 }
+
+/**
+ * 角标上的字用哪个颜色：底色浅就用深色字，深就用白字。
+ * 马卡龙那套是浅色，白字会糊在上面，所以必须按亮度挑一次。
+ */
+fun onPriorityColor(background: Color): Color =
+    if (background.luminance() > 0.55f) Color(0xFF1C1C1E) else Color.White
 
 @Composable
 fun eventLabel(type: TaskEventType): String = stringResource(

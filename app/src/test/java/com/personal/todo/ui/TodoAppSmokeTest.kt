@@ -248,6 +248,9 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("跟随系统").assertExists()
         compose.onNodeWithText("浅色").assertExists()
         compose.onNodeWithText("深色").assertExists()
+        compose.onNodeWithText("色系").assertExists()
+        compose.onNodeWithText("马卡龙").assertExists()
+        compose.onNodeWithText("莫兰迪").assertExists()
     }
 
     /** 专注详情的第四个分段「自定义」会亮出起止日两个选择器。 */

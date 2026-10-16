@@ -5,6 +5,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.personal.todo.data.ColorStyle
 
 /**
  * The design language taken from the tick-list screenshots the user supplied:
@@ -68,9 +69,10 @@ data class TodoColors(
     val dateOverdue: Color,
     /** Text and checkbox fill of a finished task. */
     val doneInk: Color,
-    val barNormal: Color,
-    val barHigh: Color,
-    val barUrgent: Color,
+    /** 四象限的四个颜色，随设置里的「色系」整体切换。 */
+    val quadrants: QuadrantColors,
+    /** 成功那种绿：已完成的专注时长用它，和象限 Ⅳ 的绿是两回事。 */
+    val success: Color,
     /** 专注页的番茄红: the ring, the ± buttons and the focus page's selections. */
     val focusAccent: Color,
     /** The unfilled part of the focus ring. */
@@ -78,6 +80,46 @@ data class TodoColors(
     /** The tint behind the linked task of a focus session. */
     val focusSurface: Color
 )
+
+/** 四象限的四个颜色：Ⅰ 重要紧急、Ⅱ 重要不紧急、Ⅲ 紧急不重要、Ⅳ 都不占。 */
+@Immutable
+data class QuadrantColors(
+    val importantUrgent: Color,
+    val importantNotUrgent: Color,
+    val notImportantUrgent: Color,
+    val notImportantNotUrgent: Color
+)
+
+/** 经典：红 / 琥珀 / 蓝 / 绿，就是从截图里取的那一套。 */
+private val ClassicQuadrants = QuadrantColors(
+    importantUrgent = Red,
+    importantNotUrgent = Amber,
+    notImportantUrgent = Blue,
+    notImportantNotUrgent = Green
+)
+
+/** 马卡龙：浅而明快的玫瑰 / 蜜桃 / 天蓝 / 薄荷，最「卡通、清新」的一套。 */
+private val MacaronQuadrants = QuadrantColors(
+    importantUrgent = Color(0xFFF06292),
+    importantNotUrgent = Color(0xFFFFB74D),
+    notImportantUrgent = Color(0xFF4FC3F7),
+    notImportantNotUrgent = Color(0xFF4DD0A6)
+)
+
+/** 莫兰迪：低饱和的灰玫红 / 灰橙 / 灰蓝 / 灰绿，安静、偏高级的一套。 */
+private val MorandiQuadrants = QuadrantColors(
+    importantUrgent = Color(0xFFB56A6A),
+    importantNotUrgent = Color(0xFFC9A26B),
+    notImportantUrgent = Color(0xFF7E93A8),
+    notImportantNotUrgent = Color(0xFF7FA08A)
+)
+
+/** 设置页里选的色系对应哪四个象限色。 */
+fun ColorStyle.quadrantColors(): QuadrantColors = when (this) {
+    ColorStyle.CLASSIC -> ClassicQuadrants
+    ColorStyle.MACARON -> MacaronQuadrants
+    ColorStyle.MORANDI -> MorandiQuadrants
+}
 
 internal val LightTodoColors = TodoColors(
     canvas = CanvasLight,
@@ -88,9 +130,8 @@ internal val LightTodoColors = TodoColors(
     dateMuted = MutedLight,
     dateOverdue = Red,
     doneInk = DoneInkLight,
-    barNormal = Green,
-    barHigh = Amber,
-    barUrgent = Red,
+    quadrants = ClassicQuadrants,
+    success = Green,
     focusAccent = Tomato,
     focusTrack = TomatoTrackLight,
     focusSurface = TomatoSurfaceLight

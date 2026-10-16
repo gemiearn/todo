@@ -8,7 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.personal.todo.data.ThemeSettingsStore
+import com.personal.todo.data.AppearanceSettingsStore
 import com.personal.todo.data.TodoContainer
 import com.personal.todo.ui.TodoApp
 import com.personal.todo.ui.theme.TodoPomodoroTheme
@@ -19,7 +19,8 @@ import com.personal.todo.ui.theme.TodoPomodoroTheme
  * Phase 1 wires the task core: the repository is created once here and handed
  * to the Compose tree, which owns navigation, screens and view models.
  *
- * 主题也在这里读一次并交给 Compose 当状态：设置页改一次就立刻重画整棵树，同时落盘。
+ * 外观（主题与色系）也在这里读一次并交给 Compose 当状态：设置页改一次就立刻重画整棵
+ * 树，同时落盘。
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,17 +28,23 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val repository = TodoContainer.repository(applicationContext)
         val focusRepository = TodoContainer.focusRepository(applicationContext)
-        val themeStore = ThemeSettingsStore(applicationContext)
+        val appearance = AppearanceSettingsStore(applicationContext)
         setContent {
-            var themeChoice by remember { mutableStateOf(themeStore.read()) }
-            TodoPomodoroTheme(themeChoice = themeChoice) {
+            var themeChoice by remember { mutableStateOf(appearance.readTheme()) }
+            var colorStyle by remember { mutableStateOf(appearance.readColorStyle()) }
+            TodoPomodoroTheme(themeChoice = themeChoice, colorStyle = colorStyle) {
                 TodoApp(
                     repository = repository,
                     focusRepository = focusRepository,
                     themeChoice = themeChoice,
                     onThemeChoiceChange = {
                         themeChoice = it
-                        themeStore.write(it)
+                        appearance.writeTheme(it)
+                    },
+                    colorStyle = colorStyle,
+                    onColorStyleChange = {
+                        colorStyle = it
+                        appearance.writeColorStyle(it)
                     }
                 )
             }

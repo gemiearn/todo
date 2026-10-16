@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.room.Room
+import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.TaskRepository
@@ -22,6 +23,7 @@ import com.personal.todo.ui.theme.TodoPomodoroTheme
 import com.personal.todo.viewmodel.FocusViewModel
 import java.time.YearMonth
 import java.time.ZoneId
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -299,6 +301,29 @@ class MainScreenSmokeTest {
         launch(HomeTab.Quadrant.route, HomeTab.Quadrant.route)
 
         assertSomewhereOnScreen("四象限")
+    }
+
+    /**
+     * 换一套色系之后四象限页照样画得出来：卡片底是那一套象限色的淡版，角标文字按底色
+     * 亮度自动换成深色（马卡龙是浅色，白字会糊在上面）。
+     */
+    @Test
+    fun theQuadrantPageComposesUnderTheMacaronColorStyle() {
+        compose.setContent {
+            TodoPomodoroTheme(colorStyle = ColorStyle.MACARON) {
+                QuadrantScreen(
+                    openTasks = flowOf(emptyList<Task>()),
+                    completedTasks = flowOf(emptyList<Task>()),
+                    zone = ZoneId.systemDefault(),
+                    onOpenTask = {},
+                    onComplete = {},
+                    onReopen = {}
+                )
+            }
+        }
+
+        assertSomewhereOnScreen("重要且紧急")
+        assertSomewhereOnScreen("不重要不紧急")
     }
 
     /** The tab that crashed on the phone: 更多. */

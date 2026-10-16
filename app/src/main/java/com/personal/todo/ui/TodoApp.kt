@@ -77,6 +77,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.todo.R
 import com.personal.todo.data.CrashLog
+import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.TaskRepository
@@ -184,7 +185,9 @@ fun TodoApp(
     repository: TaskRepository,
     focusRepository: FocusRepository,
     themeChoice: ThemeChoice = ThemeChoice.SYSTEM,
-    onThemeChoiceChange: (ThemeChoice) -> Unit = {}
+    onThemeChoiceChange: (ThemeChoice) -> Unit = {},
+    colorStyle: ColorStyle = ColorStyle.CLASSIC,
+    onColorStyleChange: (ColorStyle) -> Unit = {}
 ) {
     // 冷启动先把重复任务后面两周那几次补上。生成器幂等（同一天不会生成两遍），所以
     // 每次进来跑一遍是安全的。
@@ -303,6 +306,8 @@ fun TodoApp(
         ROUTE_SETTINGS -> SettingsScreen(
             themeChoice = themeChoice,
             onThemeChoiceChange = onThemeChoiceChange,
+            colorStyle = colorStyle,
+            onColorStyleChange = onColorStyleChange,
             // 番茄钟参数在专注页自己的卡片里，这里只是把它作为页签切过去。
             onOpenFocus = { nav.resetTo(HomeTab.Focus.route) },
             onOpenStats = { nav.push(ROUTE_STATS) },

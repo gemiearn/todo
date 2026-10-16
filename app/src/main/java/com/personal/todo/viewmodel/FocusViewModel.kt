@@ -22,6 +22,7 @@ import com.personal.todo.model.FocusStats
 import com.personal.todo.model.FocusTiming
 import com.personal.todo.model.TaskSort
 import com.personal.todo.model.focusStatsOf
+import com.personal.todo.model.nearestOpenOccurrencePerSeries
 import com.personal.todo.model.sortTasks
 import java.time.LocalDate
 import java.time.ZoneId
@@ -56,8 +57,7 @@ object FocusDurations {
     const val MaxMinutes = 5 * 60
     const val MinuteStep = 5
 
-    /** The range a 番茄钟 focus block may be nudged to; the four presets sit inside it. */
-    const val MinPomodoroMinutes = 5
+    /** The range the 番茄钟 focus block is drawn against on the ring. */
     const val MaxPomodoroMinutes = 90
 }
 
@@ -102,9 +102,15 @@ class FocusViewModel(
         .map { focusStatsOf(it, LocalDate.now(zone), zone) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FocusStats(0, 0, 0))
 
-    /** Open tasks the session can be linked to. */
+    /**
+     * Open tasks the session can be linked to.
+     *
+     * 一串重复任务在这里也只露**最近那一条还没做完的**：库里的每一次都在，但拿一串
+     * 「每天」的任务去选择器里当然不该出现一整屏同样的标题。收拢只发生在选择列表，
+     * 不影响任何已存的记录。
+     */
     val openTasks: StateFlow<List<Task>> = taskRepository.observeAllOpenTasks()
-        .map { sortTasks(it, TaskSort.DEFAULT) }
+        .map { sortTasks(nearestOpenOccurrencePerSeries(it), TaskSort.DEFAULT) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ------------------------------------------------------------ form state
@@ -141,22 +147,6 @@ class FocusViewModel(
 
     fun selectMinutes(minutes: Int) {
         plannedMinutes = minutes.coerceIn(FocusDurations.MinMinutes, FocusDurations.MaxMinutes)
-    }
-
-    /** Nudges the length by [delta] minutes - the ± buttons beside the ring. */
-    fun stepMinutes(delta: Int) {
-        when (mode) {
-            FocusMode.POMODORO -> updateSettings {
-                it.copy(
-                    focusMinutes = (it.focusMinutes + delta)
-                        .coerceIn(FocusDurations.MinPomodoroMinutes, FocusDurations.MaxPomodoroMinutes)
-                )
-            }
-
-            FocusMode.COUNTDOWN -> selectMinutes(plannedMinutes + delta)
-
-            FocusMode.STOPWATCH -> Unit
-        }
     }
 
     fun selectFocusMinutes(minutes: Int) {
