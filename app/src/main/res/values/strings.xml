@@ -93,6 +93,22 @@
     <string name="task_tags_label">标签</string>
     <string name="tags_empty_hint">还没有标签，去「更多 - 标签管理」新建一个</string>
 
+    <!-- 习惯（一张打勾表：不进日历、不进逾期，每天按次数打卡） -->
+    <string name="habit_title">习惯</string>
+    <string name="habit_new">新建习惯</string>
+    <string name="habit_edit">编辑习惯</string>
+    <string name="habit_delete">删除习惯</string>
+    <string name="habit_more">更多操作</string>
+    <string name="habit_empty">还没有习惯。右上角新建一个，比如「一天喝水 5 次」。</string>
+    <string name="habit_name_label">习惯名称</string>
+    <string name="habit_target_label">每天次数</string>
+    <string name="habit_target_unit">次/天</string>
+    <string name="habit_today_progress">今天 %1$d/%2$d</string>
+    <string name="habit_delete_title">删除这个习惯？</string>
+    <string name="habit_delete_message">「%1$s」的打卡记录会一起删掉，删了拿不回来。</string>
+    <string name="habit_delete_confirm">删除</string>
+    <string name="more_entry_habits">习惯</string>
+
     <!-- 日期、星期与倒计时 -->
     <string name="date_today">今天</string>
     <string name="date_tomorrow">明天</string>

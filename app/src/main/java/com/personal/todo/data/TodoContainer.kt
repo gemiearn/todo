@@ -20,6 +20,9 @@ object TodoContainer {
     @Volatile
     private var focus: FocusRepository? = null
 
+    @Volatile
+    private var habits: HabitRepository? = null
+
     fun repository(context: Context): TaskRepository {
         repository?.let { return it }
         synchronized(this) {
@@ -40,6 +43,16 @@ object TodoContainer {
             focus?.let { return it }
             val created = FocusRepository(db = DatabaseProvider.get(context.applicationContext))
             focus = created
+            return created
+        }
+    }
+
+    fun habitRepository(context: Context): HabitRepository {
+        habits?.let { return it }
+        synchronized(this) {
+            habits?.let { return it }
+            val created = HabitRepository(db = DatabaseProvider.get(context.applicationContext))
+            habits = created
             return created
         }
     }

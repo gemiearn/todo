@@ -85,6 +85,7 @@ import com.personal.todo.data.CrashLog
 import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
+import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
@@ -98,6 +99,7 @@ import com.personal.todo.model.sortTasks
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.AppShellViewModel
 import com.personal.todo.viewmodel.FocusViewModel
+import com.personal.todo.viewmodel.HabitViewModel
 import com.personal.todo.viewmodel.TagViewModel
 import com.personal.todo.viewmodel.TaskCollection
 import com.personal.todo.viewmodel.TaskCollectionViewModel
@@ -124,6 +126,7 @@ private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_STATS = "stats"
 private const val ROUTE_CRASH = "crash"
 private const val ROUTE_TAGS = "tags"
+private const val ROUTE_HABITS = "habits"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_TASK = "task"
 private const val ROUTE_EDIT = "edit"
@@ -189,6 +192,7 @@ internal fun rememberNavStack(): NavStack {
 fun TodoApp(
     repository: TaskRepository,
     focusRepository: FocusRepository,
+    habitRepository: HabitRepository,
     themeChoice: ThemeChoice = ThemeChoice.SYSTEM,
     onThemeChoiceChange: (ThemeChoice) -> Unit = {},
     colorStyle: ColorStyle = ColorStyle.CLASSIC,
@@ -258,6 +262,9 @@ fun TodoApp(
     val tagViewModel: TagViewModel = viewModel(factory = TagViewModel.factory(repository))
     val allTags by tagViewModel.tags.collectAsStateWithLifecycle()
 
+    // 习惯页也是推入页（从「更多」进），同样在这里无条件建一次 view model。
+    val habitViewModel: HabitViewModel = viewModel(factory = HabitViewModel.factory(habitRepository))
+
     // 专注 is a root of the bottom bar (今天/日历/四象限/专注/更多), so its view model
     // and settings are created here - once, for every route. It is *not* a pushed
     // route: pushed, it would be a page of its own with no tab strip, and its back
@@ -311,6 +318,8 @@ fun TodoApp(
         ROUTE_CRASH -> CrashLogScreen(onBack = { nav.pop() })
 
         ROUTE_TAGS -> TagScreen(viewModel = tagViewModel, onBack = { nav.pop() })
+
+        ROUTE_HABITS -> HabitScreen(viewModel = habitViewModel, onBack = { nav.pop() })
 
         ROUTE_SETTINGS -> SettingsScreen(
             themeChoice = themeChoice,
@@ -810,9 +819,8 @@ internal fun MainScreen(
                     openTasks = remember { repository.observeAllOpenTasks() },
                     completedTasks = remember { repository.observeCompletedTasks() },
                     zone = repository.zone,
+                    // 四象限只读：决定优先级的地方，不给打勾也不给滑动完成。
                     onOpenTask = onOpenTask,
-                    onComplete = completeWithUndo,
-                    onReopen = onReopen,
                     modifier = Modifier.padding(innerPadding)
                 )
 
@@ -828,7 +836,8 @@ internal fun MainScreen(
                         // tab target resets the stack instead, which is what a
                         // bottom bar is expected to do.
                         if (target == ROUTE_CRASH || target == ROUTE_STATS ||
-                            target == ROUTE_TAGS || target == ROUTE_SETTINGS
+                            target == ROUTE_TAGS || target == ROUTE_HABITS ||
+                            target == ROUTE_SETTINGS
                         ) {
                             nav.push(target)
                         } else {
@@ -1040,6 +1049,10 @@ internal fun MoreScreen(
         MoreEntry(
             label = stringResource(R.string.more_entry_tags),
             onClick = { onOpen(ROUTE_TAGS) }
+        )
+        MoreEntry(
+            label = stringResource(R.string.more_entry_habits),
+            onClick = { onOpen(ROUTE_HABITS) }
         )
         MoreEntry(
             label = stringResource(R.string.nav_completed),

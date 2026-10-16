@@ -1,19 +1,26 @@
 package com.personal.todo.ui
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
+import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
@@ -57,6 +64,7 @@ class TodoAppSmokeTest {
     private lateinit var db: TodoDatabase
     private lateinit var tasks: TaskRepository
     private lateinit var focus: FocusRepository
+    private lateinit var habits: HabitRepository
 
     @Before
     fun setUp() {
@@ -66,6 +74,7 @@ class TodoAppSmokeTest {
                 .build()
             tasks = TaskRepository(db, "收件箱")
             focus = FocusRepository(db)
+            habits = HabitRepository(db)
             tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
         }
     }
@@ -78,7 +87,7 @@ class TodoAppSmokeTest {
     private fun launchApp() {
         compose.setContent {
             TodoPomodoroTheme {
-                TodoApp(repository = tasks, focusRepository = focus)
+                TodoApp(repository = tasks, focusRepository = focus, habitRepository = habits)
             }
         }
     }
@@ -379,5 +388,54 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("写季度报告").assertExists()
         compose.onNodeWithText("已完成", substring = true).assertExists()
         compose.onNodeWithText("番茄钟", substring = true).assertDoesNotExist()
+    }
+
+    /**
+     * 四象限是「决定优先级」的地方，不是「完成任务」的地方：任务照旧画得出来，但页面上
+     * 一个能打勾的控件都没有。完成要回列表或详情页去做。
+     */
+    @Test
+    fun theQuadrantPageHasNoCheckboxToTick() {
+        launchApp()
+
+        compose.onNodeWithTag(tabTag(HomeTab.Quadrant)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("写季度报告").assertExists()
+        compose.onAllNodes(isToggleable()).assertCountEquals(0)
+    }
+
+    /**
+     * 习惯页是独立一页（从「更多」进）：建一个「喝水」每天 2 次，点一下那一行 +1、长按 −1。
+     * （补打卡那一格在 HabitScreenSmokeTest 里单独钉过，那里能拿到习惯的 id。）
+     */
+    @Test
+    fun theHabitPageChecksInAndOut() {
+        launchApp()
+
+        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("习惯").performClick()
+        compose.waitForIdle()
+
+        // 一个习惯都还没有时，页面直接说实话。
+        compose.onNodeWithText("还没有习惯", substring = true).assertExists()
+
+        // 新建：名字 喝水、每天 2 次。弹层里的控件要用语义点击：坐标点击落不到弹层上。
+        compose.onNodeWithTag(HabitNewTag).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(HabitNameFieldTag).performTextInput("喝水")
+        compose.onNodeWithText("+").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+        compose.onNodeWithText("保存").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+
+        compose.waitUntilNodeCount(hasText("今天 0/2"), 1, TimeoutMillis)
+
+        // 点一下那一行 +1，再长按 −1。
+        compose.onNodeWithText("喝水").performClick()
+        compose.waitUntilNodeCount(hasText("今天 1/2"), 1, TimeoutMillis)
+        compose.onNodeWithText("喝水").performTouchInput { longClick() }
+        compose.waitUntilNodeCount(hasText("今天 0/2"), 1, TimeoutMillis)
     }
 }

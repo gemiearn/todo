@@ -50,6 +50,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * started, joined by the Unit Separator so the 统计页 can filter by one tag. Both
  * are nullable, so sessions (and a running timer) recorded before the upgrade
  * simply have no tags - nothing is guessed.
+ *
+ * Version 10 adds the habit tables `habits` / `habit_check_ins` (需求文档 3：习惯与
+ * 任务分开建模). Both start empty - no task, list, event or focus session is
+ * rewritten, so nothing can be lost on the upgrade. A check-in is keyed by
+ * `(habitId, 本地日期)`.
  */
 @Database(
     entities = [
@@ -59,9 +64,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FocusSession::class,
         ActiveTimer::class,
         Tag::class,
-        TaskTag::class
+        TaskTag::class,
+        Habit::class,
+        HabitCheckIn::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -76,6 +83,8 @@ abstract class TodoDatabase : RoomDatabase() {
     abstract fun focusDao(): FocusDao
 
     abstract fun tagDao(): TagDao
+
+    abstract fun habitDao(): HabitDao
 
     companion object {
         const val DATABASE_NAME = "todo.db"
@@ -244,6 +253,42 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v9 -> v10: 习惯打勾表。两张新表都从空的开始，任务、清单、事件、专注记录一个都
+         * 没被改写；打卡记录的主键是 `(habitId, 本地日期)`，日期存 `YYYY-MM-DD`。
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `habits` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`dailyTarget` INTEGER NOT NULL, " +
+                        "`sortOrder` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `habit_check_ins` (" +
+                        "`habitId` INTEGER NOT NULL, " +
+                        "`date` TEXT NOT NULL, " +
+                        "`count` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`habitId`, `date`), " +
+                        "FOREIGN KEY(`habitId`) REFERENCES `habits`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE RESTRICT )"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_habit_check_ins_habitId` " +
+                        "ON `habit_check_ins` (`habitId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_habit_check_ins_date` " +
+                        "ON `habit_check_ins` (`date`)"
+                )
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -253,7 +298,8 @@ abstract class TodoDatabase : RoomDatabase() {
             MIGRATION_5_6,
             MIGRATION_6_7,
             MIGRATION_7_8,
-            MIGRATION_8_9
+            MIGRATION_8_9,
+            MIGRATION_9_10
         )
     }
 }

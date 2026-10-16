@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val repository = TodoContainer.repository(applicationContext)
         val focusRepository = TodoContainer.focusRepository(applicationContext)
+        val habitRepository = TodoContainer.habitRepository(applicationContext)
         val appearance = AppearanceSettingsStore(applicationContext)
         setContent {
             var themeChoice by remember { mutableStateOf(appearance.readTheme()) }
@@ -36,6 +37,7 @@ class MainActivity : ComponentActivity() {
                 TodoApp(
                     repository = repository,
                     focusRepository = focusRepository,
+                    habitRepository = habitRepository,
                     themeChoice = themeChoice,
                     onThemeChoiceChange = {
                         themeChoice = it

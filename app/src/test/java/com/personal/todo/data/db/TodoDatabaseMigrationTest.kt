@@ -4,6 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
+import com.personal.todo.data.HabitRepository
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTagSnapshot
@@ -545,6 +546,102 @@ class TodoDatabaseMigrationTest {
     }
 
     /**
+     * v9 -> v10: 习惯的两张表。它们从空的开始，所以升级前记下的任务与专注记录一个都没被动
+     * 过；升完之后新习惯与打卡记录都能正常写读。
+     */
+    @Test
+    fun migratingFromVersion9AddsTheHabitTablesAndKeepsEverything() = runBlocking {
+        val name = "migration-9-to-10.db"
+        context.deleteDatabase(name)
+        createVersion9Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val session = db.focusDao().getSessions().single()
+            assertEquals("迁移前的任务", session.taskTitleSnapshot)
+            assertEquals("收件箱", session.listNameSnapshot)
+
+            assertTrue("习惯表是新建的，里面是空的", db.habitDao().observeHabits().first().isEmpty())
+
+            val habits = HabitRepository(
+                db = db,
+                now = { 2_000L },
+                zone = ZoneId.of("Asia/Shanghai")
+            )
+            val habitId = habits.createHabit("喝水", 5)
+            habits.increment(habitId, LocalDate.of(2026, 10, 16))
+
+            val habit = requireNotNull(db.habitDao().getById(habitId))
+            assertEquals("喝水", habit.name)
+            assertEquals(5, habit.dailyTarget)
+            assertEquals(
+                "打卡按本地日期存下来",
+                1,
+                db.habitDao().getCheckIn(habitId, LocalDate.of(2026, 10, 16))?.count
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * Builds a file backed database exactly as version 9 would have left it: the
+     * v8 DDL plus `tagNamesSnapshot` on both focus tables, one task and its
+     * finished 番茄钟.
+     */
+    private fun createVersion9Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V5_TASK_LISTS)
+            sqlite.execSQL(V8_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V9_FOCUS_SESSIONS)
+            sqlite.execSQL(V9_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_tasks_recurrenceSourceId` ON `tasks` (`recurrenceSourceId`)"
+            )
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V9_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime, " +
+                    "repeatRule, recurrenceSourceId) " +
+                    "VALUES ('迁移前的任务', NULL, 1, NULL, 'IMPORTANT_NOT_URGENT', NULL, NULL, 0, 1000, 1000, " +
+                    "NULL, NULL, NULL, NULL, NULL, NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO task_events (taskId, eventAt, eventType, titleSnapshot, detailsJson) " +
+                    "VALUES (1, 1000, 'CREATED', '迁移前的任务', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO focus_sessions (taskId, taskTitleSnapshot, listNameSnapshot, tagNamesSnapshot, " +
+                    "mode, startedAt, endedAt, plannedSeconds, actualFocusSeconds, status, note) " +
+                    "VALUES (1, '迁移前的任务', '收件箱', NULL, 'POMODORO', 1000, 2000, 1500, 1500, 'COMPLETED', NULL)"
+            )
+            sqlite.version = 9
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
      * Builds a file backed database exactly as version 1 of the app would have:
      * same DDL, same indices, same room_master_table identity hash.
      */
@@ -673,6 +770,26 @@ class TodoDatabaseMigrationTest {
                 "`repeatRule` TEXT, `recurrenceSourceId` INTEGER, " +
                 "FOREIGN KEY(`listId`) REFERENCES `task_lists`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , " +
                 "FOREIGN KEY(`parentTaskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        /** The identity hash `schemas/.../9.json` records for version 9. */
+        const val V9_IDENTITY_HASH = "75bbb228c11e8fe6f01f3a1fc1ff6c60"
+
+        /** 专注记录表到版本 9：v6 的那张再加上标签快照列。 */
+        const val V9_FOCUS_SESSIONS =
+            "CREATE TABLE IF NOT EXISTS `focus_sessions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`taskId` INTEGER, `taskTitleSnapshot` TEXT, `listNameSnapshot` TEXT, `tagNamesSnapshot` TEXT, " +
+                "`mode` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, `endedAt` INTEGER NOT NULL, " +
+                "`plannedSeconds` INTEGER NOT NULL, `actualFocusSeconds` INTEGER NOT NULL, " +
+                "`status` TEXT NOT NULL, `note` TEXT, " +
+                "FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        const val V9_ACTIVE_TIMER =
+            "CREATE TABLE IF NOT EXISTS `active_timer` (`id` INTEGER NOT NULL, `mode` TEXT NOT NULL, " +
+                "`phase` TEXT NOT NULL DEFAULT 'FOCUS', `taskId` INTEGER, `taskTitleSnapshot` TEXT, " +
+                "`listNameSnapshot` TEXT, `tagNamesSnapshot` TEXT, `plannedSeconds` INTEGER NOT NULL, " +
+                "`startedAt` INTEGER NOT NULL, `lastResumeAtElapsed` INTEGER NOT NULL, " +
+                "`accumulatedFocusSeconds` INTEGER NOT NULL, `running` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
 
         const val V5_TAGS =
             "CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +

@@ -13,13 +13,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,6 +56,9 @@ private const val QuadrantTintAlpha = 0.20f
  * user sets in the editor, not something derived from a due date. A task
  * therefore only ever changes box when the user moves it, never because a day
  * passed.
+ *
+ * 这一页**只读**：它是「决定优先级」的地方，不是「完成任务」的地方，所以任务卡上既没有
+ * 打勾也没有滑动完成——点一行只是进任务详情，要完成请回列表或详情页。
  */
 @Composable
 fun QuadrantScreen(
@@ -67,8 +66,6 @@ fun QuadrantScreen(
     completedTasks: Flow<List<Task>>,
     zone: ZoneId,
     onOpenTask: (Long) -> Unit,
-    onComplete: (Task) -> Unit,
-    onReopen: (Task) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val nowMillis = rememberNowMillis()
@@ -105,8 +102,6 @@ fun QuadrantScreen(
                 nowMillis = nowMillis,
                 zone = zone,
                 onOpenTask = onOpenTask,
-                onComplete = onComplete,
-                onReopen = onReopen,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
             QuadrantCard(
@@ -115,8 +110,6 @@ fun QuadrantScreen(
                 nowMillis = nowMillis,
                 zone = zone,
                 onOpenTask = onOpenTask,
-                onComplete = onComplete,
-                onReopen = onReopen,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
         }
@@ -130,8 +123,6 @@ fun QuadrantScreen(
                 nowMillis = nowMillis,
                 zone = zone,
                 onOpenTask = onOpenTask,
-                onComplete = onComplete,
-                onReopen = onReopen,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
             QuadrantCard(
@@ -140,8 +131,6 @@ fun QuadrantScreen(
                 nowMillis = nowMillis,
                 zone = zone,
                 onOpenTask = onOpenTask,
-                onComplete = onComplete,
-                onReopen = onReopen,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
         }
@@ -155,8 +144,6 @@ private fun QuadrantCard(
     nowMillis: Long,
     zone: ZoneId,
     onOpenTask: (Long) -> Unit,
-    onComplete: (Task) -> Unit,
-    onReopen: (Task) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
@@ -213,13 +200,9 @@ private fun QuadrantCard(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 items(tasks, key = { it.id }) { task ->
-                    val completed = task.completedAt != null
                     QuadrantTaskRow(
                         task = task,
-                        checked = completed,
-                        onCheckedChange = { checked ->
-                            if (checked) onComplete(task) else onReopen(task)
-                        },
+                        completed = task.completedAt != null,
                         onClick = { onOpenTask(task.id) },
                         nowMillis = nowMillis,
                         zone = zone
@@ -230,12 +213,11 @@ private fun QuadrantCard(
     }
 }
 
-/** One task inside a quadrant: checkbox, title and its date underneath. */
+/** One task inside a quadrant: just its title and the date underneath - 这一页不打勾。 */
 @Composable
 private fun QuadrantTaskRow(
     task: Task,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+    completed: Boolean,
     onClick: () -> Unit,
     nowMillis: Long,
     zone: ZoneId,
@@ -252,21 +234,11 @@ private fun QuadrantTaskRow(
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.Top
     ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(
-                checkedColor = if (checked) colors.doneInk else colors.accent,
-                checkmarkColor = Color.White
-            ),
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(Modifier.width(6.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (checked) colors.doneInk else MaterialTheme.colorScheme.onSurface,
+                color = if (completed) colors.doneInk else MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )

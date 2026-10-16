@@ -1,0 +1,533 @@
+package com.personal.todo.ui
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.personal.todo.R
+import com.personal.todo.data.db.Habit
+import com.personal.todo.model.HabitRules
+import com.personal.todo.ui.theme.LocalTodoColors
+import com.personal.todo.viewmodel.HabitViewModel
+import java.time.LocalDate
+
+/** The tag the smoke tests use to reach the page's habit list. */
+internal const val HabitScreenTag = "habit-screen"
+
+/** 右上角那个新建习惯的图标（它没有文字）。 */
+internal const val HabitNewTag = "habit-new"
+
+/** 新建 / 编辑弹层里的名字输入框。 */
+internal const val HabitNameFieldTag = "habit-name"
+
+/** 一个习惯「今天」那一次打卡的区域：点一下 +1、长按 −1。 */
+internal fun habitRowTag(habitId: Long): String = "habit-row-$habitId"
+
+/** 最近 7 天里某一天的格子：点一下给那天 +1、长按 −1。 */
+internal fun habitDayCellTag(habitId: Long, date: LocalDate): String =
+    "habit-day-$habitId-${date.toEpochDay()}"
+
+/** 每天次数的上限：再多就不是「一天几次」了。 */
+private const val MaxDailyTarget = 99
+
+/**
+ * 习惯页：一张打勾表——每个习惯一行，加一条「最近 7 天」的格子。
+ *
+ * 它是一个独立页面（和标签管理、设置一样从「更多」推进来），不占页签、不进日历。
+ * 每个习惯有「每天目标次数」（喝水 5 次 → 5）：
+ * 点一下某一天的格子＝那天 +1，长按＝−1，到目标就不再往上加；次数为 1 的习惯就是普通的
+ * 「今天做没做」。
+ *
+ * 这里的 [HabitViewModel.week] 最右是今天，所以格子行里不会出现未来的日子。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HabitScreen(
+    viewModel: HabitViewModel,
+    onBack: () -> Unit
+) {
+    val habits by viewModel.habits.collectAsStateWithLifecycle()
+    val counts by viewModel.counts.collectAsStateWithLifecycle()
+
+    // null = 关着；editing = 改这个；deleting = 删这个之前先问一次。
+    var editing by remember { mutableStateOf<Habit?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<Habit?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.habit_title)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { creating = true },
+                        modifier = Modifier.testTag(HabitNewTag)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = stringResource(R.string.habit_new)
+                        )
+                    }
+                }
+            )
+        }
+    ) { innerPadding ->
+        if (habits.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.habit_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LocalTodoColors.current.dateMuted,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+            return@Scaffold
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .testTag(HabitScreenTag),
+            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(habits, key = { it.id }) { habit ->
+                HabitCard(
+                    habit = habit,
+                    week = viewModel.week,
+                    today = viewModel.today,
+                    countsOfHabit = counts[habit.id].orEmpty(),
+                    onIncrement = viewModel::increment,
+                    onDecrement = viewModel::decrement,
+                    onEdit = { editing = habit },
+                    onDelete = { deleting = habit }
+                )
+            }
+        }
+    }
+
+    if (creating) {
+        HabitEditSheet(
+            title = stringResource(R.string.habit_new),
+            initialName = "",
+            initialTarget = HabitRules.MinTarget,
+            onConfirm = { name, target ->
+                viewModel.create(name, target)
+                creating = false
+            },
+            onDismiss = { creating = false }
+        )
+    }
+
+    editing?.let { habit ->
+        HabitEditSheet(
+            title = stringResource(R.string.habit_edit),
+            initialName = habit.name,
+            initialTarget = habit.dailyTarget,
+            onConfirm = { name, target ->
+                viewModel.update(habit.id, name, target)
+                editing = null
+            },
+            onDismiss = { editing = null }
+        )
+    }
+
+    deleting?.let { habit ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text(stringResource(R.string.habit_delete_title)) },
+            text = { Text(stringResource(R.string.habit_delete_message, habit.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.delete(habit.id)
+                        deleting = null
+                    }
+                ) {
+                    Text(stringResource(R.string.habit_delete_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+}
+
+/**
+ * 一个习惯：上面是名字与「今天 n/m」，下面是最近 7 天的格子。
+ *
+ * 名字那一行本身就是今天的打卡入口（点＝+1、长按＝−1），格子行负责按下某一天补打。
+ * 改名 / 改次数 / 删除收在右边的 ⋮ 里——它自己是一个按钮，不会把点击漏给上面那一行。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HabitCard(
+    habit: Habit,
+    week: List<LocalDate>,
+    today: LocalDate,
+    countsOfHabit: Map<LocalDate, Int>,
+    onIncrement: (Long, LocalDate) -> Unit,
+    onDecrement: (Long, LocalDate) -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    var menuOpen by remember { mutableStateOf(false) }
+    val todayCount = countsOfHabit[today] ?: 0
+    val done = HabitRules.isComplete(todayCount, habit.dailyTarget)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.card)
+            .padding(vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .combinedClickable(
+                        onClick = { onIncrement(habit.id, today) },
+                        onLongClick = { onDecrement(habit.id, today) }
+                    )
+                    .testTag(habitRowTag(habit.id))
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                HabitBadge(done)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = habit.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.habit_today_progress,
+                            todayCount,
+                            habit.dailyTarget
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (done) colors.success else colors.dateMuted
+                    )
+                }
+            }
+
+            Box {
+                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.habit_more),
+                        tint = colors.dateMuted
+                    )
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.habit_edit)) },
+                        onClick = {
+                            menuOpen = false
+                            onEdit()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.habit_delete)) },
+                        onClick = {
+                            menuOpen = false
+                            onDelete()
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            week.forEach { date ->
+                HabitDayCell(
+                    habitId = habit.id,
+                    date = date,
+                    count = countsOfHabit[date] ?: 0,
+                    target = habit.dailyTarget,
+                    isToday = date == today,
+                    onClick = { onIncrement(habit.id, date) },
+                    onLongClick = { onDecrement(habit.id, date) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+/** 今天完成了没有：到目标就是实心勾，没到就是一个空圈。 */
+@Composable
+private fun HabitBadge(done: Boolean) {
+    val colors = LocalTodoColors.current
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(if (done) colors.success else Color.Transparent)
+            .then(
+                if (done) Modifier else Modifier.border(1.5.dp, colors.dateMuted, CircleShape)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (done) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(15.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 最近 7 天里的一天：上面是星期几，下面那个小方块里是那天的次数。
+ *
+ * 方块的颜色直接说清了状态：到目标＝实色（绿），有几次但没到＝浅色，一次没打＝灰底。
+ * 今天那一格的底色单独提亮，一眼看得出「这一格是今天」。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun HabitDayCell(
+    habitId: Long,
+    date: LocalDate,
+    count: Int,
+    target: Int,
+    isToday: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    val done = HabitRules.isComplete(count, target)
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (isToday) colors.groupHeader else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .testTag(habitDayCellTag(habitId, date))
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = stringResource(weekdayNarrowRes(date.dayOfWeek)),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.dateMuted,
+            maxLines = 1
+        )
+        Spacer(Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    when {
+                        done -> colors.success
+                        count > 0 -> colors.accent.copy(alpha = 0.18f)
+                        else -> colors.groupHeader
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = when {
+                    done -> Color.White
+                    count > 0 -> colors.accent
+                    else -> colors.dateMuted
+                }
+            )
+        }
+    }
+}
+
+/**
+ * 新建 / 编辑习惯：一个名字格子加一个「每天次数」的步进器。
+ *
+ * 用底部弹层而不是 AlertDialog，和「新建任务」那个弹层保持一致（它也是唯一在测试里被
+ * 跑过的带输入框弹层）。保存按钮在弹层底部整行铺满，和参考里的新建任务一个样子。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HabitEditSheet(
+    title: String,
+    initialName: String,
+    initialTarget: Int,
+    onConfirm: (String, Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalTodoColors.current
+    var name by remember { mutableStateOf(initialName) }
+    var target by remember { mutableIntStateOf(initialTarget) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.card
+    ) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 12.dp)
+            )
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.habit_name_label)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag(HabitNameFieldTag)
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = stringResource(R.string.habit_target_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.dateMuted
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StepperChip(label = "−") { target = (target - 1).coerceAtLeast(HabitRules.MinTarget) }
+                Text(
+                    text = target.toString(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 14.dp)
+                )
+                StepperChip(label = "+") { target = (target + 1).coerceAtMost(MaxDailyTarget) }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = stringResource(R.string.habit_target_unit),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.dateMuted
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Button(
+                onClick = { onConfirm(name, target) },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.action_save))
+            }
+        }
+    }
+}
+
+/**
+ * 「−」/「+」那一个小方块：方底 + 点一下。
+ *
+ * 用 Box + clickable 而不是 material3 的 TextButton，只是为了和新建任务弹层里的快捷日期
+ * 胶囊长得一样（方底小片），不是为了绕开什么——两者在真机上都是普通的点击。
+ */
+@Composable
+private fun StepperChip(label: String, onClick: () -> Unit) {
+    val colors = LocalTodoColors.current
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.groupHeader)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
