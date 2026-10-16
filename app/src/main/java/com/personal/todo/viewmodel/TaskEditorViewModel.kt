@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.personal.todo.data.TaskRepository
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Priority
 import com.personal.todo.model.RepeatRule
@@ -17,6 +18,7 @@ import java.time.LocalTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -35,6 +37,14 @@ class TaskEditorViewModel(
 
     val lists: StateFlow<List<TaskList>> = repository.observeLists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 全部标签：编辑器「标签」那一组把它们列出来让用户勾。 */
+    val allTags: StateFlow<List<Tag>> = repository.observeTags()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 这条任务已经勾上的标签 id；新建任务默认一个都没有。 */
+    var selectedTagIds by mutableStateOf<Set<Long>>(emptySet())
+        private set
 
     var title by mutableStateOf("")
         private set
@@ -102,6 +112,8 @@ class TaskEditorViewModel(
                 dueDate = task.dueDate
                 dueTime = task.dueTime
                 repeatRule = task.repeatRule
+                // 标签是另一张表，单独取一次（first 拿到当前值就够，标签数很少）。
+                selectedTagIds = repository.observeTagsOf(taskId).first().map { it.id }.toSet()
             }
         }
     }
@@ -155,6 +167,15 @@ class TaskEditorViewModel(
         if (value != null && plannedDate == null) plannedDate = today
     }
 
+    /** 勾上 / 取消一个标签。标签是多值属性，两者互不影响。 */
+    fun onToggleTag(tagId: Long) {
+        selectedTagIds = if (tagId in selectedTagIds) {
+            selectedTagIds - tagId
+        } else {
+            selectedTagIds + tagId
+        }
+    }
+
     /**
      * Consumes the save result. A view model can outlive its screen (the same
      * route opened again gets a fresh one now, but this keeps the screen from
@@ -171,7 +192,7 @@ class TaskEditorViewModel(
             return
         }
         viewModelScope.launch {
-            if (taskId == null) {
+            val savedTaskId = if (taskId == null) {
                 repository.createTask(
                     title = trimmedTitle,
                     listId = listId,
@@ -196,7 +217,10 @@ class TaskEditorViewModel(
                     dueTime = dueTime,
                     repeatRule = repeatRule
                 )
+                taskId
             }
+            // 标签存在另一张表：把这条任务的标签整个换成勾中的这一组。
+            repository.setTaskTags(savedTaskId, selectedTagIds)
             // 带规则的这条任务刚存下，立刻把后面两周那几次也落成独立任务，用户一回到
             // 列表就能看见它们。
             if (repeatRule != null) repository.materializeRecurrences(today)

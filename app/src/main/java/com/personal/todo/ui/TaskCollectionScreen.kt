@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.personal.todo.R
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskCollection
@@ -55,6 +56,7 @@ fun TaskCollectionContent(
     tasks: List<Task>,
     completedTasks: List<Task>,
     subtaskCounts: Map<Long, Int>,
+    tagsByTask: Map<Long, List<Tag>>,
     emptyText: String,
     zone: ZoneId,
     onOpenTask: (Long) -> Unit,
@@ -103,6 +105,7 @@ fun TaskCollectionContent(
     ) {
         items(tasks, key = { it.id }) { task ->
             val subtaskCount = subtaskCounts[task.id] ?: 0
+            val tags = tagsByTask[task.id].orEmpty()
             when (collection) {
                 TaskCollection.Trash -> TaskCard(
                     task = task,
@@ -113,7 +116,8 @@ fun TaskCollectionContent(
                     nowMillis = nowMillis,
                     zone = zone,
                     actionLabel = restoreLabel,
-                    onAction = { onRestore(task) }
+                    onAction = { onRestore(task) },
+                    tags = tags
                 )
 
                 TaskCollection.Completed -> TaskCard(
@@ -125,7 +129,8 @@ fun TaskCollectionContent(
                     nowMillis = nowMillis,
                     zone = zone,
                     actionLabel = reopenLabel,
-                    onAction = { onReopen(task) }
+                    onAction = { onReopen(task) },
+                    tags = tags
                 )
 
                 else -> SwipeableTaskCard(
@@ -139,7 +144,8 @@ fun TaskCollectionContent(
                     nowMillis = nowMillis,
                     zone = zone,
                     onSwipeComplete = { onComplete(task) },
-                    onSwipeDelete = { onDelete(task) }
+                    onSwipeDelete = { onDelete(task) },
+                    tags = tags
                 )
             }
         }
@@ -163,7 +169,8 @@ fun TaskCollectionContent(
                         nowMillis = nowMillis,
                         zone = zone,
                         actionLabel = reopenLabel,
-                        onAction = { onReopen(task) }
+                        onAction = { onReopen(task) },
+                        tags = tagsByTask[task.id].orEmpty()
                     )
                 }
             }

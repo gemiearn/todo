@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -342,5 +343,48 @@ class MainScreenSmokeTest {
         launch("overdue", "overdue")
 
         assertSomewhereOnScreen("逾期")
+    }
+
+    /** 列表顶栏的筛选按钮：点开「显示范围」面板，三个维度都在。 */
+    @Test
+    fun theRangeFilterPanelOpensFromTheListTopBar() {
+        launch("inbox", "inbox")
+
+        compose.onNodeWithContentDescription("筛选").performClick()
+        compose.waitForIdle()
+
+        assertSomewhereOnScreen("显示范围")
+        assertSomewhereOnScreen("清单")
+        assertSomewhereOnScreen("优先级")
+        assertSomewhereOnScreen("标签")
+    }
+
+    /** 日历 ⋮ 面板：同一个筛选面板下面再接一段「显示设置」。 */
+    @Test
+    fun theCalendarDisplayOptionsOpenFromTheMenu() {
+        launch(HomeTab.Calendar.route, HomeTab.Calendar.route)
+
+        compose.onNodeWithTag(CalendarDisplayOptionsTag).performClick()
+        compose.waitForIdle()
+
+        assertSomewhereOnScreen("显示范围")
+        assertSomewhereOnScreen("显示设置")
+        assertSomewhereOnScreen("显示已完成")
+    }
+
+    /** 周视图有一对前后箭头，点一下会挪到下一周。 */
+    @Test
+    fun theWeekViewHasStepArrows() {
+        launch(HomeTab.Calendar.route, HomeTab.Calendar.route)
+
+        compose.onNodeWithTag(CalendarViewSwitchTag).performClick()
+        compose.onNodeWithTag(calendarViewOptionTag(CalendarView.WEEK)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(CalendarStepPreviousTag).assertExists()
+        compose.onNodeWithTag(CalendarStepNextTag).performClick()
+        compose.waitForIdle()
+        // 挪到下一周之后，周视图仍然在，只是标题换成了另一周。
+        compose.onNodeWithTag(calendarBodyTag(CalendarView.WEEK)).assertExists()
     }
 }

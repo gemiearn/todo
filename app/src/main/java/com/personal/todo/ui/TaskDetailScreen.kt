@@ -41,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskList
@@ -69,6 +70,7 @@ fun TaskDetailScreen(
     val task by viewModel.task.collectAsStateWithLifecycle()
     val subtasks by viewModel.subtasks.collectAsStateWithLifecycle()
     val events by viewModel.events.collectAsStateWithLifecycle()
+    val tags by viewModel.tags.collectAsStateWithLifecycle()
     val subtaskAddFailed by viewModel.subtaskAddFailed.collectAsStateWithLifecycle()
     val nowMillis = rememberNowMillis()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -131,6 +133,7 @@ fun TaskDetailScreen(
                 TaskHeader(
                     task = current,
                     lists = lists,
+                    tags = tags,
                     nowMillis = nowMillis,
                     zone = zone,
                     onComplete = { viewModel.complete() },
@@ -204,6 +207,7 @@ fun TaskDetailScreen(
 private fun TaskHeader(
     task: Task,
     lists: List<TaskList>,
+    tags: List<Tag>,
     nowMillis: Long,
     zone: ZoneId,
     onComplete: () -> Unit,
@@ -218,6 +222,10 @@ private fun TaskHeader(
         task.notes?.takeIf { it.isNotBlank() }?.let { notes ->
             Spacer(Modifier.height(8.dp))
             Text(notes, style = MaterialTheme.typography.bodyMedium)
+        }
+        if (tags.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            TagChipRow(tags = tags)
         }
         Spacer(Modifier.height(12.dp))
         Text(

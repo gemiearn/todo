@@ -66,6 +66,38 @@ fun sortTasks(tasks: List<Task>, sort: TaskSort): List<Task> = when (sort) {
 private fun orderDate(task: Task): LocalDate? = task.plannedDate ?: task.dueDate
 
 /**
+ * 显示范围筛选（说明文档 4.4）：清单 / 优先级 / 标签三个维度。
+ *
+ * 维度之间是「且」、维度内部是「或」——这是用户定的口径：勾了两个清单看的就是这两个
+ * 清单的任务，再勾优先级就得同时落在选中的清单和选中的优先级里。空集合表示这一维
+ * 不筛（也就是「全部」），三维都空时这个筛子等于没开。
+ */
+data class TaskFilter(
+    val listIds: Set<Long> = emptySet(),
+    val priorities: Set<Priority> = emptySet(),
+    val tagIds: Set<Long> = emptySet()
+) {
+    val isEmpty: Boolean get() = listIds.isEmpty() && priorities.isEmpty() && tagIds.isEmpty()
+}
+
+/**
+ * 按 [filter] 收窄任务。标签是多值属性、不存在 Task 行上，所以标签那一维要用
+ * [tagIdsOfTask] 这个口子去查「这条任务带了哪些标签 id」。
+ */
+fun filterByRange(
+    tasks: List<Task>,
+    filter: TaskFilter,
+    tagIdsOfTask: (Long) -> Set<Long> = { emptySet() }
+): List<Task> {
+    if (filter.isEmpty) return tasks
+    return tasks.filter { task ->
+        (filter.listIds.isEmpty() || task.listId in filter.listIds) &&
+            (filter.priorities.isEmpty() || task.priority in filter.priorities) &&
+            (filter.tagIds.isEmpty() || tagIdsOfTask(task.id).any { it in filter.tagIds })
+    }
+}
+
+/**
  * 重复任务在库里是「每一次一条独立任务」（说明文档 4.5），但打开态的视图只该看到
  * **最近那一条还没做完的**——滴答清单也是这样：未来的那几次都在，列表里只露一个。
  *

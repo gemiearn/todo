@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.personal.todo.data.TaskRepository
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +35,10 @@ class TaskDetailViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val events: StateFlow<List<TaskEvent>> = repository.observeEvents(taskId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 这条任务身上的标签，详情页在标题下画成小片。 */
+    val tags: StateFlow<List<Tag>> = repository.observeTagsOf(taskId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _subtaskAddFailed = MutableStateFlow(false)

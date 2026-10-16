@@ -98,6 +98,26 @@ internal val LightTodoColors = TodoColors(
 
 val LocalTodoColors = staticCompositionLocalOf { LightTodoColors }
 
+/**
+ * 标签调色板：新建标签时从这几个色里挑一个，卡片上的标签小片也用同一个色。
+ *
+ * 存进库的是 ARGB 整数（`tags.color`），所以这里给的是不随深浅主题变的具体颜色，
+ * 标签的颜色在任何主题下读起来都该是一样的。
+ */
+val TagPalette: List<Color> = listOf(
+    Color(0xFFE5484D),
+    Color(0xFFF5A623),
+    Color(0xFF3DBE7B),
+    Color(0xFF3D7BF7),
+    Color(0xFF8E7CF7),
+    Color(0xFFF0665B),
+    Color(0xFF00B4D8),
+    Color(0xFF9A9FA5)
+)
+
+/** 新建标签时的默认色：调色板的第一个。 */
+val DefaultTagColor: Color = TagPalette.first()
+
 internal val DarkTodoColors = LightTodoColors.copy(
     canvas = CanvasDark,
     card = CardDark,

@@ -543,6 +543,58 @@ class TaskRepositoryTest {
     private fun advanceClock(millis: Long = 1_000L) {
         clock += millis
     }
+    // ------------------------------------------------------------- 标签
+
+    @Test
+    fun tagsCanBeCreatedRenamedAndDeleted() = runBlocking {
+        val tagId = repository.createTag("等回复", 0xFFFF0000.toInt())
+        repository.updateTag(tagId, "已回复", 0xFF00FF00.toInt())
+
+        val tag = repository.observeTags().first().single()
+        assertEquals("已回复", tag.name)
+        assertEquals(0xFF00FF00.toInt(), tag.color)
+
+        repository.deleteTag(tagId)
+        assertTrue(repository.observeTags().first().isEmpty())
+    }
+
+    @Test
+    fun settingTheTagsOfATaskReplacesTheWholeSet() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId)
+        val urgent = repository.createTag("紧急", 0xFFFF0000.toInt())
+        val home = repository.createTag("家里", 0xFF0000FF.toInt())
+
+        repository.setTaskTags(taskId, listOf(urgent, home))
+        assertEquals(setOf(urgent, home), repository.observeTagsOf(taskId).first().map { it.id }.toSet())
+
+        repository.setTaskTags(taskId, listOf(home))
+        assertEquals(listOf(home), repository.observeTagsOf(taskId).first().map { it.id })
+    }
+
+    @Test
+    fun deletingATagClearsItsLinksAndLeavesTheTaskAlone() = runBlocking {
+        val taskId = repository.createTask("任务", inboxId)
+        val tagId = repository.createTag("临时", 0xFFFF0000.toInt())
+        repository.setTaskTags(taskId, listOf(tagId))
+
+        repository.deleteTag(tagId)
+
+        assertTrue(repository.observeTagsOf(taskId).first().isEmpty())
+        assertNotNull(repository.getTask(taskId))
+    }
+
+    @Test
+    fun tagsOfEveryTaskAreGroupedForTheListCards() = runBlocking {
+        val first = repository.createTask("任务一", inboxId)
+        val second = repository.createTask("任务二", inboxId)
+        val tagId = repository.createTag("标签", 0xFFFF0000.toInt())
+        repository.setTaskTags(first, listOf(tagId))
+
+        val byTask = repository.observeTagsByTask().first()
+
+        assertEquals(listOf(tagId), byTask[first]?.map { it.id })
+        assertNull(byTask[second])
+    }
 
     private fun assertFailsWithIllegalArgument(block: suspend () -> Unit) {
         var caught: Throwable? = null

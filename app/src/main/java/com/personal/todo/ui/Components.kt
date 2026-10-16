@@ -1,7 +1,9 @@
 package com.personal.todo.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -47,6 +50,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.personal.todo.R
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Countdown
@@ -218,6 +222,78 @@ internal fun calendarDateText(date: LocalDate, today: LocalDate): String = when 
 }
 
 /**
+ * One small chip for a tag: a translucent fill of the tag's own colour with its
+ * name in the same colour. The same shape is used on the task card, in the
+ * detail screen and in the tag management page.
+ */
+@Composable
+fun TagChip(name: String, color: Int, modifier: Modifier = Modifier) {
+    val chip = Color(color)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(chip.copy(alpha = 0.15f))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelSmall,
+            color = chip,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** A row of tag chips; [tags] is already ordered, only the first [max] are drawn. */
+@Composable
+fun TagChipRow(tags: List<Tag>, modifier: Modifier = Modifier, max: Int = 3) {
+    if (tags.isEmpty()) return
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        tags.take(max).forEach { tag ->
+            TagChip(name = tag.name, color = tag.color)
+        }
+    }
+}
+
+/**
+ * 筛选面板里一个可勾选的胶囊：选中的填 [accent] 的浅色底并描边，没选中的是中性灰。
+ * 它是筛选维度的最小单位，清单 / 优先级 / 标签三种维度共用。一行放不下时由调用方
+ * 用横向滚动装下，不需要测量换行。
+ */
+@Composable
+fun ToggleChip(
+    label: String,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) accent.copy(alpha = 0.16f) else colors.groupHeader)
+            .then(
+                if (selected) Modifier.border(1.dp, accent, RoundedCornerShape(8.dp)) else Modifier
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
+        )
+    }
+}
+
+/**
  * One task as the screenshots show it: a white rounded card with a coloured bar
  * on its left edge, a square checkbox, the title, and on the right the date the
  * task belongs to - blue when that date is today, grey otherwise, red once it is
@@ -238,7 +314,8 @@ fun TaskCard(
     zone: ZoneId,
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    tags: List<Tag> = emptyList()
 ) {
     val colors = LocalTodoColors.current
     val completed = task.completedAt != null
@@ -297,6 +374,10 @@ fun TaskCard(
                     color = colors.dateMuted
                 )
             }
+            if (tags.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                TagChipRow(tags = tags)
+            }
         }
 
         if (dateText != null || countdownLabel != null) {
@@ -349,7 +430,8 @@ fun SwipeableTaskCard(
     zone: ZoneId,
     onSwipeComplete: () -> Unit,
     onSwipeDelete: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tags: List<Tag> = emptyList()
 ) {
     val colors = LocalTodoColors.current
     val dismissState = rememberSwipeToDismissBoxState(
@@ -408,7 +490,8 @@ fun SwipeableTaskCard(
             onCheckedChange = onCheckedChange,
             onClick = onClick,
             nowMillis = nowMillis,
-            zone = zone
+            zone = zone,
+            tags = tags
         )
     }
 }

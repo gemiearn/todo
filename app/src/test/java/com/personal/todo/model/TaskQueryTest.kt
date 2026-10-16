@@ -166,4 +166,58 @@ class TaskQueryTest {
 
         assertEquals(listOf(2L, 1L), result.map { it.id })
     }
+
+    // ------------------------------------------------------------ 显示范围筛选
+
+    private fun ranged(id: Long, listId: Long, priority: Priority) = Task(
+        id = id,
+        title = "任务 $id",
+        listId = listId,
+        priority = priority,
+        createdAt = id,
+        updatedAt = id
+    )
+
+    @Test
+    fun anEmptyFilterKeepsEveryTask() {
+        val tasks = listOf(ranged(1, 1L, Priority.NOT_IMPORTANT_NOT_URGENT))
+
+        assertSame(tasks, filterByRange(tasks, TaskFilter()))
+    }
+
+    @Test
+    fun theDimensionsAreAndedTogether() {
+        val a = ranged(1, 1L, Priority.IMPORTANT_URGENT)
+        val b = ranged(2, 2L, Priority.IMPORTANT_URGENT)
+        val c = ranged(3, 1L, Priority.NOT_IMPORTANT_NOT_URGENT)
+
+        val filter = TaskFilter(listIds = setOf(1L), priorities = setOf(Priority.IMPORTANT_URGENT))
+
+        assertEquals(listOf(1L), filterByRange(listOf(a, b, c), filter).map { it.id })
+    }
+
+    @Test
+    fun theValuesInsideOneDimensionAreOredTogether() {
+        val a = ranged(1, 1L, Priority.NOT_IMPORTANT_NOT_URGENT)
+        val b = ranged(2, 2L, Priority.NOT_IMPORTANT_NOT_URGENT)
+        val c = ranged(3, 3L, Priority.NOT_IMPORTANT_NOT_URGENT)
+
+        assertEquals(
+            listOf(1L, 2L),
+            filterByRange(listOf(a, b, c), TaskFilter(listIds = setOf(1L, 2L))).map { it.id }
+        )
+    }
+
+    @Test
+    fun theTagDimensionReadsTheTagsOfEachTask() {
+        val a = ranged(1, 1L, Priority.NOT_IMPORTANT_NOT_URGENT)
+        val b = ranged(2, 1L, Priority.NOT_IMPORTANT_NOT_URGENT)
+        val tagsOf = mapOf(1L to setOf(7L), 2L to setOf(8L))
+
+        val result = filterByRange(listOf(a, b), TaskFilter(tagIds = setOf(7L))) {
+            tagsOf[it].orEmpty()
+        }
+
+        assertEquals(listOf(1L), result.map { it.id })
+    }
 }

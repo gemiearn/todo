@@ -23,7 +23,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -53,15 +56,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
+import com.personal.todo.data.CalendarSettings
 import com.personal.todo.data.db.Task
 import com.personal.todo.model.Priority
+import com.personal.todo.model.TaskFilter
+import com.personal.todo.model.filterByRange
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
+import java.time.temporal.WeekFields
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /**
  * The four ways the 日历 page can lay out time, as the user's reference (视图.jpg)
@@ -80,6 +88,9 @@ enum class CalendarView {
 /** Tags the smoke tests use to drive the calendar, whose buttons carry no text. */
 internal const val CalendarTimelineTag = "calendar-timeline"
 internal const val CalendarViewSwitchTag = "calendar-view-switch"
+internal const val CalendarDisplayOptionsTag = "calendar-display-options"
+internal const val CalendarStepPreviousTag = "calendar-step-previous"
+internal const val CalendarStepNextTag = "calendar-step-next"
 
 internal fun calendarBodyTag(view: CalendarView): String = "calendar-body-${view.name.lowercase()}"
 
@@ -112,6 +123,9 @@ private const val YearRows = 4
 /** The day circle of one mini month of the year view. */
 private val MiniDaySize = 18.dp
 
+/** Width of the left column that carries the week numbers when they are shown. */
+private val WeekNumberWidth = 26.dp
+
 /**
  * The 日历 page: a header that names the period and carries the 时间线 toggle and
  * the view switch, then the period itself - a month grid, a column per day, or a
@@ -130,6 +144,10 @@ fun CalendarScreen(
     timelineOn: Boolean,
     onToggleTimeline: () -> Unit,
     tasksInRange: (LocalDate, LocalDate) -> Flow<List<Task>>,
+    displaySettings: CalendarSettings,
+    filter: TaskFilter,
+    tagIdsByTask: Map<Long, Set<Long>>,
+    onOpenDisplayOptions: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onOpenLists: () -> Unit,
     onOpenTask: (Long) -> Unit,
@@ -164,9 +182,40 @@ fun CalendarScreen(
         }
     }
 
+    // 显示范围与「显示已完成」都只作用在日历画的这一份数据上：设置要求隐藏已完成的
+    // 就先丢掉它们，再按筛选范围收窄。日历本身只读，这里改的只是「画什么」。
+    val filteredRange: (LocalDate, LocalDate) -> Flow<List<Task>> = remember(
+        tasksInRange, displaySettings.showCompleted, filter, tagIdsByTask
+    ) {
+        { start, end ->
+            tasksInRange(start, end).map { tasks ->
+                visibleCalendarTasks(
+                    tasks = tasks,
+                    showCompleted = displaySettings.showCompleted,
+                    filter = filter,
+                    tagIdsByTask = tagIdsByTask
+                )
+            }
+        }
+    }
+
+    val weekStartsMonday = displaySettings.weekStartsMonday
+
+    // 周 / 三日 / 年 的翻页只挪选中的日期，不动任何任务的日期；月视图靠左右滑。
+    val onStep: (Int) -> Unit = { step ->
+        onSelectDate(
+            when (view) {
+                CalendarView.WEEK -> selectedDate.plusWeeks(step.toLong())
+                CalendarView.THREE_DAY -> selectedDate.plusDays(3L * step)
+                CalendarView.YEAR -> selectedDate.plusYears(step.toLong())
+                CalendarView.MONTH -> selectedDate
+            }
+        )
+    }
+
     Column(modifier = modifier.fillMaxWidth()) {
         CalendarHeader(
-            title = calendarTitle(view, selectedDate, visibleMonth),
+            title = calendarTitle(view, selectedDate, visibleMonth, weekStartsMonday),
             subtitle = if (view == CalendarView.MONTH) {
                 stringResource(R.string.calendar_year, visibleMonth.year)
             } else {
@@ -175,7 +224,9 @@ fun CalendarScreen(
             view = view,
             timelineOn = timelineOn,
             onToggleTimeline = onToggleTimeline,
+            onStep = onStep,
             onSelectView = onSelectView,
+            onOpenDisplayOptions = onOpenDisplayOptions,
             onOpenLists = onOpenLists
         )
 
@@ -185,16 +236,18 @@ fun CalendarScreen(
                 today = today,
                 startMonth = startMonth,
                 pagerState = pagerState,
-                tasksInRange = tasksInRange,
+                tasksInRange = filteredRange,
+                weekStartsMonday = weekStartsMonday,
+                showWeekNumbers = displaySettings.showWeekNumbers,
                 onSelectDate = onSelectDate
             )
 
             CalendarView.WEEK -> DayColumnsView(
                 view = CalendarView.WEEK,
-                days = weekOf(selectedDate),
+                days = weekOf(selectedDate, weekStartsMonday),
                 selectedDate = selectedDate,
                 today = today,
-                tasksInRange = tasksInRange,
+                tasksInRange = filteredRange,
                 onSelectDate = onSelectDate,
                 onOpenTask = onOpenTask,
                 modifier = Modifier.weight(1f)
@@ -205,7 +258,7 @@ fun CalendarScreen(
                 days = (0L..2L).map { threeDayStart.plusDays(it) },
                 selectedDate = selectedDate,
                 today = today,
-                tasksInRange = tasksInRange,
+                tasksInRange = filteredRange,
                 onSelectDate = onSelectDate,
                 onOpenTask = onOpenTask,
                 modifier = Modifier.weight(1f)
@@ -217,7 +270,8 @@ fun CalendarScreen(
                 year = selectedDate.year,
                 selectedDate = selectedDate,
                 today = today,
-                tasksInRange = tasksInRange,
+                tasksInRange = filteredRange,
+                weekStartsMonday = weekStartsMonday,
                 onPickDate = {
                     onSelectDate(it)
                     onSelectView(CalendarView.MONTH)
@@ -228,10 +282,36 @@ fun CalendarScreen(
     }
 }
 
-/** The Monday the week of [date] starts on. */
-private fun weekOf(date: LocalDate): List<LocalDate> {
-    val monday = date.minusDays((date.dayOfWeek.value - 1).toLong())
-    return (0L..6L).map { monday.plusDays(it) }
+/**
+ * The rows the calendar actually draws: with 显示已完成 off the finished ones are
+ * dropped, then the 显示范围 filter narrows what is left. Read only - the stored
+ * dates of every task are untouched.
+ */
+private fun visibleCalendarTasks(
+    tasks: List<Task>,
+    showCompleted: Boolean,
+    filter: TaskFilter,
+    tagIdsByTask: Map<Long, Set<Long>>
+): List<Task> = filterByRange(
+    tasks = if (showCompleted) tasks else tasks.filter { it.completedAt == null },
+    filter = filter,
+    tagIdsOfTask = { tagIdsByTask[it].orEmpty() }
+)
+
+/** The weekdays the month grid and the 周 view put left to right. */
+private fun orderedWeekdays(weekStartsMonday: Boolean): List<DayOfWeek> =
+    if (weekStartsMonday) {
+        DayOfWeek.entries.toList()
+    } else {
+        listOf(DayOfWeek.SUNDAY) + DayOfWeek.entries.filter { it != DayOfWeek.SUNDAY }
+    }
+
+/** The Monday the week of [date] starts on, or the Sunday when a week starts then. */
+private fun weekOf(date: LocalDate, weekStartsMonday: Boolean): List<LocalDate> {
+    val dayOfWeek = date.dayOfWeek
+    val offset = if (weekStartsMonday) dayOfWeek.value - 1 else dayOfWeek.value % 7
+    val first = date.minusDays(offset.toLong())
+    return (0L..6L).map { first.plusDays(it) }
 }
 
 // ---------------------------------------------------------------- the header
@@ -243,7 +323,9 @@ private fun CalendarHeader(
     view: CalendarView,
     timelineOn: Boolean,
     onToggleTimeline: () -> Unit,
+    onStep: (Int) -> Unit,
     onSelectView: (CalendarView) -> Unit,
+    onOpenDisplayOptions: () -> Unit,
     onOpenLists: () -> Unit
 ) {
     val colors = LocalTodoColors.current
@@ -254,21 +336,33 @@ private fun CalendarHeader(
         if (timelineOn) R.string.action_timeline_off else R.string.action_timeline_on
     )
     val switchViewDescription = stringResource(R.string.action_switch_view)
+    val displayOptionsDescription = stringResource(R.string.calendar_display_options)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(end = 8.dp, top = 8.dp, bottom = 6.dp),
+            .padding(end = 4.dp, top = 8.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // The reference has no hamburger here, but 清单 and the two smart views
         // have to stay reachable from this tab.
-        IconButton(onClick = onOpenLists) {
+        IconButton(onClick = onOpenLists, modifier = Modifier.size(40.dp)) {
             Icon(
                 imageVector = Icons.Default.Menu,
                 contentDescription = stringResource(R.string.action_open_lists)
             )
         }
+
+        // 周 / 三日 / 年 有一个会挪动的周期，所以给一对前后箭头；月视图靠左右滑。
+        if (view != CalendarView.MONTH) {
+            StepArrow(
+                forward = false,
+                description = stringResource(R.string.calendar_step_previous),
+                tag = CalendarStepPreviousTag,
+                onClick = { onStep(-1) }
+            )
+        }
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -285,12 +379,22 @@ private fun CalendarHeader(
             }
         }
 
+        if (view != CalendarView.MONTH) {
+            StepArrow(
+                forward = true,
+                description = stringResource(R.string.calendar_step_next),
+                tag = CalendarStepNextTag,
+                onClick = { onStep(1) }
+            )
+        }
+
         // Only the month view has a day panel to lay out, so only there does the
         // timeline switch have anything to switch.
         if (view == CalendarView.MONTH) {
             IconButton(
                 onClick = onToggleTimeline,
                 modifier = Modifier
+                    .size(40.dp)
                     .testTag(CalendarTimelineTag)
                     .semantics { contentDescription = timelineDescription }
             ) {
@@ -303,6 +407,7 @@ private fun CalendarHeader(
             IconButton(
                 onClick = { viewMenuOpen = true },
                 modifier = Modifier
+                    .size(40.dp)
                     .testTag(CalendarViewSwitchTag)
                     .semantics { contentDescription = switchViewDescription }
             ) {
@@ -321,6 +426,43 @@ private fun CalendarHeader(
                 }
             }
         }
+
+        // ⋮ 打开「显示范围 + 显示设置」面板：筛选因子和日期显示方式都在里面。
+        IconButton(
+            onClick = onOpenDisplayOptions,
+            modifier = Modifier
+                .size(40.dp)
+                .testTag(CalendarDisplayOptionsTag)
+                .semantics { contentDescription = displayOptionsDescription }
+        ) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = null,
+                tint = colors.dateMuted
+            )
+        }
+    }
+}
+
+/** One of the two small arrows that step the 周 / 三日 / 年 periods. */
+@Composable
+private fun StepArrow(forward: Boolean, description: String, tag: String, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(36.dp)
+            .testTag(tag)
+            .semantics { contentDescription = description }
+    ) {
+        Icon(
+            imageVector = if (forward) {
+                Icons.AutoMirrored.Filled.KeyboardArrowRight
+            } else {
+                Icons.AutoMirrored.Filled.KeyboardArrowLeft
+            },
+            contentDescription = null,
+            tint = LocalTodoColors.current.dateMuted
+        )
     }
 }
 
@@ -362,14 +504,19 @@ private fun ViewGlyph(tint: Color) {
 }
 
 @Composable
-private fun calendarTitle(view: CalendarView, selectedDate: LocalDate, visibleMonth: YearMonth): String =
+private fun calendarTitle(
+    view: CalendarView,
+    selectedDate: LocalDate,
+    visibleMonth: YearMonth,
+    weekStartsMonday: Boolean
+): String =
     when (view) {
         CalendarView.MONTH -> stringResource(monthNameRes(visibleMonth.monthValue))
         CalendarView.YEAR -> stringResource(R.string.calendar_year, selectedDate.year)
         CalendarView.WEEK -> stringResource(
             R.string.date_range,
-            monthDayText(weekOf(selectedDate).first()),
-            monthDayText(weekOf(selectedDate).last())
+            monthDayText(weekOf(selectedDate, weekStartsMonday).first()),
+            monthDayText(weekOf(selectedDate, weekStartsMonday).last())
         )
 
         CalendarView.THREE_DAY -> stringResource(
@@ -399,6 +546,8 @@ private fun MonthView(
     startMonth: YearMonth,
     pagerState: PagerState,
     tasksInRange: (LocalDate, LocalDate) -> Flow<List<Task>>,
+    weekStartsMonday: Boolean,
+    showWeekNumbers: Boolean,
     onSelectDate: (LocalDate) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -428,7 +577,10 @@ private fun MonthView(
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
-            DayOfWeek.entries.forEach { dayOfWeek ->
+            // The week-number column keeps its own width so the day columns line up
+            // with the grid below it.
+            if (showWeekNumbers) Spacer(Modifier.width(WeekNumberWidth))
+            orderedWeekdays(weekStartsMonday).forEach { dayOfWeek ->
                 Text(
                     text = stringResource(weekdayNarrowRes(dayOfWeek)),
                     style = MaterialTheme.typography.labelMedium,
@@ -452,6 +604,8 @@ private fun MonthView(
                 selectedDate = selectedDate,
                 today = today,
                 tasksInRange = tasksInRange,
+                weekStartsMonday = weekStartsMonday,
+                showWeekNumbers = showWeekNumbers,
                 onSelectDate = onSelectDate
             )
         }
@@ -465,11 +619,13 @@ private fun MonthGrid(
     selectedDate: LocalDate,
     today: LocalDate,
     tasksInRange: (LocalDate, LocalDate) -> Flow<List<Task>>,
+    weekStartsMonday: Boolean,
+    showWeekNumbers: Boolean,
     onSelectDate: (LocalDate) -> Unit
 ) {
     val firstOfMonth = month.atDay(1)
-    // The week starts on Monday, as the screenshots show it.
-    val firstCell = firstOfMonth.minusDays((firstOfMonth.dayOfWeek.value - 1).toLong())
+    // The week the grid starts on: Monday by default, Sunday when the user asks.
+    val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))
     val lastCell = firstCell.plusDays((WeeksPerMonth * DaysPerWeek - 1).toLong())
 
     // The grid asks for the six weeks it draws, not just its own month: a span that
@@ -483,6 +639,12 @@ private fun MonthGrid(
     Column(modifier = Modifier.fillMaxSize()) {
         repeat(WeeksPerMonth) { week ->
             Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                if (showWeekNumbers) {
+                    WeekNumberCell(
+                        weekStart = firstCell.plusDays((week * DaysPerWeek).toLong()),
+                        weekStartsMonday = weekStartsMonday
+                    )
+                }
                 repeat(DaysPerWeek) { dayOfWeek ->
                     val date = firstCell.plusDays((week * DaysPerWeek + dayOfWeek).toLong())
                     DayCell(
@@ -497,6 +659,27 @@ private fun MonthGrid(
                 }
             }
         }
+    }
+}
+
+/** How many days the first day of [date]'s month is past the start of its week. */
+private fun weekStartOffset(date: LocalDate, weekStartsMonday: Boolean): Long =
+    if (weekStartsMonday) (date.dayOfWeek.value - 1).toLong() else (date.dayOfWeek.value % 7).toLong()
+
+/** The `W12` label of one row of the grid; numbering follows the ISO week of its Monday. */
+@Composable
+private fun WeekNumberCell(weekStart: LocalDate, weekStartsMonday: Boolean) {
+    val monday = if (weekStartsMonday) weekStart else weekStart.plusDays(1)
+    Box(
+        modifier = Modifier.width(WeekNumberWidth).fillMaxHeight(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = stringResource(R.string.calendar_week_prefix, monday.get(WeekFields.ISO.weekOfWeekBasedYear())),
+            style = MaterialTheme.typography.labelSmall,
+            color = LocalTodoColors.current.dateMuted,
+            maxLines = 1
+        )
     }
 }
 
@@ -700,6 +883,7 @@ private fun YearView(
     selectedDate: LocalDate,
     today: LocalDate,
     tasksInRange: (LocalDate, LocalDate) -> Flow<List<Task>>,
+    weekStartsMonday: Boolean,
     onPickDate: (LocalDate) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -720,6 +904,7 @@ private fun YearView(
                         tasksByDay = tasksByDay,
                         selectedDate = selectedDate,
                         today = today,
+                        weekStartsMonday = weekStartsMonday,
                         onPickDate = onPickDate,
                         modifier = Modifier.weight(1f)
                     )
@@ -736,12 +921,13 @@ private fun MiniMonth(
     tasksByDay: Map<LocalDate, List<Task>>,
     selectedDate: LocalDate,
     today: LocalDate,
+    weekStartsMonday: Boolean,
     onPickDate: (LocalDate) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
     val firstOfMonth = month.atDay(1)
-    val firstCell = firstOfMonth.minusDays((firstOfMonth.dayOfWeek.value - 1).toLong())
+    val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))
 
     Column(modifier = modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
         Text(

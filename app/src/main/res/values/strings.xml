@@ -54,6 +54,27 @@
     <string name="sort_priority">按优先级</string>
     <string name="sort_created">按创建时间</string>
 
+    <!-- 显示范围筛选（清单 / 优先级 / 标签；维度之间「且」、维度内部「或」） -->
+    <string name="filter_action">筛选</string>
+    <string name="filter_title">显示范围</string>
+    <string name="filter_dimension_list">清单</string>
+    <string name="filter_dimension_priority">优先级</string>
+    <string name="filter_dimension_tag">标签</string>
+    <string name="filter_clear">清除筛选</string>
+    <string name="filter_apply">完成</string>
+
+    <!-- 标签（多值属性，可跨清单） -->
+    <string name="tag_title">标签管理</string>
+    <string name="tag_new">新建标签</string>
+    <string name="tag_edit">编辑标签</string>
+    <string name="tag_name_label">标签名称</string>
+    <string name="tag_color_label">颜色</string>
+    <string name="tag_delete">删除标签</string>
+    <string name="tag_empty">还没有标签。新建一个，就能给任务打上标记。</string>
+    <string name="more_entry_tags">标签管理</string>
+    <string name="task_tags_label">标签</string>
+    <string name="tags_empty_hint">还没有标签，去「更多 - 标签管理」新建一个</string>
+
     <!-- 日期、星期与倒计时 -->
     <string name="date_today">今天</string>
     <string name="date_tomorrow">明天</string>
@@ -105,6 +126,15 @@
     <string name="action_timeline_on">按时间线显示</string>
     <string name="action_timeline_off">按列表显示</string>
     <string name="calendar_all_day">全天</string>
+    <!-- ⋮ 面板：显示范围筛选 + 显示设置三项 -->
+    <string name="calendar_display_options">显示范围与显示设置</string>
+    <string name="calendar_display_settings">显示设置</string>
+    <string name="calendar_show_completed">显示已完成</string>
+    <string name="calendar_show_week_numbers">显示周数</string>
+    <string name="calendar_week_start_monday">每周从周一开始</string>
+    <string name="calendar_step_previous">上一页</string>
+    <string name="calendar_step_next">下一页</string>
+    <string name="calendar_week_prefix">W%1$d</string>
     <!-- 单日时间线的空态，与截图一致 -->
     <string name="empty_day_timeline">你这一天没有任务</string>
     <string name="empty_day_timeline_hint">放松一下吧</string>

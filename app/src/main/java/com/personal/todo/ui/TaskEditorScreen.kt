@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -59,6 +61,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Priority
 import com.personal.todo.ui.theme.LocalTodoColors
@@ -222,6 +225,7 @@ internal fun TaskEditorBody(
     modifier: Modifier = Modifier
 ) {
     val lists by viewModel.lists.collectAsStateWithLifecycle()
+    val allTags by viewModel.allTags.collectAsStateWithLifecycle()
 
     var groupIndex by rememberSaveable { mutableIntStateOf(EditorGroup.DATE.ordinal) }
     val group = EditorGroup.entries[groupIndex]
@@ -259,7 +263,11 @@ internal fun TaskEditorBody(
 
                 EditorGroup.PRIORITY -> PriorityGroup(viewModel = viewModel)
 
-                EditorGroup.LIST -> ListGroup(viewModel = viewModel, lists = lists)
+                EditorGroup.LIST -> ListGroup(
+                    viewModel = viewModel,
+                    lists = lists,
+                    tags = allTags
+                )
 
                 EditorGroup.NOTES -> NotesGroup(viewModel = viewModel)
             }
@@ -565,13 +573,18 @@ private fun DimensionSwitch(label: String, checked: Boolean, onCheckedChange: (B
     }
 }
 
+/**
+ * 「清单」那一组：先挑归属的清单（单值），再给这条任务打标签（多值）。清单是任务住
+ * 哪，标签是任务身上带什么标记——两者分工不同，所以并排放在同一组里。
+ */
 @Composable
-private fun ListGroup(viewModel: TaskEditorViewModel, lists: List<TaskList>) {
+private fun ListGroup(viewModel: TaskEditorViewModel, lists: List<TaskList>, tags: List<Tag>) {
+    val colors = LocalTodoColors.current
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text(
             text = stringResource(R.string.task_list_label),
             style = MaterialTheme.typography.bodyMedium,
-            color = LocalTodoColors.current.dateMuted
+            color = colors.dateMuted
         )
         Spacer(Modifier.height(6.dp))
         ListPicker(
@@ -580,6 +593,43 @@ private fun ListGroup(viewModel: TaskEditorViewModel, lists: List<TaskList>) {
             onSelect = viewModel::onListChange,
             modifier = Modifier.fillMaxWidth()
         )
+
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = stringResource(R.string.task_tags_label),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.dateMuted
+        )
+        Spacer(Modifier.height(6.dp))
+        if (tags.isEmpty()) {
+            Text(
+                text = stringResource(R.string.tags_empty_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.dateMuted
+            )
+            return@Column
+        }
+        tags.forEach { tag ->
+            val selected = tag.id in viewModel.selectedTagIds
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.onToggleTag(tag.id) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TagChip(name = tag.name, color = tag.color)
+                Spacer(Modifier.weight(1f))
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { viewModel.onToggleTag(tag.id) },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = colors.accent,
+                        checkmarkColor = Color.White
+                    )
+                )
+            }
+        }
     }
 }
 

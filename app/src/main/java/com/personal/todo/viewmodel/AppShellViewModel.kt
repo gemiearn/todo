@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.personal.todo.data.TaskRepository
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.TaskList
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +23,14 @@ import kotlinx.coroutines.launch
 class AppShellViewModel(private val repository: TaskRepository) : ViewModel() {
 
     val lists: StateFlow<List<TaskList>> = repository.observeLists()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** taskId -> 它的标签：列表卡片要给每条任务画标签小片。 */
+    val tagsByTask: StateFlow<Map<Long, List<Tag>>> = repository.observeTagsByTask()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** 全部标签：筛选面板要列出它们让用户勾。 */
+    val tags: StateFlow<List<Tag>> = repository.observeTags()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Open tasks per list - the badge next to each list in the drawer. */

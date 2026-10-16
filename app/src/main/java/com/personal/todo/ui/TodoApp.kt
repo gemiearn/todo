@@ -47,6 +47,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -68,6 +70,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -76,14 +80,18 @@ import com.personal.todo.data.CrashLog
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.TaskRepository
+import com.personal.todo.data.ViewSettingsStore
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
+import com.personal.todo.model.TaskFilter
 import com.personal.todo.model.TaskSort
+import com.personal.todo.model.filterByRange
 import com.personal.todo.model.filterTasks
 import com.personal.todo.model.sortTasks
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.AppShellViewModel
 import com.personal.todo.viewmodel.FocusViewModel
+import com.personal.todo.viewmodel.TagViewModel
 import com.personal.todo.viewmodel.TaskCollection
 import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
@@ -108,6 +116,7 @@ private const val ROUTE_FUTURE = "future"
 private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_STATS = "stats"
 private const val ROUTE_CRASH = "crash"
+private const val ROUTE_TAGS = "tags"
 private const val ROUTE_TASK = "task"
 private const val ROUTE_EDIT = "edit"
 
@@ -228,6 +237,10 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
     val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
     val lists by shellViewModel.lists.collectAsStateWithLifecycle()
 
+    // 标签管理是推入页。它的 view model 在这里无条件建一次（WhileSubscribed 的 flow
+    // 没人订阅时不会查库），避免在 when 分支里条件创建把组合槽位错开。
+    val tagViewModel: TagViewModel = viewModel(factory = TagViewModel.factory(repository))
+
     // 专注 is a root of the bottom bar (今天/日历/四象限/专注/更多), so its view model
     // and settings are created here - once, for every route. It is *not* a pushed
     // route: pushed, it would be a page of its own with no tab strip, and its back
@@ -278,6 +291,8 @@ fun TodoApp(repository: TaskRepository, focusRepository: FocusRepository) {
 
         ROUTE_CRASH -> CrashLogScreen(onBack = { nav.pop() })
 
+        ROUTE_TAGS -> TagScreen(viewModel = tagViewModel, onBack = { nav.pop() })
+
         else -> MainScreen(
             repository = repository,
             focusViewModel = focusViewModel,
@@ -327,6 +342,15 @@ internal fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
+    // 显示范围筛选与日历显示设置存 SharedPreferences：勾过的范围、日历的看法下次进来
+    // 还在。列表顶栏和日历 ⋮ 各用一份独立的筛子，互不影响。
+    val viewSettings = remember(context) { ViewSettingsStore(context) }
+    var listFilter by remember { mutableStateOf(viewSettings.readListFilter()) }
+    var calendarFilter by remember { mutableStateOf(viewSettings.readCalendarFilter()) }
+    var calendarSettings by remember { mutableStateOf(viewSettings.readCalendarSettings()) }
+    var filterPanelOpen by remember { mutableStateOf(false) }
+    var calendarOptionsOpen by remember { mutableStateOf(false) }
+
     // Leaving from a root tab asks once first: a stray back press should not
     // throw the user straight out of the app.
     var exitConfirmOpen by remember { mutableStateOf(false) }
@@ -336,6 +360,12 @@ internal fun MainScreen(
     val lists by shellViewModel.lists.collectAsStateWithLifecycle()
     val openTaskCounts by shellViewModel.openTaskCounts.collectAsStateWithLifecycle()
     val taskCounts by shellViewModel.taskCounts.collectAsStateWithLifecycle()
+    val tagsByTask by shellViewModel.tagsByTask.collectAsStateWithLifecycle()
+    val allTags by shellViewModel.tags.collectAsStateWithLifecycle()
+    // 标签筛选要按 taskId 查「它带了哪些标签」，这里把标签映射收成 id 集合。
+    val tagIdsByTask = remember(tagsByTask) {
+        tagsByTask.mapValues { (_, tags) -> tags.map { it.id }.toSet() }
+    }
 
     // The day the app opened on. It decides which tasks are 今日 and which are
     // 逾期; both are read-only views, so nothing here ever moves a due date.
@@ -379,15 +409,28 @@ internal fun MainScreen(
     // inline at the call: a lambda rebuilt on every recomposition is a new
     // `remember` key inside the grid, which restarts the query and blinks the task
     // dots away.
+    // The calendar reads open *and* finished tasks and drops the finished ones
+    // itself when 「显示已完成」 is off, so one query covers both settings.
     val calendarTasksInRange = remember(repository) {
-        { start: LocalDate, end: LocalDate -> repository.observeOpenTasksSpanning(start, end) }
+        { start: LocalDate, end: LocalDate -> repository.observeTasksSpanning(start, end) }
     }
 
-    val visibleTasks = remember(tasks, searchQuery, sort) {
-        sortTasks(filterTasks(tasks, searchQuery), sort)
+    // 显示范围筛选：列表顶栏和日历 ⋮ 各用一份筛子，各自只作用在自己那条路由上。
+    // 维度之间「且」、维度内部「或」的口径都在 [filterByRange] 里。
+    val onCalendarRoute = kind == HomeTab.Calendar.route
+    val activeFilter = if (onCalendarRoute) calendarFilter else listFilter
+    val rangeFiltered = remember(tasks, activeFilter, tagIdsByTask) {
+        filterByRange(tasks, activeFilter) { tagIdsByTask[it].orEmpty() }
     }
-    val visibleCompletedTasks = remember(completedTasks, searchQuery, sort) {
-        sortTasks(filterTasks(completedTasks, searchQuery), sort)
+    val rangeFilteredCompleted = remember(completedTasks, activeFilter, tagIdsByTask) {
+        filterByRange(completedTasks, activeFilter) { tagIdsByTask[it].orEmpty() }
+    }
+
+    val visibleTasks = remember(rangeFiltered, searchQuery, sort) {
+        sortTasks(filterTasks(rangeFiltered, searchQuery), sort)
+    }
+    val visibleCompletedTasks = remember(rangeFilteredCompleted, searchQuery, sort) {
+        sortTasks(filterTasks(rangeFilteredCompleted, searchQuery), sort)
     }
 
     var showNewListDialog by remember { mutableStateOf(false) }
@@ -411,6 +454,7 @@ internal fun MainScreen(
     val completedMessage = stringResource(R.string.message_task_completed)
     val listDeletedMessage = stringResource(R.string.message_list_deleted)
     val undoLabel = stringResource(R.string.action_undo)
+    val filterDescription = stringResource(R.string.filter_action)
 
     // Deleting a task always soft deletes it and offers undo. Parents that
     // still have subtasks ask once before, because the subtasks go to the trash
@@ -548,6 +592,18 @@ internal fun MainScreen(
                         actions = {
                             // While the search field is open it owns the whole bar.
                             if (!searchActive && !showsFocusChrome) {
+                                // 显示范围筛选：只在有任务列表的路由上出现；日历用自己的
+                                // ⋮，更多 / 四象限没有列表可筛。
+                                if (!showsCalendarHeader && collection != TaskCollection.None) {
+                                    IconButton(
+                                        onClick = { filterPanelOpen = true },
+                                        modifier = Modifier.semantics {
+                                            contentDescription = filterDescription
+                                        }
+                                    ) {
+                                        FilterGlyph(tint = LocalTodoColors.current.dateMuted)
+                                    }
+                                }
                                 IconButton(onClick = { searchActive = true }) {
                                     Icon(
                                         imageVector = Icons.Default.Search,
@@ -645,6 +701,10 @@ internal fun MainScreen(
                         timelineOn = timelineOn,
                         onToggleTimeline = { timelineOn = !timelineOn },
                         tasksInRange = calendarTasksInRange,
+                        displaySettings = calendarSettings,
+                        filter = calendarFilter,
+                        tagIdsByTask = tagIdsByTask,
+                        onOpenDisplayOptions = { calendarOptionsOpen = true },
                         onSelectDate = onSelectDate,
                         onOpenLists = { scope.launch { drawerState.open() } },
                         onOpenTask = onOpenTask,
@@ -672,6 +732,7 @@ internal fun MainScreen(
                                 tasks = visibleTasks,
                                 completedTasks = visibleCompletedTasks,
                                 subtaskCounts = subtaskCounts,
+                                tagsByTask = tagsByTask,
                                 emptyText = emptyText,
                                 zone = repository.zone,
                                 onOpenTask = onOpenTask,
@@ -711,10 +772,11 @@ internal fun MainScreen(
                     // button, so they are pushed on top; the other entries are
                     // root views.
                     onOpen = { target ->
-                        // 崩溃日志 and the statistics are pushed pages: they open on
-                        // top of where the user is. Every tab target resets the stack
-                        // instead, which is what a bottom bar is expected to do.
-                        if (target == ROUTE_CRASH || target == ROUTE_STATS) {
+                        // 崩溃日志 / 统计 / 标签管理 are pushed pages with a back
+                        // arrow: they open on top of where the user is. Every tab
+                        // target resets the stack instead, which is what a bottom
+                        // bar is expected to do.
+                        if (target == ROUTE_CRASH || target == ROUTE_STATS || target == ROUTE_TAGS) {
                             nav.push(target)
                         } else {
                             nav.resetTo(target)
@@ -729,6 +791,7 @@ internal fun MainScreen(
                     tasks = visibleTasks,
                     completedTasks = visibleCompletedTasks,
                     subtaskCounts = subtaskCounts,
+                    tagsByTask = tagsByTask,
                     emptyText = emptyText,
                     zone = repository.zone,
                     onOpenTask = onOpenTask,
@@ -847,6 +910,45 @@ internal fun MainScreen(
             onDismiss = { newTaskSheetOpen = false }
         )
     }
+
+    // 列表顶栏的「显示范围」筛选面板。改一次就落盘一次，勾过的范围下次进来还在。
+    if (filterPanelOpen) {
+        FilterSheet(
+            title = stringResource(R.string.filter_title),
+            lists = lists,
+            tags = allTags,
+            filter = listFilter,
+            onFilterChange = {
+                listFilter = it
+                viewSettings.writeListFilter(it)
+            },
+            onDismiss = { filterPanelOpen = false }
+        )
+    }
+
+    // 日历 ⋮ 面板：同一个筛选面板 + 下面接一段「显示设置」。
+    if (calendarOptionsOpen) {
+        FilterSheet(
+            title = stringResource(R.string.calendar_display_options),
+            lists = lists,
+            tags = allTags,
+            filter = calendarFilter,
+            onFilterChange = {
+                calendarFilter = it
+                viewSettings.writeCalendarFilter(it)
+            },
+            onDismiss = { calendarOptionsOpen = false },
+            extra = {
+                DisplaySettingsSection(
+                    settings = calendarSettings,
+                    onChange = {
+                        calendarSettings = it
+                        viewSettings.writeCalendarSettings(it)
+                    }
+                )
+            }
+        )
+    }
 }
 
 // --------------------------------------------------------------- 更多 page
@@ -877,6 +979,10 @@ internal fun MoreScreen(
         MoreEntry(
             label = stringResource(R.string.more_entry_stats),
             onClick = { onOpen(ROUTE_STATS) }
+        )
+        MoreEntry(
+            label = stringResource(R.string.more_entry_tags),
+            onClick = { onOpen(ROUTE_TAGS) }
         )
         MoreEntry(
             label = stringResource(R.string.nav_completed),

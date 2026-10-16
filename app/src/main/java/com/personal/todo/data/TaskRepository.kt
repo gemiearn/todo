@@ -1,9 +1,11 @@
 package com.personal.todo.data
 
 import androidx.room.withTransaction
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskList
+import com.personal.todo.data.db.TaskTag
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.Priority
 import com.personal.todo.model.RepeatRule
@@ -11,6 +13,7 @@ import com.personal.todo.model.Schedule
 import com.personal.todo.model.TaskEventType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -51,6 +54,61 @@ class TaskRepository(
     private val listDao = db.taskListDao()
     private val taskDao = db.taskDao()
     private val eventDao = db.taskEventDao()
+    private val tagDao = db.tagDao()
+
+    // ---------------------------------------------------------------- 标签
+    //
+    // 标签是多值属性、可以跨清单，和「清单＝归属地（单值）」分工明确（说明文档 4.4）。
+
+    /** 全部标签，按 sortOrder / 名字排好——标签管理页和编辑器都读它。 */
+    fun observeTags(): Flow<List<Tag>> = tagDao.observeTags()
+
+    /**
+     * taskId -> 这条任务身上的标签。列表卡片要给每条任务画标签小片，一次查询把
+     * 全部连线拿回来在内存里分组，避免每条任务一次 join。
+     */
+    fun observeTagsByTask(): Flow<Map<Long, List<Tag>>> =
+        combine(tagDao.observeTags(), tagDao.observeAllLinks()) { tags, links ->
+            val byId = tags.associateBy { it.id }
+            links.groupBy { it.taskId }
+                .mapValues { (_, pairs) -> pairs.mapNotNull { byId[it.tagId] } }
+        }
+
+    /** 一条任务的标签，任务详情页读它。 */
+    fun observeTagsOf(taskId: Long): Flow<List<Tag>> = tagDao.observeTagsOf(taskId)
+
+    suspend fun createTag(name: String, color: Int): Long {
+        val trimmed = name.trim()
+        require(trimmed.isNotEmpty()) { "标签名不能为空" }
+        val time = now()
+        return tagDao.insert(
+            Tag(name = trimmed, color = color, sortOrder = 0, createdAt = time, updatedAt = time)
+        )
+    }
+
+    /** 改名与改色走同一个入口：标签就这两样可编辑的东西。 */
+    suspend fun updateTag(tagId: Long, name: String, color: Int) {
+        val trimmed = name.trim()
+        require(trimmed.isNotEmpty()) { "标签名不能为空" }
+        val tag = tagDao.getById(tagId) ?: return
+        tagDao.update(tag.copy(name = trimmed, color = color, updatedAt = now()))
+    }
+
+    /**
+     * 删掉标签。先把它的连线清干净，再删标签本身，都在一个事务里——绝不留一行指向
+     * 已经消失的标签（两个外键都是 RESTRICT）。任务本身不受影响，只是少了这个标记。
+     */
+    suspend fun deleteTag(tagId: Long) = db.withTransaction {
+        tagDao.clearLinksOfTag(tagId)
+        tagDao.delete(tagId)
+    }
+
+    /** 把一条任务的标签整个换成 [tagIds]（先清后连，同一事务）。 */
+    suspend fun setTaskTags(taskId: Long, tagIds: Collection<Long>) = db.withTransaction {
+        tagDao.clearLinksOfTask(taskId)
+        tagIds.toSet().forEach { tagId -> tagDao.link(TaskTag(taskId = taskId, tagId = tagId)) }
+    }
+
 
     // ---------------------------------------------------------------- lists
 
@@ -213,6 +271,14 @@ class TaskRepository(
      */
     fun observeOpenTasksSpanning(start: LocalDate, end: LocalDate): Flow<List<Task>> =
         taskDao.observeOpenTasksSpanning(start, end)
+
+    /**
+     * Open *and* finished tasks overlapping [start]..[end]. The calendar reads
+     * this one so that "显示已完成" can turn the finished ones on and off without
+     * a second query; with the setting off the caller simply drops them.
+     */
+    fun observeTasksSpanning(start: LocalDate, end: LocalDate): Flow<List<Task>> =
+        taskDao.observeTasksSpanning(start, end)
 
     /** True when this task is past its due moment. */
     fun isOverdue(task: Task): Boolean =

@@ -241,6 +241,26 @@ interface TaskDao {
     )
     fun observeOpenTasksSpanning(start: LocalDate, end: LocalDate): Flow<List<Task>>
 
+    /**
+     * Same span as [observeOpenTasksSpanning] but *including finished tasks*: the
+     * calendar can be asked to show completed work ("显示已完成"), and a finished
+     * task still keeps the day it was given. Same read-only rule - no date moves.
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND (
+                (plannedDate BETWEEN :start AND :end)
+                OR (dueDate BETWEEN :start AND :end)
+                OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
+                    AND plannedDate <= :end AND dueDate >= :start)
+              )
+        """
+    )
+    fun observeTasksSpanning(start: LocalDate, end: LocalDate): Flow<List<Task>>
+
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getById(id: Long): Task?
 
