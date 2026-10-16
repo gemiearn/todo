@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
@@ -338,5 +339,45 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("全部").performClick()
         compose.waitForIdle()
         compose.waitUntilNodeCount(hasText("专注详情"), 1, TimeoutMillis)
+    }
+
+    /**
+     * 逐条专注记录只在统计页底部出现：专注页不再自己堆历史；记录行也不再写计时模式
+     * （正计时 / 倒计时 / 番茄钟），只留开始时刻与结果。
+     */
+    @Test
+    fun theRecordListLivesOnTheStatsPageWithoutTheTimerMode() {
+        runBlocking {
+            val taskId = tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
+            focus.startTimer(
+                mode = FocusMode.POMODORO,
+                plannedSeconds = 1_500,
+                taskId = taskId,
+                taskTitleSnapshot = "写季度报告",
+                listNameSnapshot = "收件箱"
+            )
+            focus.finishTimer()
+        }
+
+        launchApp()
+
+        // 专注页上没有那一段记录。
+        compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("专注记录").assertDoesNotExist()
+
+        // 记录在统计页底部，滚过去看它。
+        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("专注统计").performClick()
+        compose.waitForIdle()
+        compose.waitUntilNodeCount(hasText("专注详情"), 1, TimeoutMillis)
+
+        compose.onNodeWithTag(FocusStatsTag).performScrollToNode(hasText("专注记录"))
+        compose.onNodeWithText("专注记录").assertExists()
+        compose.onNodeWithTag(FocusStatsTag).performScrollToNode(hasText("写季度报告"))
+        compose.onNodeWithText("写季度报告").assertExists()
+        compose.onNodeWithText("已完成", substring = true).assertExists()
+        compose.onNodeWithText("番茄钟", substring = true).assertDoesNotExist()
     }
 }

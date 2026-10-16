@@ -8,7 +8,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
@@ -103,12 +102,6 @@ class FocusScreenSmokeTest {
         compose.onNodeWithTag(FocusTaskRowTag).performClick()
         compose.waitForIdle()
         compose.onNodeWithText(title).performClick()
-        compose.waitForIdle()
-    }
-
-    /** The page scrolls as one column, so a history row has to be reached before it renders. */
-    private fun scrollHistoryTo(text: String) {
-        compose.onNodeWithTag(FocusListTag).performScrollToNode(hasText(text, substring = true))
         compose.waitForIdle()
     }
 
@@ -323,29 +316,9 @@ class FocusScreenSmokeTest {
         compose.waitUntilNodeCount(hasText("专注中"), 1, TimeoutMillis)
 
         compose.onNodeWithText("提前结束").performClick()
+        // 停止之后回到设置状态：环回来了，开始按钮也回来了。逐条记录已经搬到统计页，
+        // 这一页不再有历史。
         compose.waitUntilNodeCount(hasText("开始专注"), 1, TimeoutMillis)
-        scrollHistoryTo("中断")
-        compose.onNodeWithText("中断", substring = true).assertExists()
-    }
-
-    @Test
-    fun aFinishedSessionShowsUpInTheHistory() {
-        val viewModel = FocusViewModel(
-            focus,
-            tasks,
-            FocusSettingsStore(RuntimeEnvironment.getApplication())
-        )
-        runBlocking {
-            focus.startTimer(FocusMode.POMODORO, 1_500)
-            focus.abandonTimer()
-        }
-        launchFocus(viewModel)
-
-        scrollHistoryTo("中断")
-        compose.onNodeWithText("已完成", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("中断", substring = true).assertExists()
-        // The history is grouped by the day it happened.
-        scrollHistoryTo("今天")
-        compose.onNodeWithText("今天").assertExists()
+        compose.onNodeWithText("专注记录").assertDoesNotExist()
     }
 }

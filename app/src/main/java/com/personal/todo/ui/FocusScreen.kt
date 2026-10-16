@@ -75,19 +75,14 @@ import com.personal.todo.R
 import com.personal.todo.data.FocusSettings
 import com.personal.todo.data.FocusSound
 import com.personal.todo.data.db.ActiveTimer
-import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusPhase
-import com.personal.todo.model.FocusStatus
-import com.personal.todo.model.Schedule
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.FocusDurations
 import com.personal.todo.viewmodel.FocusViewModel
-import java.time.Instant
-import java.time.ZoneId
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlinx.coroutines.delay
@@ -145,7 +140,6 @@ fun FocusScreen(
     val timer by viewModel.timer.collectAsStateWithLifecycle()
     val focusSeconds by viewModel.focusSeconds.collectAsStateWithLifecycle()
     val remaining by viewModel.remainingSeconds.collectAsStateWithLifecycle()
-    val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val openTasks by viewModel.openTasks.collectAsStateWithLifecycle()
 
@@ -205,12 +199,9 @@ fun FocusScreen(
         },
         modifier = modifier
     ) { innerPadding ->
-        // The ring, the controls and the history scroll as one column: they are taller
-        // than a phone screen now, and a list nested inside a Column would both fight
-        // it for the height and hide the history completely.
+        // 整页只剩计时本身：环、控件与设置卡纵向滚成一列。「逐条专注记录」不在这里了，
+        // 统一搬到右上角图标那个统计页底部，专注页不再堆一长条历史。
         val active = timer
-        val today = Schedule.todayOf(System.currentTimeMillis(), viewModel.zone)
-        val historyByDay = sessions.groupBy { Schedule.todayOf(it.startedAt, viewModel.zone) }
 
         LazyColumn(
             modifier = Modifier
@@ -265,36 +256,6 @@ fun FocusScreen(
                         onFinish = viewModel::finish,
                         onInterrupt = viewModel::abandon
                     )
-                }
-            }
-
-            item(key = "history-title") {
-                Text(
-                    text = stringResource(R.string.focus_history_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp)
-                )
-            }
-
-            if (historyByDay.isEmpty()) {
-                item(key = "history-empty") {
-                    Text(
-                        text = stringResource(R.string.focus_history_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.dateMuted,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-                    )
-                }
-            } else {
-                // The history is the day's work, so it is grouped by the day it
-                // happened: a flat list of clock times is hard to read back.
-                historyByDay.forEach { (date, ofDay) ->
-                    item(key = "history-day-${date.toEpochDay()}") {
-                        HistoryDayHeader(label = calendarDateText(date, today))
-                    }
-                    items(ofDay, key = { it.id }) { session ->
-                        SessionRow(session = session, zone = viewModel.zone)
-                    }
                 }
             }
         }
@@ -1089,70 +1050,6 @@ private fun FocusRing(
     }
 }
 
-// -------------------------------------------------------------- the history
-
-/** The day a group of sessions belongs to. */
-@Composable
-private fun HistoryDayHeader(label: String) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelMedium,
-        color = LocalTodoColors.current.dateMuted,
-        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp)
-    )
-}
-
-@Composable
-private fun SessionRow(session: FocusSession, zone: ZoneId) {
-    val colors = LocalTodoColors.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(colors.card)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = session.taskTitleSnapshot ?: stringResource(modeLabelRes(session.mode)),
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = durationText(session.actualFocusSeconds),
-                style = MaterialTheme.typography.labelLarge,
-                color = if (session.status == FocusStatus.COMPLETED) colors.success else colors.dateOverdue
-            )
-        }
-        Text(
-            text = sessionSubtitle(session, zone),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.dateMuted
-        )
-    }
-}
-
-/** `HH:mm` of the day it started, the mode, and how it ended. */
-@Composable
-private fun sessionSubtitle(session: FocusSession, zone: ZoneId): String {
-    val start = Instant.ofEpochMilli(session.startedAt).atZone(zone)
-    val clock = "%02d:%02d".format(start.hour, start.minute)
-    val status = stringResource(
-        if (session.status == FocusStatus.COMPLETED) R.string.focus_status_completed else R.string.focus_status_interrupted
-    )
-    return stringResource(R.string.focus_session_subtitle, clock, modeLabel(session.mode), status)
-}
-
-/** The mode name below the ring and in the history; the plan is only shown when it has one. */
-@Composable
-private fun modeLabel(mode: FocusMode): String = when (mode) {
-    FocusMode.STOPWATCH -> stringResource(R.string.focus_mode_stopwatch)
-    FocusMode.COUNTDOWN -> stringResource(R.string.focus_mode_countdown)
-    FocusMode.POMODORO -> stringResource(R.string.focus_mode_pomodoro)
-}
-
 private fun modeLabelRes(mode: FocusMode): Int = when (mode) {
     FocusMode.STOPWATCH -> R.string.focus_mode_stopwatch
     FocusMode.COUNTDOWN -> R.string.focus_mode_countdown
@@ -1246,9 +1143,9 @@ internal fun clockText(seconds: Int, showHours: Boolean): String {
     }
 }
 
-/** A focus time in words: minutes, seconds, or both. */
+/** A focus time in words: minutes, seconds, or both. 专注页的小结与统计页的记录行共用。 */
 @Composable
-private fun durationText(seconds: Int): String = when {
+internal fun durationText(seconds: Int): String = when {
     seconds < 60 -> stringResource(R.string.focus_duration_seconds, seconds)
     seconds % 60 == 0 -> stringResource(R.string.focus_duration_minutes, seconds / 60)
     else -> stringResource(R.string.focus_duration_minutes_seconds, seconds / 60, seconds % 60)

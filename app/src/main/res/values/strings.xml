@@ -365,8 +365,8 @@
     <string name="focus_stats_pomodoros">番茄 %1$d 个</string>
     <string name="focus_stats_week">本周 %1$s</string>
     <string name="focus_history_title">专注记录</string>
-    <string name="focus_history_empty">还没有专注记录</string>
-    <string name="focus_session_subtitle">%1$s · %2$s · %3$s</string>
+    <!-- 记录行只留「时刻 · 结果」：用户说不需要区分是正计时 / 倒计时 / 番茄钟 -->
+    <string name="focus_session_subtitle">%1$s · %2$s</string>
     <string name="focus_duration_seconds">%1$d 秒</string>
     <string name="focus_duration_minutes">%1$d 分钟</string>
     <string name="focus_duration_minutes_seconds">%1$d 分 %2$d 秒</string>

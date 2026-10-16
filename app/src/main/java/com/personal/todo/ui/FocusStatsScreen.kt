@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -77,6 +78,7 @@ import com.personal.todo.model.FocusPeriodTotals
 import com.personal.todo.model.FocusPeriodUnit
 import com.personal.todo.model.FocusRankBy
 import com.personal.todo.model.FocusRankEntry
+import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTrendBar
 import com.personal.todo.model.FocusTrendUnit
 import com.personal.todo.model.FocusTagSnapshot
@@ -88,9 +90,11 @@ import com.personal.todo.model.focusRanking
 import com.personal.todo.model.focusSpans
 import com.personal.todo.model.focusTrendBars
 import com.personal.todo.model.focusYearWeeks
+import com.personal.todo.model.localDateOf
 import com.personal.todo.model.shift
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.roundToInt
@@ -155,6 +159,11 @@ fun FocusStatsScreen(
     val visible = remember(all, tagFilter) {
         if (tagFilter.isEmpty()) all
         else all.filter { FocusTagSnapshot.matches(it.tagNamesSnapshot, tagFilter) }
+    }
+    // 底部那一段逐条记录按天分组。sessions 本来就是「新的在前」，groupBy 保持遇到顺序，
+    // 所以日期与同一天里的记录都自然是从近到远。
+    val recordsByDay = remember(visible, zone) {
+        visible.groupBy { localDateOf(it.startedAt, zone) }
     }
 
     // 每张卡都停在一个周期上，左右两个箭头挪的就是它。锚点存的是 epochDay / 年份，
@@ -314,10 +323,90 @@ fun FocusStatsScreen(
                             onStep = { year += it }
                         )
                     }
+
+                    // 逐条专注记录统一放到这一页的底部：专注页不再自己堆一长条历史，
+                    // 记录只有一个地方能看，就是右上角图标进来的这里。
+                    item(key = "records-title") {
+                        Text(
+                            text = stringResource(R.string.focus_history_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+                        )
+                    }
+                    recordsByDay.forEach { (date, ofDay) ->
+                        item(key = "records-day-${date.toEpochDay()}") {
+                            Text(
+                                text = calendarDateText(date, today),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = LocalTodoColors.current.dateMuted,
+                                modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp)
+                            )
+                        }
+                        items(ofDay, key = { "record-${it.id}" }) { session ->
+                            SessionRecordRow(session = session, zone = zone)
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+// ------------------------------------------------------------------ 专注记录
+
+/**
+ * 一条逐条记录：任务名、时长，下面一行是开始时刻与结果。
+ *
+ * 刻意**不写计时模式**（正计时 / 倒计时 / 番茄钟）：用户说记录不必区分是哪种计时，
+ * 三种模式都是同一件事的投入，写上去只是噪音。原来那行「09:30 · 番茄钟 · 已完成」
+ * 因此退回成「09:30 · 已完成」。
+ */
+@Composable
+private fun SessionRecordRow(session: FocusSession, zone: ZoneId) {
+    val colors = LocalTodoColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(colors.card)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = session.taskTitleSnapshot ?: stringResource(R.string.focus_task_none_label),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = durationText(session.actualFocusSeconds),
+                style = MaterialTheme.typography.labelLarge,
+                color = if (session.status == FocusStatus.COMPLETED) colors.success else colors.dateOverdue
+            )
+        }
+        Text(
+            text = sessionRecordSubtitle(session, zone),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.dateMuted
+        )
+    }
+}
+
+/** 开始那一刻的 `HH:mm` 与结果；不带计时模式。 */
+@Composable
+private fun sessionRecordSubtitle(session: FocusSession, zone: ZoneId): String {
+    val start = Instant.ofEpochMilli(session.startedAt).atZone(zone)
+    val clock = "%02d:%02d".format(start.hour, start.minute)
+    val status = stringResource(
+        if (session.status == FocusStatus.COMPLETED) {
+            R.string.focus_status_completed
+        } else {
+            R.string.focus_status_interrupted
+        }
+    )
+    return stringResource(R.string.focus_session_subtitle, clock, status)
 }
 
 // ------------------------------------------------------------------ 专注详情
