@@ -12,9 +12,12 @@ import java.time.temporal.ChronoUnit
  * can be tested without a database, a UI or the real clock.
  *
  * The rules implemented here:
- *  - a task without a due date can never become overdue;
- *  - a due date without a time is due at the end of that local day, a due date
- *    with a time is due at that moment;
+ *  - a task without any date can never become overdue;
+ *  - an explicit due date is authoritative: a due date without a time ends at
+ *    that local day, a due date with a time ends at that moment;
+ *  - when there is no due date, the end of the planned date is the overdue
+ *    fallback; plannedTime only says when work starts and never moves that
+ *    boundary;
  *  - an overdue task is never postponed automatically - nothing in this file
  *    changes a date, it only reads it;
  *  - the day a date falls on is decided in the device's time zone.
@@ -22,17 +25,41 @@ import java.time.temporal.ChronoUnit
 object Schedule {
 
     /**
-     * The instant at which [dueDate] turns into "overdue", or null when the
-     * task has no due date (such a task is never overdue).
+     * The instant at which an explicit [dueDate] turns into "overdue", or null
+     * when there is no explicit due date.
      */
     fun dueInstant(dueDate: LocalDate?, dueTime: LocalTime?, zone: ZoneId): Instant? {
         if (dueDate == null) return null
         return dueDate.atTime(dueTime ?: LocalTime.MAX).atZone(zone).toInstant()
     }
 
-    fun isOverdue(nowMillis: Long, dueDate: LocalDate?, dueTime: LocalTime?, zone: ZoneId): Boolean {
-        val due = dueInstant(dueDate, dueTime, zone) ?: return false
-        return nowMillis > due.toEpochMilli()
+    /**
+     * The instant at which a task actually becomes overdue.
+     *
+     * An explicit due date wins. Without one, a planned date keeps the task
+     * open through the end of that local day. plannedTime is deliberately not
+     * used: 10:00 means "start at 10:00", not "deadline at 10:00".
+     */
+    fun overdueInstant(
+        plannedDate: LocalDate?,
+        dueDate: LocalDate?,
+        dueTime: LocalTime?,
+        zone: ZoneId
+    ): Instant? {
+        val date = dueDate ?: plannedDate ?: return null
+        val time = if (dueDate != null) dueTime else null
+        return date.atTime(time ?: LocalTime.MAX).atZone(zone).toInstant()
+    }
+
+    fun isOverdue(
+        nowMillis: Long,
+        plannedDate: LocalDate?,
+        dueDate: LocalDate?,
+        dueTime: LocalTime?,
+        zone: ZoneId
+    ): Boolean {
+        val overdueAt = overdueInstant(plannedDate, dueDate, dueTime, zone) ?: return false
+        return nowMillis > overdueAt.toEpochMilli()
     }
 
     fun todayOf(nowMillis: Long, zone: ZoneId): LocalDate =
@@ -43,7 +70,7 @@ object Schedule {
 
     /**
      * Label for a planned or upcoming date. Past dates fall back to the plain
-     * calendar date, because only a due date can make a task overdue.
+     * calendar date; [overdueLabel] adds the red overdue state where applicable.
      */
     fun dateLabel(date: LocalDate?, today: LocalDate): DateLabel {
         if (date == null) return DateLabel.None
@@ -77,15 +104,36 @@ object Schedule {
 
     private const val MINUTES_PER_DAY = 24L * 60L
 
-    /** Label for a due date, including the overdue state. */
-    fun dueLabel(nowMillis: Long, dueDate: LocalDate?, dueTime: LocalTime?, zone: ZoneId): DateLabel {
-        if (dueDate == null) return DateLabel.None
-        if (!isOverdue(nowMillis, dueDate, dueTime, zone)) {
-            return dateLabel(dueDate, todayOf(nowMillis, zone))
+    /** Label for an explicit due date, including the overdue state. */
+    fun dueLabel(nowMillis: Long, dueDate: LocalDate?, dueTime: LocalTime?, zone: ZoneId): DateLabel =
+        overdueLabel(
+            nowMillis = nowMillis,
+            plannedDate = null,
+            dueDate = dueDate,
+            dueTime = dueTime,
+            zone = zone
+        )
+
+    /**
+     * Label for the effective overdue boundary. An explicit due date wins;
+     * otherwise the planned date is shown and can become overdue after its day
+     * ends. plannedTime is intentionally absent from this calculation.
+     */
+    fun overdueLabel(
+        nowMillis: Long,
+        plannedDate: LocalDate?,
+        dueDate: LocalDate?,
+        dueTime: LocalTime?,
+        zone: ZoneId
+    ): DateLabel {
+        val date = dueDate ?: plannedDate ?: return DateLabel.None
+        val today = todayOf(nowMillis, zone)
+        if (!isOverdue(nowMillis, plannedDate, dueDate, dueTime, zone)) {
+            return dateLabel(date, today)
         }
-        // Due today but the time has passed: overdue, yet "0 days" would read
-        // wrong, so it gets the plain overdue marker.
-        val days = ChronoUnit.DAYS.between(dueDate, todayOf(nowMillis, zone))
+        // Overdue today but the time has passed: "0 days" would read wrong, so
+        // it gets the plain overdue marker.
+        val days = ChronoUnit.DAYS.between(date, today)
         return if (days <= 0L) DateLabel.Overdue else DateLabel.OverdueDays(days.toInt())
     }
 }
@@ -104,7 +152,7 @@ sealed interface DateLabel {
 
     data object Yesterday : DateLabel
 
-    /** Overdue today: the time has passed, but it is still the due date. */
+    /** Overdue today: the effective boundary has passed on the same date. */
     data object Overdue : DateLabel
 
     data class Weekday(val dayOfWeek: DayOfWeek) : DateLabel

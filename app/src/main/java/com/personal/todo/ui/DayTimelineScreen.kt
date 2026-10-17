@@ -152,9 +152,15 @@ private fun TimedRow(
     onDelete: (Task) -> Unit
 ) {
     val colors = LocalTodoColors.current
-    // The deadline decides whether a row is late - the planned time is only where
-    // it sits.
-    val overdue = Schedule.isOverdue(nowMillis, task.dueDate, task.dueTime, zone)
+    // The explicit deadline wins; otherwise the planned day's end is the
+    // fallback. The planned time is only where the row sits.
+    val overdue = Schedule.isOverdue(
+        nowMillis = nowMillis,
+        plannedDate = task.plannedDate,
+        dueDate = task.dueDate,
+        dueTime = task.dueTime,
+        zone = zone
+    )
 
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Text(

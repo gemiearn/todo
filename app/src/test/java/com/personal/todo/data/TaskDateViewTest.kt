@@ -22,8 +22,8 @@ import org.robolectric.annotation.Config
 
 /**
  * The date rules of spec section 4.1 against a real (in memory) Room database:
- * the "今日" view merges duplicates, "逾期" only follows the due moment, and an
- * overdue task is never postponed by the app itself.
+ * the "今日" view merges duplicates, "逾期" follows the explicit due moment or
+ * the planned-date fallback, and an overdue task is never postponed by the app.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -108,9 +108,55 @@ class TaskDateViewTest {
     // ------------------------------------------------------------- 逾期视图
 
     @Test
-    fun aTaskWithoutADueDateIsNeverOverdueEvenLongAfterItsPlannedDate() = runBlocking {
-        repository.createTask("只有计划日期", inboxId, plannedDate = today.minusDays(10))
+    fun aTaskWithoutAnyDateIsNeverOverdue() = runBlocking {
+        repository.createTask("没有日期", inboxId)
         clock = millisOf(LocalDateTime.of(2026, 12, 1, 9, 0))
+
+        assertTrue(repository.observeOverdueTasks().first().isEmpty())
+    }
+
+    @Test
+    fun aPlannedDateWithoutADueDateBecomesOverdueAfterThatDayEnds() = runBlocking {
+        val taskId = repository.createTask(
+            "只有计划日期",
+            inboxId,
+            plannedDate = today.minusDays(1),
+            plannedTime = LocalTime.of(10, 0)
+        )
+
+        assertEquals(
+            listOf(taskId),
+            repository.observeOverdueTasks().first().map { it.id }
+        )
+    }
+
+    @Test
+    fun aTaskPlannedForTodayIsNotOverdueUntilTheNextDay() = runBlocking {
+        val taskId = repository.createTask(
+            "今天 10:00 开始",
+            inboxId,
+            plannedDate = today,
+            plannedTime = LocalTime.of(10, 0)
+        )
+
+        clock = millisOf(LocalDateTime.of(2026, 10, 14, 18, 0))
+        assertTrue("开始时间不参与逾期判断", repository.observeOverdueTasks().first().isEmpty())
+
+        clock = millisOf(LocalDateTime.of(2026, 10, 15, 0, 0, 1))
+        assertEquals(
+            listOf(taskId),
+            repository.observeOverdueTasks().first().map { it.id }
+        )
+    }
+
+    @Test
+    fun anExplicitFutureDueDateOverridesAPastPlannedDate() = runBlocking {
+        repository.createTask(
+            "计划昨天，明天截止",
+            inboxId,
+            plannedDate = today.minusDays(1),
+            dueDate = today.plusDays(1)
+        )
 
         assertTrue(repository.observeOverdueTasks().first().isEmpty())
     }

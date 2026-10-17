@@ -138,9 +138,9 @@ interface TaskDao {
     //
     // 今日 / 未来 / 逾期 (spec section 4.1). They only read dates - no query
     // here ever rewrites a date, so an overdue task can never be postponed
-    // automatically. "逾期" itself needs the current time (a due date with a
-    // time is not overdue before that moment), so these queries narrow the
-    // rows and the repository applies the exact rule in Kotlin.
+    // automatically. "逾期" itself needs the current time and the planned-date
+    // fallback, so these queries narrow the rows and the repository applies the
+    // exact rule in Kotlin.
 
     /**
      * Open top level tasks planned for [date] or due on [date]. One query with
@@ -171,8 +171,10 @@ interface TaskDao {
     fun observeOpenTasksAfterDate(date: LocalDate): Flow<List<Task>>
 
     /**
-     * Open top level tasks whose due date is not after [date]: the candidate
-     * set for the overdue view before the exact moment is taken into account.
+     * Open top level tasks whose effective overdue date is not after [date]:
+     * the candidate set for the overdue view before the exact moment is taken
+     * into account. An explicit due date wins; plannedDate is only the fallback
+     * when dueDate is null.
      */
     @Query(
         """
@@ -180,11 +182,13 @@ interface TaskDao {
         WHERE parentTaskId IS NULL
           AND deletedAt IS NULL
           AND completedAt IS NULL
-          AND dueDate IS NOT NULL
-          AND dueDate <= :date
+          AND (
+                (dueDate IS NOT NULL AND dueDate <= :date)
+                OR (dueDate IS NULL AND plannedDate IS NOT NULL AND plannedDate <= :date)
+              )
         """
     )
-    fun observeOpenTasksDueNotAfter(date: LocalDate): Flow<List<Task>>
+    fun observeOpenTasksOverdueCandidate(date: LocalDate): Flow<List<Task>>
 
     /** Every open top level task, whatever its dates - the搜索 / 任务选择器. */
     @Query(

@@ -207,12 +207,25 @@ private fun weekdayRes(dayOfWeek: DayOfWeek): Int = when (dayOfWeek) {
 internal fun taskDateLabel(task: Task, nowMillis: Long, zone: ZoneId): Pair<String?, Color> {
     val colors = LocalTodoColors.current
     val completed = task.completedAt != null
-    val overdue = !completed && Schedule.isOverdue(nowMillis, task.dueDate, task.dueTime, zone)
+    val overdue = !completed &&
+        Schedule.isOverdue(
+            nowMillis = nowMillis,
+            plannedDate = task.plannedDate,
+            dueDate = task.dueDate,
+            dueTime = task.dueTime,
+            zone = zone
+        )
 
     val today = Schedule.todayOf(nowMillis, zone)
     val plannedLabel = Schedule.dateLabel(task.plannedDate, today)
-    val dueLabel = Schedule.dueLabel(nowMillis, task.dueDate, task.dueTime, zone)
-    val label = if (task.dueDate != null) dueLabel else plannedLabel
+    val dueLabel = Schedule.overdueLabel(
+        nowMillis = nowMillis,
+        plannedDate = task.plannedDate,
+        dueDate = task.dueDate,
+        dueTime = task.dueTime,
+        zone = zone
+    )
+    val label = dueLabel
 
     val text = when {
         task.plannedDate != null && task.dueDate != null -> {

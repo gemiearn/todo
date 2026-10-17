@@ -63,15 +63,19 @@ data class Task(
     val sortOrder: Int = 0,
     val createdAt: Long,
     val updatedAt: Long,
-    /** Local date the user plans to work on it; purely informational. */
+    /**
+     * Local date the user plans to work on it. It also ends the task's open
+     * window when there is no explicit due date: the task becomes overdue only
+     * after this local day ends.
+     */
     val plannedDate: LocalDate? = null,
     /**
      * Local time the user plans to start it. Together with [plannedDate] it is
-     * what the day timeline orders by - the moment the work is meant to begin,
-     * which is a different question from the deadline below.
+     * what the day timeline orders by and will drive the start reminder. It
+     * never participates in overdue calculation.
      */
     val plannedTime: LocalTime? = null,
-    /** Local date it is due; the only field that can make a task overdue. */
+    /** Explicit deadline. When set, it takes precedence over [plannedDate]. */
     val dueDate: LocalDate? = null,
     /** Local time it is due; null means "at the end of [dueDate]". */
     val dueTime: LocalTime? = null,

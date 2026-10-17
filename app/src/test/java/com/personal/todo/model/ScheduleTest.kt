@@ -27,11 +27,73 @@ class ScheduleTest {
     // ------------------------------------------------------------ 逾期判定
 
     @Test
-    fun aTaskWithoutADueDateIsNeverOverdue() {
+    fun aTaskWithoutAnyDateIsNeverOverdue() {
         val farFuture = atTime(LocalDateTime.of(2030, 1, 1, 0, 0))
 
-        assertFalse(Schedule.isOverdue(farFuture, dueDate = null, dueTime = null, zone = shanghai))
+        assertFalse(
+            Schedule.isOverdue(
+                nowMillis = farFuture,
+                plannedDate = null,
+                dueDate = null,
+                dueTime = null,
+                zone = shanghai
+            )
+        )
+        assertNull(Schedule.overdueInstant(null, null, null, shanghai))
         assertNull(Schedule.dueInstant(null, LocalTime.of(9, 0), shanghai))
+    }
+
+    @Test
+    fun aPlannedDateWithoutADueDateBecomesOverdueAfterThatDayEnds() {
+        val plannedDate = dueToday
+        val duringTheDay = atTime(LocalDateTime.of(2026, 10, 14, 18, 0))
+        val nextMorning = atTime(LocalDateTime.of(2026, 10, 15, 0, 0, 1))
+
+        assertFalse(
+            "10:00 是开始时间，不是当天的截止时间",
+            Schedule.isOverdue(
+                nowMillis = duringTheDay,
+                plannedDate = plannedDate,
+                dueDate = null,
+                dueTime = null,
+                zone = shanghai
+            )
+        )
+        assertTrue(
+            Schedule.isOverdue(
+                nowMillis = nextMorning,
+                plannedDate = plannedDate,
+                dueDate = null,
+                dueTime = null,
+                zone = shanghai
+            )
+        )
+    }
+
+    @Test
+    fun anExplicitDueDateWinsOverThePlannedDateFallback() {
+        val now = atTime(LocalDateTime.of(2026, 10, 14, 18, 0))
+
+        assertFalse(
+            "计划日期已过，但显式截止日期还没到",
+            Schedule.isOverdue(
+                nowMillis = now,
+                plannedDate = dueToday.minusDays(1),
+                dueDate = dueToday.plusDays(1),
+                dueTime = null,
+                zone = shanghai
+            )
+        )
+        assertTrue(
+            "显式截止时刻已过，即使计划日期还在未来",
+            Schedule.isOverdue(
+                nowMillis = now,
+                plannedDate = dueToday.plusDays(1),
+                dueDate = dueToday,
+                dueTime = LocalTime.of(12, 0),
+                zone = shanghai
+            )
+        )
     }
 
     @Test
@@ -41,11 +103,23 @@ class ScheduleTest {
 
         assertFalse(
             "截止日当天未结束前不应算逾期",
-            Schedule.isOverdue(oneSecondBeforeMidnight, dueToday, null, shanghai)
+            Schedule.isOverdue(
+                oneSecondBeforeMidnight,
+                plannedDate = null,
+                dueDate = dueToday,
+                dueTime = null,
+                zone = shanghai
+            )
         )
         assertTrue(
             "进入次日零点即算逾期",
-            Schedule.isOverdue(midnight, dueToday, null, shanghai)
+            Schedule.isOverdue(
+                midnight,
+                plannedDate = null,
+                dueDate = dueToday,
+                dueTime = null,
+                zone = shanghai
+            )
         )
     }
 
@@ -55,8 +129,24 @@ class ScheduleTest {
         val exactMoment = atTime(LocalDateTime.of(2026, 10, 14, 12, 20, 0))
         val oneMinuteLater = atTime(LocalDateTime.of(2026, 10, 14, 12, 21, 0))
 
-        assertFalse(Schedule.isOverdue(exactMoment, dueToday, time, shanghai))
-        assertTrue(Schedule.isOverdue(oneMinuteLater, dueToday, time, shanghai))
+        assertFalse(
+            Schedule.isOverdue(
+                exactMoment,
+                plannedDate = null,
+                dueDate = dueToday,
+                dueTime = time,
+                zone = shanghai
+            )
+        )
+        assertTrue(
+            Schedule.isOverdue(
+                oneMinuteLater,
+                plannedDate = null,
+                dueDate = dueToday,
+                dueTime = time,
+                zone = shanghai
+            )
+        )
     }
 
     @Test
@@ -64,10 +154,24 @@ class ScheduleTest {
         // 2026-10-15 01:00 in Shanghai is still 2026-10-14 17:00 in UTC.
         val moment = atTime(LocalDateTime.of(2026, 10, 15, 1, 0), shanghai)
 
-        assertTrue(Schedule.isOverdue(moment, dueToday, null, shanghai))
+        assertTrue(
+            Schedule.isOverdue(
+                moment,
+                plannedDate = null,
+                dueDate = dueToday,
+                dueTime = null,
+                zone = shanghai
+            )
+        )
         assertFalse(
             "按 UTC 解释时这一天还没结束",
-            Schedule.isOverdue(moment, dueToday, null, utc)
+            Schedule.isOverdue(
+                moment,
+                plannedDate = null,
+                dueDate = dueToday,
+                dueTime = null,
+                zone = utc
+            )
         )
     }
 
@@ -117,6 +221,17 @@ class ScheduleTest {
             "还剩的日期仍然显示为当天",
             DateLabel.Today,
             Schedule.dueLabel(now, dueToday, LocalTime.of(20, 0), shanghai)
+        )
+        assertEquals(
+            "没有截止日期时，计划日期结束后显示逾期",
+            DateLabel.OverdueDays(3),
+            Schedule.overdueLabel(
+                nowMillis = now,
+                plannedDate = dueToday.minusDays(3),
+                dueDate = null,
+                dueTime = null,
+                zone = shanghai
+            )
         )
     }
 

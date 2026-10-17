@@ -255,12 +255,23 @@ class TaskRepository(
     fun observeFutureTasks(): Flow<List<Task>> = taskDao.observeOpenTasksAfterDate(today())
 
     /**
-     * Open tasks past their due moment. Only the due date can make a task
-     * overdue, and a due date with a time is not overdue until that moment, so
-     * the exact rule is applied here rather than in SQL.
+     * Open tasks past their effective overdue moment. An explicit due date
+     * wins; without one, the end of the planned date is the fallback. The exact
+     * instant is applied here rather than in SQL.
      */
     fun observeOverdueTasks(): Flow<List<Task>> =
-        taskDao.observeOpenTasksDueNotAfter(today()).map { rows -> rows.filter(::isOverdue) }
+        taskDao.observeOpenTasksOverdueCandidate(today()).map { rows ->
+            val currentTime = now()
+            rows.filter { task ->
+                Schedule.isOverdue(
+                    nowMillis = currentTime,
+                    plannedDate = task.plannedDate,
+                    dueDate = task.dueDate,
+                    dueTime = task.dueTime,
+                    zone = zone
+                )
+            }
+        }
 
     /**
      * 逾期任务的条数 - 抽屉里「逾期」那一行的红色徽章用。
@@ -296,9 +307,9 @@ class TaskRepository(
     fun observeTasksSpanning(start: LocalDate, end: LocalDate): Flow<List<Task>> =
         taskDao.observeTasksSpanning(start, end)
 
-    /** True when this task is past its due moment. */
+    /** True when this task is past its explicit due date or planned-date fallback. */
     fun isOverdue(task: Task): Boolean =
-        Schedule.isOverdue(now(), task.dueDate, task.dueTime, zone)
+        Schedule.isOverdue(now(), task.plannedDate, task.dueDate, task.dueTime, zone)
 
     fun observeSubtasks(parentTaskId: Long): Flow<List<Task>> =
         taskDao.observeSubtasks(parentTaskId)
