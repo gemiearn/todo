@@ -384,6 +384,9 @@ data class FocusHourBar(val hour: Int, val seconds: Int)
 /**
  * 把每一段专注按它在时钟上占的比例摊进 24 个小时里：一段 09:00-11:00 的专注，
  * 09 点和 10 点各拿一半。这样长时间的一段也不会整个压在开始的那个小时上。
+ *
+ * 「一段」指**真正在跑的小段**（[FocusSegments]）：暂停的空档什么都不落。老记录没有小段
+ * 信息，就退回按 `startedAt..endedAt` 整段摊的口径——历史统计不会因为这次改动变样。
  */
 fun focusHourBars(
     sessions: List<FocusSession>,
@@ -394,17 +397,21 @@ fun focusHourBars(
 
     sessions.forEach { session ->
         if (!period.contains(localDateOf(session.startedAt, zone))) return@forEach
-        val span = session.endedAt - session.startedAt
-        if (span <= 0) return@forEach
+        val spans = FocusSegments.decode(session.focusSegments)
+            .ifEmpty { listOf(session.startedAt..session.endedAt) }
+        val total = spans.sumOf { it.last - it.first }
+        if (total <= 0) return@forEach
 
-        var cursor = session.startedAt
-        while (cursor < session.endedAt) {
-            val zoned = Instant.ofEpochMilli(cursor).atZone(zone)
-            val nextHour = zoned.truncatedTo(ChronoUnit.HOURS).plusHours(1).toInstant().toEpochMilli()
-            if (nextHour <= cursor) break
-            val sliceEnd = minOf(nextHour, session.endedAt)
-            byHour[zoned.hour] += (session.actualFocusSeconds.toLong() * (sliceEnd - cursor) / span).toInt()
-            cursor = sliceEnd
+        spans.forEach { span ->
+            var cursor = span.first
+            while (cursor < span.last) {
+                val zoned = Instant.ofEpochMilli(cursor).atZone(zone)
+                val nextHour = zoned.truncatedTo(ChronoUnit.HOURS).plusHours(1).toInstant().toEpochMilli()
+                if (nextHour <= cursor) break
+                val sliceEnd = minOf(nextHour, span.last)
+                byHour[zoned.hour] += (session.actualFocusSeconds.toLong() * (sliceEnd - cursor) / total).toInt()
+                cursor = sliceEnd
+            }
         }
     }
 

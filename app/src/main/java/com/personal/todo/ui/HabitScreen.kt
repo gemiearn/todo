@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -56,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,6 +77,12 @@ internal const val HabitNewTag = "habit-new"
 /** 新建 / 编辑弹层里的名字输入框。 */
 internal const val HabitNameFieldTag = "habit-name"
 
+/** 弹层里的单位输入框。 */
+internal const val HabitUnitFieldTag = "habit-unit"
+
+/** 弹层里的「每天目标」输入框。 */
+internal const val HabitTargetFieldTag = "habit-target"
+
 /** 一个习惯「今天」那一次打卡的区域：点一下 +1、长按 −1。 */
 internal fun habitRowTag(habitId: Long): String = "habit-row-$habitId"
 
@@ -82,8 +90,16 @@ internal fun habitRowTag(habitId: Long): String = "habit-row-$habitId"
 internal fun habitDayCellTag(habitId: Long, date: LocalDate): String =
     "habit-day-$habitId-${date.toEpochDay()}"
 
-/** 每天次数的上限：再多就不是「一天几次」了。 */
-private const val MaxDailyTarget = 99
+/** 「每次增加」的上限：再多就不像「一次」了。 */
+private const val MaxStep = 999
+
+/** 单位最多几个字（「毫升」两个字，留点余量）。 */
+private const val MaxUnitLength = 4
+
+/** 目标量最多几位数。 */
+private const val MaxTargetDigits = 5
+
+private val TargetFieldWidth = 110.dp
 
 /**
  * 习惯页：一张打勾表——每个习惯一行，加一条「最近 7 天」的格子。
@@ -178,8 +194,10 @@ fun HabitScreen(
             title = stringResource(R.string.habit_new),
             initialName = "",
             initialTarget = HabitRules.MinTarget,
-            onConfirm = { name, target ->
-                viewModel.create(name, target)
+            initialUnit = "",
+            initialStep = 1,
+            onConfirm = { name, target, unit, step ->
+                viewModel.create(name, target, unit, step)
                 creating = false
             },
             onDismiss = { creating = false }
@@ -191,8 +209,10 @@ fun HabitScreen(
             title = stringResource(R.string.habit_edit),
             initialName = habit.name,
             initialTarget = habit.dailyTarget,
-            onConfirm = { name, target ->
-                viewModel.update(habit.id, name, target)
+            initialUnit = habit.unitLabel.orEmpty(),
+            initialStep = habit.step,
+            onConfirm = { name, target, unit, step ->
+                viewModel.update(habit.id, name, target, unit, step)
                 editing = null
             },
             onDismiss = { editing = null }
@@ -245,7 +265,7 @@ private fun HabitCard(
     val colors = LocalTodoColors.current
     var menuOpen by remember { mutableStateOf(false) }
     val todayCount = countsOfHabit[today] ?: 0
-    val done = HabitRules.isComplete(todayCount, habit.dailyTarget)
+    val done = HabitRules.isComplete(todayCount, habit.dailyTarget, habit.step)
 
     Column(
         modifier = modifier
@@ -282,8 +302,9 @@ private fun HabitCard(
                     Text(
                         text = stringResource(
                             R.string.habit_today_progress,
-                            todayCount,
-                            habit.dailyTarget
+                            HabitRules.shownAmount(todayCount, habit.dailyTarget, habit.step),
+                            habit.dailyTarget,
+                            habit.unit
                         ),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (done) colors.success else colors.dateMuted
@@ -329,6 +350,7 @@ private fun HabitCard(
                     date = date,
                     count = countsOfHabit[date] ?: 0,
                     target = habit.dailyTarget,
+                    step = habit.step,
                     isToday = date == today,
                     onClick = { onIncrement(habit.id, date) },
                     onLongClick = { onDecrement(habit.id, date) },
@@ -377,13 +399,14 @@ private fun HabitDayCell(
     date: LocalDate,
     count: Int,
     target: Int,
+    step: Int,
     isToday: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
-    val done = HabitRules.isComplete(count, target)
+    val done = HabitRules.isComplete(count, target, step)
 
     Column(
         modifier = modifier
@@ -439,12 +462,18 @@ private fun HabitEditSheet(
     title: String,
     initialName: String,
     initialTarget: Int,
-    onConfirm: (String, Int) -> Unit,
+    initialUnit: String,
+    initialStep: Int,
+    onConfirm: (String, Int, String?, Int?) -> Unit,
     onDismiss: () -> Unit
 ) {
     val colors = LocalTodoColors.current
     var name by remember { mutableStateOf(initialName) }
-    var target by remember { mutableIntStateOf(initialTarget) }
+    var unit by remember { mutableStateOf(initialUnit) }
+    var targetText by remember { mutableStateOf(initialTarget.toString()) }
+    var step by remember { mutableIntStateOf(initialStep) }
+    val target = targetText.toIntOrNull() ?: 0
+    val unitShown = unit.ifBlank { Habit.DefaultUnit }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -472,6 +501,32 @@ private fun HabitEditSheet(
                 modifier = Modifier.fillMaxWidth().testTag(HabitNameFieldTag)
             )
             Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = unit,
+                onValueChange = { unit = it.take(MaxUnitLength) },
+                label = { Text(stringResource(R.string.habit_unit_label)) },
+                placeholder = { Text(Habit.DefaultUnit) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag(HabitUnitFieldTag)
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    stringResource(R.string.habit_unit_preset_repeat),
+                    stringResource(R.string.habit_unit_preset_minute),
+                    stringResource(R.string.habit_unit_preset_hour),
+                    stringResource(R.string.habit_unit_preset_cup),
+                    stringResource(R.string.habit_unit_preset_ml)
+                ).forEach { preset ->
+                    UnitPresetChip(
+                        label = preset,
+                        selected = unit,
+                        onPick = { unit = it }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
             Text(
                 text = stringResource(R.string.habit_target_label),
                 style = MaterialTheme.typography.labelMedium,
@@ -479,17 +534,42 @@ private fun HabitEditSheet(
             )
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                StepperChip(label = "−") { target = (target - 1).coerceAtLeast(HabitRules.MinTarget) }
+                OutlinedTextField(
+                    value = targetText,
+                    onValueChange = { typed ->
+                        targetText = typed.filter { it.isDigit() }.take(MaxTargetDigits)
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.width(TargetFieldWidth).testTag(HabitTargetFieldTag)
+                )
+                Spacer(Modifier.width(10.dp))
                 Text(
-                    text = target.toString(),
+                    text = unitShown,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.dateMuted
+                )
+            }
+
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = stringResource(R.string.habit_step_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.dateMuted
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StepperChip(label = "−") { step = (step - 1).coerceAtLeast(1) }
+                Text(
+                    text = step.toString(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 14.dp)
                 )
-                StepperChip(label = "+") { target = (target + 1).coerceAtMost(MaxDailyTarget) }
+                StepperChip(label = "+") { step = (step + 1).coerceAtMost(MaxStep) }
                 Spacer(Modifier.weight(1f))
                 Text(
-                    text = stringResource(R.string.habit_target_unit),
+                    text = unitShown,
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.dateMuted
                 )
@@ -497,8 +577,8 @@ private fun HabitEditSheet(
 
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = { onConfirm(name, target) },
-                enabled = name.isNotBlank(),
+                onClick = { onConfirm(name, target, unit, step) },
+                enabled = name.isNotBlank() && target >= HabitRules.MinTarget,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.action_save))
@@ -528,6 +608,27 @@ private fun StepperChip(label: String, onClick: () -> Unit) {
             text = label,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+/** 单位快捷选项：点一下就把单位填成它（填了还剩手写）。 */
+@Composable
+private fun UnitPresetChip(label: String, selected: String, onPick: (String) -> Unit) {
+    val colors = LocalTodoColors.current
+    val on = selected == label
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (on) colors.accent.copy(alpha = 0.14f) else colors.groupHeader)
+            .clickable { onPick(label) }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (on) colors.accent else MaterialTheme.colorScheme.onSurface
         )
     }
 }

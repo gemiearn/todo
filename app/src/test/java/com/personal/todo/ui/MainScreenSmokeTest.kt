@@ -314,7 +314,6 @@ class MainScreenSmokeTest {
                 QuadrantScreen(
                     openTasks = flowOf(emptyList<Task>()),
                     completedTasks = flowOf(emptyList<Task>()),
-                    zone = ZoneId.systemDefault(),
                     onOpenTask = {}
                 )
             }

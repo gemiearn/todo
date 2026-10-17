@@ -15,8 +15,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +34,6 @@ import com.personal.todo.data.db.Task
 import com.personal.todo.model.Priority
 import com.personal.todo.model.nearestOpenOccurrencePerSeries
 import com.personal.todo.ui.theme.LocalTodoColors
-import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 
 private val QuadrantCardShape = RoundedCornerShape(14.dp)
@@ -64,11 +63,9 @@ private const val QuadrantTintAlpha = 0.20f
 fun QuadrantScreen(
     openTasks: Flow<List<Task>>,
     completedTasks: Flow<List<Task>>,
-    zone: ZoneId,
     onOpenTask: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val nowMillis = rememberNowMillis()
     val open by openTasks.collectAsStateWithLifecycle(emptyList())
     val completed by completedTasks.collectAsStateWithLifecycle(emptyList())
 
@@ -99,16 +96,12 @@ fun QuadrantScreen(
             QuadrantCard(
                 priority = Priority.IMPORTANT_URGENT,
                 tasks = grouped[Priority.IMPORTANT_URGENT].orEmpty(),
-                nowMillis = nowMillis,
-                zone = zone,
                 onOpenTask = onOpenTask,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
             QuadrantCard(
                 priority = Priority.IMPORTANT_NOT_URGENT,
                 tasks = grouped[Priority.IMPORTANT_NOT_URGENT].orEmpty(),
-                nowMillis = nowMillis,
-                zone = zone,
                 onOpenTask = onOpenTask,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
@@ -120,16 +113,12 @@ fun QuadrantScreen(
             QuadrantCard(
                 priority = Priority.NOT_IMPORTANT_URGENT,
                 tasks = grouped[Priority.NOT_IMPORTANT_URGENT].orEmpty(),
-                nowMillis = nowMillis,
-                zone = zone,
                 onOpenTask = onOpenTask,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
             QuadrantCard(
                 priority = Priority.NOT_IMPORTANT_NOT_URGENT,
                 tasks = grouped[Priority.NOT_IMPORTANT_NOT_URGENT].orEmpty(),
-                nowMillis = nowMillis,
-                zone = zone,
                 onOpenTask = onOpenTask,
                 modifier = Modifier.weight(1f).fillMaxHeight()
             )
@@ -141,8 +130,6 @@ fun QuadrantScreen(
 private fun QuadrantCard(
     priority: Priority,
     tasks: List<Task>,
-    nowMillis: Long,
-    zone: ZoneId,
     onOpenTask: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -196,61 +183,56 @@ private fun QuadrantCard(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
             ) {
-                items(tasks, key = { it.id }) { task ->
-                    QuadrantTaskRow(
-                        task = task,
-                        completed = task.completedAt != null,
-                        onClick = { onOpenTask(task.id) },
-                        nowMillis = nowMillis,
-                        zone = zone
-                    )
+                // 两条任务之间画一条淡淡的分隔线：一列里挤着最多两行标题的任务时，光靠留白
+                // 看不出上一条到哪儿结束。线只画在两条之间，最后一条下面不画。
+                tasks.forEachIndexed { index, task ->
+                    item(key = "task-${task.id}") {
+                        QuadrantTaskRow(
+                            task = task,
+                            completed = task.completedAt != null,
+                            onClick = { onOpenTask(task.id) }
+                        )
+                    }
+                    if (index != tasks.lastIndex) {
+                        item(key = "divider-${task.id}") {
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = colors.dateMuted.copy(alpha = 0.3f)
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/** One task inside a quadrant: just its title and the date underneath - 这一页不打勾。 */
+/** 一条任务：只有标题——这一页不打勾，也不再显示日期（它是「决定优先级」的地方）。 */
 @Composable
 private fun QuadrantTaskRow(
     task: Task,
     completed: Boolean,
     onClick: () -> Unit,
-    nowMillis: Long,
-    zone: ZoneId,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
-    val (dateText, dateColor) = taskDateLabel(task, nowMillis, zone)
 
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.Top
+            .padding(horizontal = 4.dp, vertical = 8.dp)
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (completed) colors.doneInk else MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (dateText != null) {
-                Text(
-                    text = dateText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = dateColor,
-                    maxLines = 1
-                )
-            }
-        }
+        Text(
+            text = task.title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (completed) colors.doneInk else MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

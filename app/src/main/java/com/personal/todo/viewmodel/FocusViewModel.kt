@@ -280,8 +280,9 @@ class FocusViewModel(
 
     init {
         viewModelScope.launch {
-            // A recovered session comes back paused: nothing that happened while
-            // the process was gone is counted (spec section 5.2).
+            // A recovered session keeps running from where it was: nothing that
+            // happened while the process was gone is counted (spec section 5.2),
+            // but the timer itself is not parked on 暂停.
             focusRepository.recoverTimer()
             while (isActive) {
                 val nowElapsed = focusRepository.elapsedMillis()

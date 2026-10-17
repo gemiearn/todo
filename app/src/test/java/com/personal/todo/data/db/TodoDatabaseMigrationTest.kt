@@ -587,6 +587,124 @@ class TodoDatabaseMigrationTest {
     }
 
     /**
+     * v10 -> v11: 习惯的单位与单次基数，以及专注的「真正在跑的小段」。
+     *
+     * 老行两样都留空——老习惯的显示与统计都退回老口径；老计时器的小段起点补成它的开始时刻。
+     */
+    @Test
+    fun migratingFromVersion10AddsHabitUnitsAndFocusSegments() = runBlocking {
+        val name = "migration-10-to-11.db"
+        context.deleteDatabase(name)
+        createVersion10Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val habit = db.habitDao().observeHabits().first().single()
+            assertEquals("喝水", habit.name)
+            assertEquals(5, habit.dailyTarget)
+            assertTrue("老习惯没有单位，读出来按「次」算", habit.unitLabel == null)
+            assertEquals(Habit.DefaultUnit, habit.unit)
+            assertTrue("老习惯没有单次基数，读出来按 1 算", habit.stepAmount == null)
+            assertEquals(1, habit.step)
+
+            val session = db.focusDao().getSessions().single()
+            assertEquals("迁移前的任务", session.taskTitleSnapshot)
+            assertTrue("老记录没有小段，统计退回旧摊法", session.focusSegments == null)
+
+            val timer = requireNotNull(db.focusDao().getActiveTimer())
+            assertEquals(
+                "老计时器的小段起点补成会话开始时刻",
+                timer.startedAt,
+                timer.lastResumeAtWallClock
+            )
+
+            // 新数据照旧能写读。
+            val habits = HabitRepository(db, now = { 2_000L }, zone = ZoneId.of("Asia/Shanghai"))
+            habits.createHabit("阅读", 60, "分钟", 15)
+            val created = db.habitDao().observeHabits().first().last()
+            assertEquals("分钟", created.unit)
+            assertEquals(15, created.step)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * Builds a file backed database exactly as version 10 would have left it: the
+     * v9 DDL plus the two habit tables, one habit with a check-in, one finished
+     * session and a running timer.
+     */
+    private fun createVersion10Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V5_TASK_LISTS)
+            sqlite.execSQL(V8_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V9_FOCUS_SESSIONS)
+            sqlite.execSQL(V9_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL(V10_HABITS)
+            sqlite.execSQL(V10_HABIT_CHECK_INS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_tasks_recurrenceSourceId` ON `tasks` (`recurrenceSourceId`)"
+            )
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habit_check_ins_habitId` ON `habit_check_ins` (`habitId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habit_check_ins_date` ON `habit_check_ins` (`date`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V10_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime, " +
+                    "repeatRule, recurrenceSourceId) " +
+                    "VALUES ('迁移前的任务', NULL, 1, NULL, 'IMPORTANT_NOT_URGENT', NULL, NULL, 0, 1000, 1000, " +
+                    "NULL, NULL, NULL, NULL, NULL, NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO task_events (taskId, eventAt, eventType, titleSnapshot, detailsJson) " +
+                    "VALUES (1, 1000, 'CREATED', '迁移前的任务', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO focus_sessions (taskId, taskTitleSnapshot, listNameSnapshot, tagNamesSnapshot, " +
+                    "mode, startedAt, endedAt, plannedSeconds, actualFocusSeconds, status, note) " +
+                    "VALUES (1, '迁移前的任务', '收件箱', NULL, 'POMODORO', 1000, 2000, 1500, 1500, 'COMPLETED', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO active_timer (id, mode, phase, taskId, taskTitleSnapshot, listNameSnapshot, " +
+                    "tagNamesSnapshot, plannedSeconds, startedAt, lastResumeAtElapsed, accumulatedFocusSeconds, " +
+                    "running, updatedAt) " +
+                    "VALUES (1, 'POMODORO', 'FOCUS', 1, '迁移前的任务', '收件箱', NULL, 1500, 5000, 5000, 600, 1, 6000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO habits (id, name, dailyTarget, sortOrder, createdAt, updatedAt) " +
+                    "VALUES (1, '喝水', 5, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO habit_check_ins (habitId, date, count, updatedAt) " +
+                    "VALUES (1, '2026-10-16', 3, 1000)"
+            )
+            sqlite.version = 10
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
      * Builds a file backed database exactly as version 9 would have left it: the
      * v8 DDL plus `tagNamesSnapshot` on both focus tables, one task and its
      * finished 番茄钟.
@@ -770,6 +888,21 @@ class TodoDatabaseMigrationTest {
                 "`repeatRule` TEXT, `recurrenceSourceId` INTEGER, " +
                 "FOREIGN KEY(`listId`) REFERENCES `task_lists`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , " +
                 "FOREIGN KEY(`parentTaskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        /** The identity hash `schemas/.../10.json` records for version 10. */
+        const val V10_IDENTITY_HASH = "998940b1700d5d775db1accc2f773fe4"
+
+        /** 习惯那两张表到版本 10 的样子（v11 给 habits 加了 unitLabel/stepAmount）。 */
+        const val V10_HABITS =
+            "CREATE TABLE IF NOT EXISTS `habits` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `dailyTarget` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+
+        const val V10_HABIT_CHECK_INS =
+            "CREATE TABLE IF NOT EXISTS `habit_check_ins` (`habitId` INTEGER NOT NULL, " +
+                "`date` TEXT NOT NULL, `count` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`habitId`, `date`), " +
+                "FOREIGN KEY(`habitId`) REFERENCES `habits`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
 
         /** The identity hash `schemas/.../9.json` records for version 9. */
         const val V9_IDENTITY_HASH = "75bbb228c11e8fe6f01f3a1fc1ff6c60"

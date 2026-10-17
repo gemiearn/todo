@@ -34,8 +34,10 @@ class HabitViewModel(
      */
     val week: List<LocalDate> = (DaysWindow - 1 downTo 0).map { today.minusDays(it.toLong()) }
 
+    // 页面走开就停，不多守 5 秒：这是一张本地表，重新进来只是一次很便宜的查询，
+    // 而没有订阅者还挂着的查询会一直吊着——关库时它会把自己炸掉。
     val habits: StateFlow<List<Habit>> = repository.observeHabits()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyList())
 
     /** habitId -> (日期 -> 次数)；没记录的那天就是 0 次。 */
     val counts: StateFlow<Map<Long, Map<LocalDate, Int>>> =
@@ -44,14 +46,22 @@ class HabitViewModel(
                 rows.groupBy { it.habitId }
                     .mapValues { (_, ofHabit) -> ofHabit.associate { it.date to it.count } }
             }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyMap())
 
-    fun create(name: String, dailyTarget: Int) {
-        viewModelScope.launch { repository.createHabit(name, dailyTarget) }
+    fun create(name: String, dailyTarget: Int, unitLabel: String? = null, stepAmount: Int? = null) {
+        viewModelScope.launch { repository.createHabit(name, dailyTarget, unitLabel, stepAmount) }
     }
 
-    fun update(habitId: Long, name: String, dailyTarget: Int) {
-        viewModelScope.launch { repository.updateHabit(habitId, name, dailyTarget) }
+    fun update(
+        habitId: Long,
+        name: String,
+        dailyTarget: Int,
+        unitLabel: String? = null,
+        stepAmount: Int? = null
+    ) {
+        viewModelScope.launch {
+            repository.updateHabit(habitId, name, dailyTarget, unitLabel, stepAmount)
+        }
     }
 
     fun delete(habitId: Long) {

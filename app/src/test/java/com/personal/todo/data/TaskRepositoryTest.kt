@@ -50,6 +50,31 @@ class TaskRepositoryTest {
         db.close()
     }
 
+    // ------------------------------------------------------------- 四象限
+
+    /**
+     * 四象限只画日期还没过去的事：计划日期或截止日期早于今天的不进（过期的事该去清单/
+     * 逾期里收），**没有日期的照旧留着**——它们只是还没安排时间，不是过去的事。
+     */
+    @Test
+    fun theQuadrantSkipsPastDatesButKeepsUndatedAndToday() = runBlocking {
+        val today = repository.today()
+        repository.createTask("没日期", inboxId)
+        repository.createTask("今天计划", inboxId, plannedDate = today)
+        repository.createTask("明天", inboxId, plannedDate = today.plusDays(1))
+        repository.createTask("昨天计划", inboxId, plannedDate = today.minusDays(1))
+        repository.createTask("上周截止", inboxId, dueDate = today.minusDays(7))
+        repository.createTask("今天截止", inboxId, dueDate = today)
+
+        val titles = repository.observeQuadrantTasks().first().map { it.title }
+
+        assertEquals(
+            "过期的不进四象限，无日期 / 今天 / 未来的都留着",
+            setOf("没日期", "今天计划", "明天", "今天截止"),
+            titles.toSet()
+        )
+    }
+
     // ------------------------------------------------------------- lists
 
     @Test

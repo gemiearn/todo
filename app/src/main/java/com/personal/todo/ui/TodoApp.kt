@@ -816,10 +816,10 @@ internal fun MainScreen(
                 )
 
                 HomeTab.Quadrant.route -> QuadrantScreen(
-                    openTasks = remember { repository.observeAllOpenTasks() },
+                    openTasks = remember { repository.observeQuadrantTasks() },
                     completedTasks = remember { repository.observeCompletedTasks() },
-                    zone = repository.zone,
-                    // 四象限只读：决定优先级的地方，不给打勾也不给滑动完成。
+                    // 四象限只读、也不显示日期、也不收已经过期的任务：决定优先级的地方，
+                    // 不给打勾也不给滑动完成。
                     onOpenTask = onOpenTask,
                     modifier = Modifier.padding(innerPadding)
                 )

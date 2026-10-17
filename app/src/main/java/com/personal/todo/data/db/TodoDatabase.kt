@@ -55,6 +55,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 任务分开建模). Both start empty - no task, list, event or focus session is
  * rewritten, so nothing can be lost on the upgrade. A check-in is keyed by
  * `(habitId, 本地日期)`.
+ *
+ * Version 11 加两样：`habits.unitLabel` / `habits.stepAmount`（习惯的单位与单次基数，
+ * 都为空时按「次 / 1」算，老习惯显示不变）与 `focus_sessions.focusSegments` /
+ * `active_timer.focusSegments` + `active_timer.lastResumeAtWallClock`（每段真正在跑的
+ * 时间，供「最佳专注时间」按小段摊；老记录那列为空，统计退回旧口径）。
  */
 @Database(
     entities = [
@@ -68,7 +73,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Habit::class,
         HabitCheckIn::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -289,6 +294,30 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v10 -> v11: 习惯的单位与单次基数，以及专注的「真正在跑的小段」。
+         *
+         * 习惯那两列可空：空＝「次 / 1」，老习惯读出来与原来一模一样。专注那张记录表加
+         * `focusSegments`（空＝退回旧摊法），计时器表再加 `lastResumeAtWallClock`，并把老行
+         * 补成 `startedAt`（那时开始的那一小段就它自己）。
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `habits` ADD COLUMN `unitLabel` TEXT")
+                db.execSQL("ALTER TABLE `habits` ADD COLUMN `stepAmount` INTEGER")
+                db.execSQL("ALTER TABLE `focus_sessions` ADD COLUMN `focusSegments` TEXT")
+                db.execSQL("ALTER TABLE `active_timer` ADD COLUMN `focusSegments` TEXT")
+                db.execSQL(
+                    "ALTER TABLE `active_timer` ADD COLUMN " +
+                        "`lastResumeAtWallClock` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "UPDATE `active_timer` SET `lastResumeAtWallClock` = `startedAt` " +
+                        "WHERE `lastResumeAtWallClock` = 0"
+                )
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -299,7 +328,8 @@ abstract class TodoDatabase : RoomDatabase() {
             MIGRATION_6_7,
             MIGRATION_7_8,
             MIGRATION_8_9,
-            MIGRATION_9_10
+            MIGRATION_9_10,
+            MIGRATION_10_11
         )
     }
 }

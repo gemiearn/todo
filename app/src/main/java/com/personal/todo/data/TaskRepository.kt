@@ -262,8 +262,16 @@ class TaskRepository(
     fun observeOverdueTasks(): Flow<List<Task>> =
         taskDao.observeOpenTasksDueNotAfter(today()).map { rows -> rows.filter(::isOverdue) }
 
-    /** Every open top level task, whatever its dates - the quadrant view. */
+    /** Every open top level task, whatever its dates - the 任务选择器 uses this. */
     fun observeAllOpenTasks(): Flow<List<Task>> = taskDao.observeAllOpenTasks()
+
+    /**
+     * Open tasks the 四象限 may show: 只有日期还没过去的那些。
+     *
+     * 计划日期或截止日期早于今天的任务不进四象限（那是「决定接下来做什么」的地方，过期
+     * 的该去清单/逾期里收）；**没有日期的任务照旧留着**，它们只是还没安排时间。
+     */
+    fun observeQuadrantTasks(): Flow<List<Task>> = taskDao.observeOpenTasksNotPast(today())
 
     /**
      * Open tasks whose dates overlap [start]..[end] - the task dots of one

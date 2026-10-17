@@ -7,6 +7,7 @@ import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusPhase
+import com.personal.todo.model.FocusSegments
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTiming
 import com.personal.todo.model.Schedule
@@ -92,6 +93,7 @@ class FocusRepository(
                 plannedSeconds = if (mode.timed) plannedSeconds.coerceAtLeast(MinTimedSeconds) else 0,
                 startedAt = time,
                 lastResumeAtElapsed = elapsed(),
+                lastResumeAtWallClock = time,
                 accumulatedFocusSeconds = 0,
                 running = true,
                 updatedAt = time
@@ -124,6 +126,7 @@ class FocusRepository(
                 plannedSeconds = plannedSeconds.coerceAtLeast(MinTimedSeconds),
                 startedAt = time,
                 lastResumeAtElapsed = elapsed(),
+                lastResumeAtWallClock = time,
                 accumulatedFocusSeconds = 0,
                 running = true,
                 updatedAt = time
@@ -145,23 +148,32 @@ class FocusRepository(
 
     /**
      * Pauses the session. The time focused so far is banked first, so the paused
-     * span itself is never counted as focus time (spec section 5.2).
+     * span itself is never counted as focus time (spec section 5.2), and the run
+     * that just ended is closed into [ActiveTimer.focusSegments] so 统计 knows
+     * which hours it really ran in.
      */
     suspend fun pauseTimer(): Boolean = db.withTransaction {
         val timer = focusDao.getActiveTimer() ?: return@withTransaction false
         if (!timer.running) return@withTransaction false
+        val wall = now()
         focusDao.upsertActiveTimer(
-            timer.bankCurrentRun(now(), elapsed()).copy(running = false)
+            timer.bankCurrentRun(wall, elapsed()).withClosedSegment(wall).copy(running = false)
         )
         true
     }
 
-    /** Resumes a paused session; the paused time is not counted. */
+    /** Resumes a paused session; the paused time is not counted, and a new 小段 starts. */
     suspend fun resumeTimer(): Boolean = db.withTransaction {
         val timer = focusDao.getActiveTimer() ?: return@withTransaction false
         if (timer.running) return@withTransaction false
+        val wall = now()
         focusDao.upsertActiveTimer(
-            timer.copy(lastResumeAtElapsed = elapsed(), running = true, updatedAt = now())
+            timer.copy(
+                lastResumeAtElapsed = elapsed(),
+                lastResumeAtWallClock = wall,
+                running = true,
+                updatedAt = wall
+            )
         )
         true
     }
@@ -184,12 +196,12 @@ class FocusRepository(
      * Runs once when the process starts (spec section 5.2).
      *
      * A timer that survived a process death cannot prove what happened in
-     * between, so that span is dropped and the session comes back paused: the
-     * app never turns unverified background time into a finished pomodoro, and
-     * the user decides when to carry on.
+     * between, so that span is dropped - but the session **keeps running** from
+     * where it was: 用户希望重开就接着计时，而不是被停在暂停上。已经确认的那部分
+     * （离开前台时落库的累计秒数）与小段都留着，被杀期间那段一个都不算。
      *
      * Idempotent for the lifetime of this process: a screen that is opened again
-     * must not pause a session the user has meanwhile resumed.
+     * must not touch a session the user has meanwhile resumed.
      */
     suspend fun recoverTimer(): Boolean {
         if (recoveredThisProcess) return false
@@ -197,8 +209,16 @@ class FocusRepository(
         return db.withTransaction {
             val timer = focusDao.getActiveTimer() ?: return@withTransaction false
             if (!timer.running) return@withTransaction false
+            // 上一小段收在最后一次落库的时刻（就是离开前台那次 checkpoint），被杀期间
+            // 那段时间既不进小段也不进累计秒数。
+            val wall = now()
             focusDao.upsertActiveTimer(
-                timer.copy(running = false, lastResumeAtElapsed = elapsed(), updatedAt = now())
+                timer.withClosedSegment(timer.updatedAt).copy(
+                    running = true,
+                    lastResumeAtElapsed = elapsed(),
+                    lastResumeAtWallClock = wall,
+                    updatedAt = wall
+                )
             )
             true
         }
@@ -216,6 +236,7 @@ class FocusRepository(
         // 不计入专注统计 stays true no matter how a break ends (reaching zero, or
         // being skipped).
         if (!timer.phase.isBreak) {
+            val wall = now()
             focusDao.insertSession(
                 FocusSession(
                     taskId = timer.taskId,
@@ -224,9 +245,11 @@ class FocusRepository(
                     tagNamesSnapshot = timer.tagNamesSnapshot,
                     mode = timer.mode,
                     startedAt = timer.startedAt,
-                    endedAt = now(),
+                    endedAt = wall,
                     plannedSeconds = timer.plannedSeconds,
                     actualFocusSeconds = FocusTiming.recordedFocusSeconds(stateOf(timer), elapsed()),
+                    // 真正在跑的那几小段一起带走：统计页据此摊 24 小时，暂停空档不落进去。
+                    focusSegments = timer.closedSegments(wall),
                     status = status
                 )
             )
@@ -245,6 +268,18 @@ class FocusRepository(
             lastResumeAtElapsed = atElapsed,
             updatedAt = atWallClock
         )
+
+    /** 当前这一小段是从什么时候开始的（墙上时钟）；老行没有这个值就用会话开始时刻。 */
+    private fun ActiveTimer.segmentStart(): Long =
+        if (lastResumeAtWallClock > 0) lastResumeAtWallClock else startedAt
+
+    /** 到 [atWallClock] 为止的全部小段：已经闭合的，加上当前这一段。 */
+    private fun ActiveTimer.closedSegments(atWallClock: Long): String? =
+        FocusSegments.append(focusSegments, segmentStart(), atWallClock)
+
+    /** 把当前这一段闭合进 [ActiveTimer.focusSegments]。 */
+    private fun ActiveTimer.withClosedSegment(atWallClock: Long): ActiveTimer =
+        copy(focusSegments = closedSegments(atWallClock), lastResumeAtWallClock = atWallClock)
 
     private companion object {
         /** Nobody focuses for less than a minute; a shorter target is a typo. */

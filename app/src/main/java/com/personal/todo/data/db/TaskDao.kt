@@ -186,7 +186,7 @@ interface TaskDao {
     )
     fun observeOpenTasksDueNotAfter(date: LocalDate): Flow<List<Task>>
 
-    /** Every open top level task, whatever its dates - the quadrant view. */
+    /** Every open top level task, whatever its dates - the搜索 / 任务选择器. */
     @Query(
         """
         SELECT * FROM tasks
@@ -196,6 +196,25 @@ interface TaskDao {
         """
     )
     fun observeAllOpenTasks(): Flow<List<Task>>
+
+    /**
+     * Open top level tasks whose dates have not passed: the quadrant view.
+     *
+     * 四象限是「决定接下来做什么」的地方，所以已经过期的不进这里——计划日期或截止日期
+     * 早于 [date] 的都排除。**没有日期的任务照旧留着**：它们只是还没安排时间，并不是
+     * 过去的事。还没做完的旧任务仍然在它所属的清单/收件箱里。
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND completedAt IS NULL
+          AND (plannedDate IS NULL OR plannedDate >= :date)
+          AND (dueDate IS NULL OR dueDate >= :date)
+        """
+    )
+    fun observeOpenTasksNotPast(date: LocalDate): Flow<List<Task>>
 
     /**
      * Open top level tasks the calendar may draw on [date]: dated exactly that

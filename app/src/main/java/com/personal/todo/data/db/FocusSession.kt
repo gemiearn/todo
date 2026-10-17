@@ -58,6 +58,14 @@ data class FocusSession(
     val plannedSeconds: Int,
     val actualFocusSeconds: Int,
     val status: FocusStatus,
+    /**
+     * 这次会话里**真正在跑**的那几小段，`开始-结束` 毫秒对用 `|` 连起来。
+     *
+     * 统计页的「最佳专注时间」按这些小段往 24 小时里摊，所以暂停的空档不会落进去。null
+     * 表示没有这一段信息——v11 之前记录的会话，以及没能确认小段的会话——统计时退回
+     * 「按 startedAt→endedAt 整段摊」的老口径，历史不变。
+     */
+    val focusSegments: String? = null,
     val note: String? = null
 )
 
@@ -92,6 +100,15 @@ data class ActiveTimer(
     val plannedSeconds: Int,
     val startedAt: Long,
     val lastResumeAtElapsed: Long,
+    /**
+     * 当前这一小段开始的**墙上时钟**时刻，用来在暂停/结束/恢复时把这一小段闭合进
+     * [focusSegments]（单调时钟只能量长度，量不出「落在几点」）。
+     *
+     * 老行由迁移补成 [startedAt]；v11 起每次开始/继续/恢复都会写上它。
+     */
+    @ColumnInfo(defaultValue = "0") val lastResumeAtWallClock: Long = 0L,
+    /** 这次会话已经跑完的小段；见 [FocusSession.focusSegments]。 */
+    val focusSegments: String? = null,
     val accumulatedFocusSeconds: Int,
     val running: Boolean,
     val updatedAt: Long

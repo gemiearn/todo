@@ -1,22 +1,18 @@
 package com.personal.todo.ui
 
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
@@ -401,16 +397,22 @@ class TodoAppSmokeTest {
         compose.onNodeWithTag(tabTag(HomeTab.Quadrant)).performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithText("写季度报告").assertExists()
+        // 先确认四象限这一页真的在屏幕上，再看任务有没有画出来：列表是懒的，第一条
+        // 不一定第一帧就在（之前写死 assertExists 会偶发地什么都没找到）。
+        compose.onNodeWithText("重要且紧急").assertExists()
+        compose.waitUntilNodeCount(hasText("写季度报告"), 1, TimeoutMillis)
         compose.onAllNodes(isToggleable()).assertCountEquals(0)
     }
 
     /**
-     * 习惯页是独立一页（从「更多」进）：建一个「喝水」每天 2 次，点一下那一行 +1、长按 −1。
-     * （补打卡那一格在 HabitScreenSmokeTest 里单独钉过，那里能拿到习惯的 id。）
+     * 习惯的入口在「更多」页，点进去是一页独立的习惯页（推入页）。
+     *
+     * 页面自己怎么打卡、怎么新建，都在 HabitScreenSmokeTest 里钉；这里只管「入口通不通」。
+     * 收尾时按返回键离开这一页：页面的查询订阅随之下线，别把活着的订阅留给下一条测试
+     * （实测会把后面那条四象限的冒烟断言带崩）。
      */
     @Test
-    fun theHabitPageChecksInAndOut() {
+    fun theHabitPageOpensFromTheMoreTab() {
         launchApp()
 
         compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
@@ -418,24 +420,11 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("习惯").performClick()
         compose.waitForIdle()
 
-        // 一个习惯都还没有时，页面直接说实话。
+        // 一个习惯都还没有时，页面直接说实话；右上角就是新建入口。
         compose.onNodeWithText("还没有习惯", substring = true).assertExists()
+        compose.onNodeWithTag(HabitNewTag).assertExists()
 
-        // 新建：名字 喝水、每天 2 次。弹层里的控件要用语义点击：坐标点击落不到弹层上。
-        compose.onNodeWithTag(HabitNewTag).performClick()
-        compose.waitForIdle()
-        compose.onNodeWithTag(HabitNameFieldTag).performTextInput("喝水")
-        compose.onNodeWithText("+").performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitForIdle()
-        compose.onNodeWithText("保存").performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitForIdle()
-
-        compose.waitUntilNodeCount(hasText("今天 0/2"), 1, TimeoutMillis)
-
-        // 点一下那一行 +1，再长按 −1。
-        compose.onNodeWithText("喝水").performClick()
-        compose.waitUntilNodeCount(hasText("今天 1/2"), 1, TimeoutMillis)
-        compose.onNodeWithText("喝水").performTouchInput { longClick() }
-        compose.waitUntilNodeCount(hasText("今天 0/2"), 1, TimeoutMillis)
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.waitUntilNodeCount(hasText("标签管理"), 1, TimeoutMillis)
     }
 }

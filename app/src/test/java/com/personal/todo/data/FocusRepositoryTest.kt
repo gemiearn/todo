@@ -3,6 +3,7 @@ package com.personal.todo.data
 import androidx.room.Room
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusSegments
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.model.FocusTiming
@@ -143,22 +144,50 @@ class FocusRepositoryTest {
     // ------------------------------------------------------- 进程中途消失
 
     @Test
-    fun aRecoveredTimerComesBackPausedAndDropsTheUnverifiedSpan() = runBlocking {
+    fun aRecoveredTimerKeepsRunningAndDropsTheUnverifiedSpan() = runBlocking {
         focus.startTimer(FocusMode.POMODORO, 1_500)
         advance(600)
 
         assertTrue("计时器是上一个进程留下的，需要恢复一次", focus.recoverTimer())
 
         val recovered = requireNotNull(activeTimer())
-        assertFalse("恢复后先暂停，由用户决定何时继续", recovered.running)
+        assertTrue("重开就接着计时，不再停在暂停上", recovered.running)
         assertEquals("进程消失期间的时间不作数", 0, recovered.accumulatedFocusSeconds)
 
         assertFalse("同一个进程里只恢复一次", focus.recoverTimer())
-        assertTrue(focus.resumeTimer())
         advance(300)
         assertTrue(focus.finishTimer())
 
-        assertEquals(300, onlySession().actualFocusSeconds)
+        assertEquals("只算恢复之后真正跑的那 300 秒", 300, onlySession().actualFocusSeconds)
+    }
+
+    @Test
+    fun pausingAndResumingLeavesOnlyTheRunningSpansInTheSession() = runBlocking {
+        focus.startTimer(FocusMode.STOPWATCH, 0)
+        advance(600)
+        focus.pauseTimer()
+        advance(3_600)
+        focus.resumeTimer()
+        advance(300)
+        focus.finishTimer()
+
+        val session = onlySession()
+        assertEquals("暂停期间一秒都不算", 900, session.actualFocusSeconds)
+        val segments = FocusSegments.decode(session.focusSegments)
+        assertEquals("两次运行＝两小段", 2, segments.size)
+        assertEquals("第一小段 10 分钟", 600_000L, segments[0].last - segments[0].first)
+        assertEquals("第二小段 5 分钟", 300_000L, segments[1].last - segments[1].first)
+    }
+
+    @Test
+    fun aSessionNeverPausedIsOneSingleSpan() = runBlocking {
+        focus.startTimer(FocusMode.POMODORO, 1_500)
+        advance(600)
+        focus.finishTimer()
+
+        val segments = FocusSegments.decode(onlySession().focusSegments)
+        assertEquals("没暂停过就是一段", 1, segments.size)
+        assertEquals(600_000L, segments.single().last - segments.single().first)
     }
 
     @Test
@@ -173,7 +202,7 @@ class FocusRepositoryTest {
 
         assertTrue(focus.recoverTimer())
         val recovered = requireNotNull(activeTimer())
-        assertFalse(recovered.running)
+        assertTrue("恢复之后仍在跑", recovered.running)
         assertEquals(600, recovered.accumulatedFocusSeconds)
 
         assertTrue(focus.finishTimer())

@@ -35,7 +35,12 @@ class HabitRepository(
     fun observeCheckIns(from: LocalDate, to: LocalDate): Flow<List<HabitCheckIn>> =
         habitDao.observeCheckInsBetween(from, to)
 
-    suspend fun createHabit(name: String, dailyTarget: Int): Long {
+    suspend fun createHabit(
+        name: String,
+        dailyTarget: Int,
+        unitLabel: String? = null,
+        stepAmount: Int? = null
+    ): Long {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "习惯名不能为空" }
         val time = now()
@@ -43,6 +48,8 @@ class HabitRepository(
             Habit(
                 name = trimmed,
                 dailyTarget = dailyTarget.coerceAtLeast(HabitRules.MinTarget),
+                unitLabel = cleanUnit(unitLabel),
+                stepAmount = cleanStep(stepAmount),
                 // 新习惯排到最后，不插到用户排好的顺序中间。
                 sortOrder = (habitDao.maxSortOrder() ?: -1) + 1,
                 createdAt = time,
@@ -51,8 +58,14 @@ class HabitRepository(
         )
     }
 
-    /** 改名与改次数走同一个入口：习惯就这两样可编辑的东西。 */
-    suspend fun updateHabit(habitId: Long, name: String, dailyTarget: Int) {
+    /** 名字、单位、目标量与单次基数走同一个入口：习惯就这几样可编辑的东西。 */
+    suspend fun updateHabit(
+        habitId: Long,
+        name: String,
+        dailyTarget: Int,
+        unitLabel: String? = null,
+        stepAmount: Int? = null
+    ) {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "习惯名不能为空" }
         val habit = habitDao.getById(habitId) ?: return
@@ -60,6 +73,8 @@ class HabitRepository(
             habit.copy(
                 name = trimmed,
                 dailyTarget = dailyTarget.coerceAtLeast(HabitRules.MinTarget),
+                unitLabel = cleanUnit(unitLabel),
+                stepAmount = cleanStep(stepAmount),
                 updatedAt = now()
             )
         )
@@ -80,7 +95,7 @@ class HabitRepository(
     private suspend fun changeCount(habitId: Long, date: LocalDate, delta: Int) = db.withTransaction {
         val habit = habitDao.getById(habitId) ?: return@withTransaction
         val current = habitDao.getCheckIn(habitId, date)?.count ?: 0
-        val next = HabitRules.nextCount(current, habit.dailyTarget, delta)
+        val next = HabitRules.nextCount(current, habit.dailyTarget, habit.step, delta)
         if (next < HabitRules.MinTarget) {
             habitDao.deleteCheckIn(habitId, date)
         } else {
@@ -89,4 +104,11 @@ class HabitRepository(
             )
         }
     }
+
+    /** 空单位与 1 都存成 null：这样「次 / 1」的老习惯与显式写了「次」的习惯是同一种数据。 */
+    private fun cleanUnit(unitLabel: String?): String? =
+        unitLabel?.trim()?.takeIf { it.isNotEmpty() && it != Habit.DefaultUnit }
+
+    private fun cleanStep(stepAmount: Int?): Int? =
+        stepAmount?.takeIf { it > 1 }
 }

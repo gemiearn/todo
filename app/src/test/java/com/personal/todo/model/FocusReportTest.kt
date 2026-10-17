@@ -109,6 +109,36 @@ class FocusReportTest {
     }
 
     @Test
+    fun theHourBarsOnlySpreadTheSegmentsThatActuallyRan() {
+        // 09:00 跑了 15 分钟 → 暂停一小时 → 10:00 再跑 15 分钟。暂停那一小时不该落在任何小时上。
+        val dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val nine = dayStart + 9 * 3_600_000L
+        val ten = dayStart + 10 * 3_600_000L
+        val quarter = 900_000L
+        val session = session(
+            seconds = 1_800,
+            startMinuteOfDay = 9 * 60,
+            endMinuteOfDay = 10 * 60 + 15
+        ).copy(
+            focusSegments = FocusSegments.append(
+                FocusSegments.append(null, nine, nine + quarter),
+                ten,
+                ten + quarter
+            )
+        )
+
+        val bars = focusHourBars(
+            sessions = listOf(session),
+            period = focusPeriodOf(FocusPeriodUnit.DAY, today),
+            zone = zone
+        )
+
+        assertEquals("9 点只拿到真正跑的那 15 分钟", 900, bars.first { it.hour == 9 }.seconds)
+        assertEquals("10 点也拿到 15 分钟", 900, bars.first { it.hour == 10 }.seconds)
+        assertEquals("暂停的那一段什么都不落", 1_800, bars.sumOf { it.seconds })
+    }
+
+    @Test
     fun noSessionsAtAllMeansNoAchievementRate() {
         val totals = focusPeriodTotals(emptyList(), focusPeriodOf(FocusPeriodUnit.DAY, today), zone)
         assertEquals(0, totals.seconds)
