@@ -41,6 +41,10 @@ class AppShellViewModel(private val repository: TaskRepository) : ViewModel() {
     val taskCounts: StateFlow<Map<Long, Int>> = repository.observeTaskCountsByList()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /** 逾期任务的条数 - 抽屉里「逾期」那一行红色徽章用的数。 */
+    val overdueCount: StateFlow<Int> = repository.observeOverdueCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     /** Id of the built-in inbox, or null during the very first frame. */
     var inboxId: Long? by mutableStateOf(null)
         private set

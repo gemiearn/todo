@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +39,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -97,6 +100,7 @@ import com.personal.todo.model.filterByRange
 import com.personal.todo.model.filterTasks
 import com.personal.todo.model.sortTasks
 import com.personal.todo.ui.theme.LocalTodoColors
+import com.personal.todo.ui.theme.TagPalette
 import com.personal.todo.viewmodel.AppShellViewModel
 import com.personal.todo.viewmodel.FocusViewModel
 import com.personal.todo.viewmodel.HabitViewModel
@@ -399,6 +403,7 @@ internal fun MainScreen(
     val shellViewModel: AppShellViewModel = viewModel(factory = AppShellViewModel.factory(repository))
     val lists by shellViewModel.lists.collectAsStateWithLifecycle()
     val openTaskCounts by shellViewModel.openTaskCounts.collectAsStateWithLifecycle()
+    val overdueCount by shellViewModel.overdueCount.collectAsStateWithLifecycle()
     val taskCounts by shellViewModel.taskCounts.collectAsStateWithLifecycle()
     val tagsByTask by shellViewModel.tagsByTask.collectAsStateWithLifecycle()
     val allTags by shellViewModel.tags.collectAsStateWithLifecycle()
@@ -551,7 +556,7 @@ internal fun MainScreen(
         ROUTE_FUTURE -> R.string.empty_future
         ROUTE_OVERDUE -> R.string.empty_overdue
         HomeTab.Today.route -> R.string.empty_today
-        else -> R.string.empty_day
+        else -> R.string.empty_calendar_day
     }
     // While a search is running, "nothing here" means "nothing matched".
     val emptyText = if (searchQuery.isNotBlank()) {
@@ -587,6 +592,7 @@ internal fun MainScreen(
                 ListsDrawer(
                     lists = lists,
                     openTaskCounts = openTaskCounts,
+                    overdueCount = overdueCount,
                     currentRoute = route,
                     onSelect = { target ->
                         nav.resetTo(target)
@@ -772,6 +778,13 @@ internal fun MainScreen(
                         modifier = if (calendarView == CalendarView.MONTH) Modifier else Modifier.weight(1f)
                     )
                     if (calendarView == CalendarView.MONTH) {
+                        // 稿子④：日程区顶部先给一条「哪一天 · 几条」的标题，下面那些卡片
+                        // 就不再是凭空出现的了。
+                        CalendarDayHeader(date = selectedDate, count = visibleTasks.size)
+                        // 稿子⑥：这一天确实没有安排（搜索里没有匹配不算）时，给一个像样的
+                        // 空态，而不是一片留白。
+                        val dayPanelEmpty =
+                            visibleTasks.isEmpty() && visibleCompletedTasks.isEmpty()
                         // The toggle picks how the selected day is laid out - the
                         // plain list, or the same tasks on a time axis.
                         if (timelineOn) {
@@ -783,6 +796,11 @@ internal fun MainScreen(
                                 onComplete = completeWithUndo,
                                 onReopen = onReopen,
                                 onDelete = requestDelete,
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else if (dayPanelEmpty && searchQuery.isBlank()) {
+                            CalendarDayEmptyState(
+                                isToday = selectedDate == today,
                                 modifier = Modifier.weight(1f)
                             )
                         } else {
@@ -1127,17 +1145,35 @@ private fun MoreEntry(label: String, trailing: Int? = null, onClick: () -> Unit)
 
 // ---------------------------------------------------------------- the drawer
 
-/** 抽屉占屏幕宽度的比例：拉出来只盖住约六成，原来的界面还露在外面一点。 */
-private const val DrawerWidthFraction = 0.6f
+/**
+ * 抽屉占屏幕宽度的比例。原来只有六成，清单名稍长就被裁；按抽屉设计稿加宽到 84%，拉出来
+ * 只留一条窄边提示「这是一层盖上去的面板」。
+ */
+private const val DrawerWidthFraction = 0.84f
+
+/**
+ * 抽屉里清单色点的取色顺序（值是 [TagPalette] 的下标）：先用蓝 / 紫 / 番茄红这些比较中性
+ * 的，红和琥珀垫后，免得第一条清单就顶着「紧急」的红点。按清单 id 取，稳定、不随排序变。
+ */
+private val DrawerListDotOrder = listOf(3, 4, 5, 6, 2, 0, 1, 7)
+
+/** 清单色点的直径。 */
+private val DrawerDotSize = 8.dp
+
+/** 一条清单的颜色点：同一个清单永远是同一个颜色。 */
+private fun listDotColor(listId: Long): Color =
+    TagPalette[DrawerListDotOrder[(listId % DrawerListDotOrder.size).toInt()]]
 
 @Composable
 private fun ListsDrawer(
     lists: List<TaskList>,
     openTaskCounts: Map<Long, Int>,
+    overdueCount: Int,
     currentRoute: String,
     onSelect: (String) -> Unit,
     onNewList: () -> Unit
 ) {
+    val colors = LocalTodoColors.current
     val inboxId = lists.firstOrNull { it.isInbox }?.id
 
     Column(
@@ -1152,7 +1188,9 @@ private fun ListsDrawer(
         )
 
         // 智能清单: the date driven views of spec section 4.1. They are queries,
-        // not folders - nothing here moves a task or a date.
+        // not folders - nothing here moves a task or a date. 「逾期」那一行带红色徽章，
+        // 一眼看得出积压了多少。
+        SectionHeader(stringResource(R.string.drawer_section_smart))
         DrawerRow(
             label = stringResource(R.string.nav_today),
             selected = currentRoute == HomeTab.Today.route,
@@ -1166,17 +1204,20 @@ private fun ListsDrawer(
         DrawerRow(
             label = stringResource(R.string.nav_overdue),
             selected = currentRoute == ROUTE_OVERDUE,
+            badge = overdueCount,
+            danger = true,
             onClick = { onSelect(ROUTE_OVERDUE) }
         )
 
-        Spacer(Modifier.height(6.dp))
-
+        // 我的清单：收件箱 + 用户清单，每条前面一个属于自己的颜色点。
+        SectionHeader(stringResource(R.string.drawer_section_lists))
         LazyColumn(modifier = Modifier.weight(1f)) {
             item(key = ROUTE_INBOX) {
                 DrawerRow(
                     label = stringResource(R.string.list_inbox_name),
                     selected = currentRoute == ROUTE_INBOX,
                     badge = openTaskCounts[inboxId ?: 0L] ?: 0,
+                    dot = inboxId?.let(::listDotColor),
                     onClick = { onSelect(ROUTE_INBOX) }
                 )
             }
@@ -1185,19 +1226,22 @@ private fun ListsDrawer(
                     label = list.name,
                     selected = currentRoute == listRoute(list.id),
                     badge = openTaskCounts[list.id] ?: 0,
+                    dot = listDotColor(list.id),
                     onClick = { onSelect(listRoute(list.id)) }
                 )
             }
         }
 
+        // 分隔线以下的三样不随清单滚动：清单再长，「已完成 / 新建清单」也一直在手边。
+        // 回收站 deliberately has no entry here: it lives in 更多, so the drawer
+        // stays a plain list of lists (spec section 4.2 still requires the trash
+        // itself, and nothing about it is removed).
+        HorizontalDivider(color = colors.dateMuted.copy(alpha = 0.2f))
         DrawerRow(
             label = stringResource(R.string.nav_completed),
             selected = currentRoute == ROUTE_COMPLETED,
             onClick = { onSelect(ROUTE_COMPLETED) }
         )
-        // 回收站 deliberately has no entry here: it lives in 更多, so the drawer
-        // stays a plain list of lists (spec section 4.2 still requires the trash
-        // itself, and nothing about it is removed).
         TextButton(onClick = onNewList, modifier = Modifier.padding(horizontal = 12.dp)) {
             Text(stringResource(R.string.action_new_list))
         }
@@ -1208,7 +1252,7 @@ private fun ListsDrawer(
  * 抽屉里的一行。
  *
  * 不用 material3 的 NavigationDrawerItem：它自带 56dp 的最小高度和一整套竖向内边距，
- * 清单多了以后一屏只能看见七八行。这里换成精简行（整行约 36dp），配合半屏宽的抽屉，
+ * 清单多了以后一屏只能看见七八行。这里换成精简行（整行约 36dp），配合加宽后的抽屉，
  * 一屏能多看几行，也更接近用户要的「紧凑一点」。
  */
 @Composable
@@ -1216,7 +1260,9 @@ private fun DrawerRow(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    badge: Int = 0
+    badge: Int = 0,
+    dot: Color? = null,
+    danger: Boolean = false
 ) {
     val colors = LocalTodoColors.current
     Row(
@@ -1229,6 +1275,15 @@ private fun DrawerRow(
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (dot != null) {
+            Box(
+                modifier = Modifier
+                    .size(DrawerDotSize)
+                    .clip(CircleShape)
+                    .background(dot)
+            )
+            Spacer(Modifier.width(10.dp))
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
@@ -1238,13 +1293,32 @@ private fun DrawerRow(
             modifier = Modifier.weight(1f)
         )
         if (badge > 0) {
-            Text(
-                text = stringResource(R.string.list_task_count, badge),
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.dateMuted,
-                maxLines = 1
-            )
+            DrawerCountPill(count = badge, danger = danger)
         }
+    }
+}
+
+/**
+ * 抽屉里的计数：一个圆角药丸徽章。清单是淡蓝的，逾期是淡红的（红警）——原来是
+ * 「3 个未完成任务」那样一整句淡灰文字，既占地方又读不出轻重。
+ */
+@Composable
+private fun DrawerCountPill(count: Int, danger: Boolean) {
+    val colors = LocalTodoColors.current
+    val tint = if (danger) colors.dateOverdue else colors.accent
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(tint.copy(alpha = 0.12f))
+            .padding(horizontal = 8.dp, vertical = 1.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = tint,
+            maxLines = 1
+        )
     }
 }
 

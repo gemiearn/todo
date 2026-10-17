@@ -16,13 +16,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -45,10 +45,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.personal.todo.R
@@ -75,7 +78,19 @@ private val TimestampFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern(
 private val CardShape = RoundedCornerShape(14.dp)
 
 /** Width of the coloured bar along the left edge of a task card. */
-private val BarWidth = 4.dp
+private val BarWidth = 3.dp
+
+/**
+ * 色条上下各内缩多少。原来是通顶贴边的矩形，看着像一张贴纸；内缩并带圆角之后
+ * 它才像卡片自己的一个标记。
+ */
+private val BarInset = 13.dp
+
+/** 勾选钮的直径。稿子⑤把它从 Material3 的方形 Checkbox 换成一个圆形描边钮。 */
+private val CheckSize = 22.dp
+
+/** 勾选钮的触控区：图标只画 22dp，外面这一圈是给手指点的。 */
+private val CheckTouchSize = 32.dp
 
 /** How often the "now" used by the date labels and countdowns is refreshed. */
 private const val NowRefreshMillis = 30_000L
@@ -373,26 +388,30 @@ fun TaskCard(
             .clip(CardShape)
             .background(colors.card)
             .drawBehind {
-                drawRect(color = barColor, size = Size(BarWidth.toPx(), size.height))
+                val inset = BarInset.toPx()
+                drawRoundRect(
+                    color = barColor,
+                    topLeft = Offset(0f, inset),
+                    size = Size(BarWidth.toPx(), (size.height - inset * 2).coerceAtLeast(0f)),
+                    cornerRadius = CornerRadius(BarWidth.toPx() / 2f)
+                )
             }
             .clickable(onClick = onClick)
-            .padding(start = 18.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+            // 色条现在只有 3dp，左边的内边距也收窄一点；上下各降 2dp，抵消勾选钮
+            // 那圈 32dp 触控区带来的高度增长，卡片总高基本不变。
+            .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (onCheckedChange != null) {
-            Checkbox(
+            CircleCheck(
                 checked = checked == true,
                 onCheckedChange = onCheckedChange,
-                colors = CheckboxDefaults.colors(
-                    checkedColor = if (completed) colors.doneInk else colors.accent,
-                    checkmarkColor = Color.White
-                ),
-                modifier = Modifier.size(24.dp)
+                fill = if (completed) colors.doneInk else colors.accent
             )
         } else {
-            Spacer(Modifier.width(24.dp))
+            Spacer(Modifier.width(CheckTouchSize))
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(2.dp))
 
         Column(Modifier.weight(1f)) {
             Text(
@@ -444,6 +463,50 @@ fun TaskCard(
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(actionLabel)
+            }
+        }
+    }
+}
+
+/**
+ * 任务卡上的勾选钮：一个 22dp 的圆形描边钮，勾上就填成实心，外面留一圈 32dp 的触控区
+ * （Material3 的方形 Checkbox 自带最小触控区，换成自画的方框就得自己补回来）。
+ *
+ * 用它替掉 Material3 的方形 Checkbox——稿子⑤里方形滑块跟这套圆角卡片不是一路。
+ *
+ * 用的是 `toggleable` 而不是 `clickable`，语义上仍然是一个可勾选的控件（读屏和
+ * 冒烟测试里的 `isToggleable()` 都还认得它）。
+ */
+@Composable
+private fun CircleCheck(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    fill: Color,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    Box(
+        modifier = modifier
+            .size(CheckTouchSize)
+            .clip(CircleShape)
+            .toggleable(value = checked, onValueChange = onCheckedChange, role = Role.Checkbox),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(CheckSize)
+                .clip(CircleShape)
+                .background(if (checked) fill else Color.Transparent)
+                .border(1.7.dp, if (checked) fill else colors.checkOutline, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (checked) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(13.dp)
+                )
             }
         }
     }

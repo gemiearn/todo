@@ -30,6 +30,8 @@ private val MutedLight = Color(0xFF9A9FA5)
 private val MutedDark = Color(0xFF9AA0A6)
 private val DoneInkLight = Color(0xFFB4B9BF)
 private val DoneInkDark = Color(0xFF6E747B)
+private val CheckOutlineLight = Color(0xFFD2D6DB)
+private val CheckOutlineDark = Color(0xFF464A52)
 private val OutlineLight = Color(0xFFE7E9EC)
 private val OutlineDark = Color(0xFF2C2F34)
 
@@ -69,6 +71,8 @@ data class TodoColors(
     val dateOverdue: Color,
     /** Text and checkbox fill of a finished task. */
     val doneInk: Color,
+    /** 任务卡上「未勾选」那个圆圈的描边色（稿子⑤里的浅灰）。 */
+    val checkOutline: Color,
     /** 四象限的四个颜色，随设置里的「色系」整体切换。 */
     val quadrants: QuadrantColors,
     /** 成功那种绿：已完成的专注时长用它，和象限 Ⅳ 的绿是两回事。 */
@@ -130,6 +134,7 @@ internal val LightTodoColors = TodoColors(
     dateMuted = MutedLight,
     dateOverdue = Red,
     doneInk = DoneInkLight,
+    checkOutline = CheckOutlineLight,
     quadrants = ClassicQuadrants,
     success = Green,
     focusAccent = Tomato,
@@ -167,6 +172,7 @@ internal val DarkTodoColors = LightTodoColors.copy(
     dateToday = BlueDark,
     dateMuted = MutedDark,
     doneInk = DoneInkDark,
+    checkOutline = CheckOutlineDark,
     focusTrack = TomatoTrackDark,
     focusSurface = TomatoSurfaceDark
 )

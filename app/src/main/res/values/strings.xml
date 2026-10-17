@@ -13,7 +13,9 @@
     <string name="nav_overdue">逾期</string>
     <string name="nav_completed">已完成</string>
     <string name="nav_trash">回收站</string>
-    <string name="list_task_count">%1$d 个未完成任务</string>
+    <!-- 抽屉里两组的分组标题 -->
+    <string name="drawer_section_smart">智能清单</string>
+    <string name="drawer_section_lists">我的清单</string>
 
     <!-- 通用操作 -->
     <string name="action_new_task">新建任务</string>
@@ -110,6 +112,9 @@
     <string name="habit_target_label">每天目标</string>
     <string name="habit_step_label">每次增加</string>
     <string name="habit_today_progress">今天 %1$d/%2$d %3$s</string>
+    <!-- 顶部今日概况：今天到目标的习惯数 -->
+    <string name="habit_summary_title">今天完成的习惯</string>
+    <string name="habit_summary_count">%1$d/%2$d</string>
     <string name="habit_delete_title">删除这个习惯？</string>
     <string name="habit_delete_message">「%1$s」的打卡记录会一起删掉，删了拿不回来。</string>
     <string name="habit_delete_confirm">删除</string>
@@ -175,6 +180,13 @@
     <string name="calendar_step_previous">上一页</string>
     <string name="calendar_step_next">下一页</string>
     <string name="calendar_week_prefix">W%1$d</string>
+    <!-- 日程区顶部那条标题：哪一天 + 几条（稿子④） -->
+    <string name="calendar_day_title">%1$s · %2$s</string>
+    <string name="calendar_day_count">%1$d 项</string>
+    <!-- 日历选中日没有任务时的空态（稿子⑥）：不用「暂无数据」这种系统腔 -->
+    <string name="empty_calendar_today">今天还没有安排</string>
+    <string name="empty_calendar_day">这一天还没有安排</string>
+    <string name="empty_calendar_hint">点右下角的加号安排一件事</string>
     <!-- 单日时间线的空态，与截图一致 -->
     <string name="empty_day_timeline">你这一天没有任务</string>
     <string name="empty_day_timeline_hint">放松一下吧</string>
@@ -263,7 +275,6 @@
     <string name="empty_today">今天没有任务</string>
     <string name="empty_future">还没有未来的任务</string>
     <string name="empty_overdue">没有逾期任务</string>
-    <string name="empty_day">这一天没有任务</string>
     <string name="empty_quadrant">没有任务</string>
     <string name="empty_search">没有匹配的任务</string>
     <string name="empty_completed">还没有已完成的任务</string>

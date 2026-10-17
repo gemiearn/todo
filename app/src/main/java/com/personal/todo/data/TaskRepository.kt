@@ -262,6 +262,14 @@ class TaskRepository(
     fun observeOverdueTasks(): Flow<List<Task>> =
         taskDao.observeOpenTasksDueNotAfter(today()).map { rows -> rows.filter(::isOverdue) }
 
+    /**
+     * 逾期任务的条数 - 抽屉里「逾期」那一行的红色徽章用。
+     *
+     * 口径不另写一遍，直接数 [observeOverdueTasks] 的结果：逾期判定要看「截止时刻」，
+     * 那是算出来的、不是 SQL 里比得出来的，重复一份迟早会两处对不上。
+     */
+    fun observeOverdueCount(): Flow<Int> = observeOverdueTasks().map { it.size }
+
     /** Every open top level task, whatever its dates - the 任务选择器 uses this. */
     fun observeAllOpenTasks(): Flow<List<Task>> = taskDao.observeAllOpenTasks()
 

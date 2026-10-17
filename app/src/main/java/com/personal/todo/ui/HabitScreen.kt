@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -101,6 +102,12 @@ private const val MaxTargetDigits = 5
 
 private val TargetFieldWidth = 110.dp
 
+/** 进度条的高度：细一点，不要抢了格子的注意力。 */
+private val ProgressBarHeight = 6.dp
+
+/** 「今天」那一整列的淡蓝底带：要浅到还能看清格子里的颜色，又要一眼分得出来。 */
+private const val TodayBandAlpha = 0.12f
+
 /**
  * 习惯页：一张打勾表——每个习惯一行，加一条「最近 7 天」的格子。
  *
@@ -174,6 +181,19 @@ fun HabitScreen(
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // 今日概况：今天完成了几个习惯（稿子里的「不那么单调」从这里开始）。
+            item(key = "habit-summary") {
+                HabitSummaryCard(
+                    done = habits.count { habit ->
+                        HabitRules.isComplete(
+                            counts[habit.id]?.get(viewModel.today) ?: 0,
+                            habit.dailyTarget,
+                            habit.step
+                        )
+                    },
+                    total = habits.size
+                )
+            }
             items(habits, key = { it.id }) { habit ->
                 HabitCard(
                     habit = habit,
@@ -340,6 +360,14 @@ private fun HabitCard(
         }
 
         Spacer(Modifier.height(8.dp))
+        // 这个习惯今天的进度：一条细进度条，比只写「今天 45/60 分钟」更一眼看得出还差多少。
+        HabitProgressBar(
+            progress = HabitRules.shownAmount(todayCount, habit.dailyTarget, habit.step).toFloat() /
+                habit.dailyTarget.coerceAtLeast(HabitRules.MinTarget),
+            color = if (done) colors.success else colors.accent,
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        Spacer(Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -357,6 +385,69 @@ private fun HabitCard(
                     modifier = Modifier.weight(1f)
                 )
             }
+        }
+    }
+}
+
+/**
+ * 顶部那条今日概况：今天完成了几个习惯，下面一条细进度条。
+ *
+ * 「今天完成 n/m」是按「到目标的习惯数」算的，和每个习惯行上的绿勾是同一个口径。
+ */
+@Composable
+private fun HabitSummaryCard(done: Int, total: Int, modifier: Modifier = Modifier) {
+    val colors = LocalTodoColors.current
+    val allDone = total > 0 && done == total
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.card)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.habit_summary_title),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.dateMuted,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = stringResource(R.string.habit_summary_count, done, total),
+                style = MaterialTheme.typography.titleMedium,
+                color = if (allDone) colors.success else colors.accent
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        HabitProgressBar(
+            progress = if (total == 0) 0f else done.toFloat() / total,
+            color = if (allDone) colors.success else colors.accent
+        )
+    }
+}
+
+/** 一条细进度条：底是浅灰，按比例铺一层颜色。 */
+@Composable
+private fun HabitProgressBar(
+    progress: Float,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(ProgressBarHeight)
+            .clip(RoundedCornerShape(ProgressBarHeight / 2))
+            .background(colors.groupHeader)
+    ) {
+        if (progress > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .background(color)
+            )
         }
     }
 }
@@ -387,10 +478,11 @@ private fun HabitBadge(done: Boolean) {
 }
 
 /**
- * 最近 7 天里的一天：上面是星期几，下面那个小方块里是那天的次数。
+ * 最近 7 天里的一天：上面是星期几（今天那一列直接写「今天」），下面那个小方块里是那天的次数。
  *
  * 方块的颜色直接说清了状态：到目标＝实色（绿），有几次但没到＝浅色，一次没打＝灰底。
- * 今天那一格的底色单独提亮，一眼看得出「这一格是今天」。
+ * **今天那一整列**铺一条淡蓝底带、标签用实心强调色写上「今天」，一眼看得出今天在哪、
+ * 要补哪一格。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -411,16 +503,20 @@ private fun HabitDayCell(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (isToday) colors.groupHeader else Color.Transparent)
+            .background(if (isToday) colors.accent.copy(alpha = TodayBandAlpha) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .testTag(habitDayCellTag(habitId, date))
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = stringResource(weekdayNarrowRes(date.dayOfWeek)),
+            text = if (isToday) {
+                stringResource(R.string.date_today)
+            } else {
+                stringResource(weekdayNarrowRes(date.dayOfWeek))
+            },
             style = MaterialTheme.typography.labelSmall,
-            color = colors.dateMuted,
+            color = if (isToday) colors.accent else colors.dateMuted,
             maxLines = 1
         )
         Spacer(Modifier.height(4.dp))
@@ -432,6 +528,8 @@ private fun HabitDayCell(
                     when {
                         done -> colors.success
                         count > 0 -> colors.accent.copy(alpha = 0.18f)
+                        // 今天那一列已经有自己的底带了，方块不必再叠一层灰。
+                        isToday -> Color.Transparent
                         else -> colors.groupHeader
                     }
                 ),
@@ -442,7 +540,7 @@ private fun HabitDayCell(
                 style = MaterialTheme.typography.labelSmall,
                 color = when {
                     done -> Color.White
-                    count > 0 -> colors.accent
+                    count > 0 || isToday -> colors.accent
                     else -> colors.dateMuted
                 }
             )

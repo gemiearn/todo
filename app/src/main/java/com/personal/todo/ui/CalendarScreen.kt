@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
@@ -58,10 +59,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.CalendarSettings
@@ -116,7 +119,7 @@ private const val MonthsAround = 60
 /** Six rows of days always fit: a month needs at most six weeks. */
 private const val WeeksPerMonth = 6
 
-private const val RowHeightDp = 46
+private const val RowHeightDp = 48
 private const val GridHeightDp = RowHeightDp * WeeksPerMonth
 
 /** How many task dots a day shows at most, before it would get crowded. */
@@ -127,6 +130,29 @@ private val DotSize = 5.dp
 private const val DaysPerWeek = 7
 private const val YearColumns = 3
 private const val YearRows = 4
+
+/** 邻月那几天的数字再降一档透明度。 */
+private const val OutOfMonthAlpha = 0.55f
+
+/** 日期数字所在那个圆的直径；稿子③把它从 32dp 放到 36dp，网格呼吸感更好。 */
+private val DayNumberSize = 36.dp
+
+/** 日期数字：15sp、比正文略重，并且启用等宽数字——翻月时数字不会左右跳（稿子③）。 */
+private val DayNumberStyle = TextStyle(
+    fontSize = 15.sp,
+    fontWeight = FontWeight(550),
+    fontFeatureSettings = "tnum"
+)
+
+/** 邻月那几天的数字：字重降到 450，颜色再降透明度，让它们真正退到后面（稿子③）。 */
+private val OutOfMonthNumberStyle = DayNumberStyle.copy(fontWeight = FontWeight(450))
+
+/**
+ * 今天那一格的淡蓝细圈（稿子②）：细圈＝今天，实心＝已选中。原来今天只靠字色区别，
+ * 一旦选中别的日期、或者扫一眼网格，今天就找不回来了。
+ */
+private fun Modifier.todayRing(visible: Boolean, accent: Color): Modifier =
+    if (visible) border(1.6.dp, accent.copy(alpha = 0.38f), CircleShape) else this
 
 /** 年视图里小月份名那一行的高度；它下面才是 6×7 的日期格子。 */
 private val MiniMonthLabelHeight = 14.dp
@@ -414,6 +440,10 @@ private fun CalendarHeader(
                 )
             }
         }
+        // 给顶栏图标上色的一次试验（用户 2026-10-17 定的：先试试，好看就留）：
+        // 规则是「带状态的图标才上强调色，没状态的保持灰」——时间线开关打开时是蓝的
+        // （本来就是这样），视图切换的图标在「不在月视图」时也点上蓝。不好看就撤掉，
+        // 把这一行改回 colors.dateMuted 即可。
         Box {
             IconButton(
                 onClick = { viewMenuOpen = true },
@@ -422,7 +452,9 @@ private fun CalendarHeader(
                     .testTag(CalendarViewSwitchTag)
                     .semantics { contentDescription = switchViewDescription }
             ) {
-                ViewGlyph(tint = colors.dateMuted)
+                ViewGlyph(
+                    tint = if (view == CalendarView.MONTH) colors.dateMuted else colors.accent
+                )
             }
             DropdownMenu(expanded = viewMenuOpen, onDismissRequest = { viewMenuOpen = false }) {
                 CalendarView.entries.forEach { option ->
@@ -705,12 +737,14 @@ private fun DayCell(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
+    val onSurface = MaterialTheme.colorScheme.onSurface
     val textColor = when {
         selected -> Color.White
         today -> colors.accent
-        inMonth -> MaterialTheme.colorScheme.onSurface
-        else -> colors.dateMuted
+        inMonth -> onSurface
+        else -> onSurface.copy(alpha = OutOfMonthAlpha)
     }
+    val numberStyle = if (inMonth) DayNumberStyle else OutOfMonthNumberStyle
 
     Column(
         modifier = modifier
@@ -721,14 +755,15 @@ private fun DayCell(
     ) {
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(DayNumberSize)
                 .clip(CircleShape)
-                .background(if (selected) colors.accent else Color.Transparent),
+                .background(if (selected) colors.accent else Color.Transparent)
+                .todayRing(visible = today && !selected, accent = colors.accent),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = date.dayOfMonth.toString(),
-                style = MaterialTheme.typography.bodyMedium,
+                style = numberStyle,
                 color = textColor
             )
         }
@@ -747,6 +782,98 @@ private fun DayCell(
                 Spacer(Modifier.width(3.dp))
             }
         }
+    }
+}
+
+// ------------------------------------------------- the day panel under the grid
+
+/**
+ * 日程区顶部那条标题（稿子④）：先说清「这是哪一天、一共几条」。月网格下面的卡片
+ * 原来是凭空出现的，补上这一条之后，选错日期也能立刻看出来。
+ */
+@Composable
+internal fun CalendarDayHeader(
+    date: LocalDate,
+    count: Int,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = stringResource(
+                R.string.calendar_day_title,
+                stringResource(R.string.date_month_day, date.monthValue, date.dayOfMonth),
+                stringResource(weekdayFullRes(date.dayOfWeek))
+            ),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(colors.groupHeader)
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.calendar_day_count, count),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.dateMuted,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/**
+ * 选中日没有任务时的空态（稿子⑥）：一个淡灰圆图标 + 一句人话，而不是一片留白或者
+ * 「暂无数据」那种系统腔。
+ */
+@Composable
+internal fun CalendarDayEmptyState(isToday: Boolean, modifier: Modifier = Modifier) {
+    val colors = LocalTodoColors.current
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(colors.groupHeader),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.DateRange,
+                contentDescription = null,
+                tint = colors.dateMuted,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = stringResource(
+                if (isToday) R.string.empty_calendar_today else R.string.empty_calendar_day
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.dateMuted
+        )
+        Text(
+            text = stringResource(R.string.empty_calendar_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.doneInk,
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }
 
@@ -796,14 +923,18 @@ private fun DayColumnsView(
                     )
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(32.dp)
                             .clip(CircleShape)
-                            .background(if (date == selectedDate) colors.accent else Color.Transparent),
+                            .background(if (date == selectedDate) colors.accent else Color.Transparent)
+                            .todayRing(
+                                visible = date == today && date != selectedDate,
+                                accent = colors.accent
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = date.dayOfMonth.toString(),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = DayNumberStyle,
                             color = when {
                                 date == selectedDate -> Color.White
                                 date == today -> colors.accent
@@ -1119,4 +1250,15 @@ internal fun weekdayNarrowRes(dayOfWeek: DayOfWeek): Int = when (dayOfWeek) {
     DayOfWeek.FRIDAY -> R.string.weekday_narrow_fri
     DayOfWeek.SATURDAY -> R.string.weekday_narrow_sat
     DayOfWeek.SUNDAY -> R.string.weekday_narrow_sun
+}
+
+/** 周五 这种全称，日程区那条标题用。 */
+private fun weekdayFullRes(dayOfWeek: DayOfWeek): Int = when (dayOfWeek) {
+    DayOfWeek.MONDAY -> R.string.weekday_mon
+    DayOfWeek.TUESDAY -> R.string.weekday_tue
+    DayOfWeek.WEDNESDAY -> R.string.weekday_wed
+    DayOfWeek.THURSDAY -> R.string.weekday_thu
+    DayOfWeek.FRIDAY -> R.string.weekday_fri
+    DayOfWeek.SATURDAY -> R.string.weekday_sat
+    DayOfWeek.SUNDAY -> R.string.weekday_sun
 }
