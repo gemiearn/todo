@@ -15,6 +15,7 @@ import com.personal.todo.model.Priority
 import com.personal.todo.model.RepeatRule
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -118,8 +119,12 @@ class TaskEditorViewModel(
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving
 
-    /** 编辑器里刚新建的标签还在异步回填：保存前先等它落库，否则这次勾选会漏掉它。 */
-    private var tagCreation: Job? = null
+    /**
+     * 编辑器里刚新建、可能还在落库的标签。保存前要把**它们全部**等回来，否则这次勾选会
+     * 漏掉还没回填 id 的那几个。只记「最后一个 Job」是不够的：连着新建 A、B，若 A 比 B
+     * 慢，等完 B 就保存，A 的 id 是保存之后才回来的，A 照样丢。
+     */
+    private val tagCreations = mutableListOf<Job>()
 
     private val _saved = MutableStateFlow(false)
     val saved: StateFlow<Boolean> = _saved
@@ -207,7 +212,9 @@ class TaskEditorViewModel(
      */
     fun createTag(name: String, color: Int) {
         if (name.isBlank()) return
-        tagCreation = viewModelScope.launch {
+        // 清掉已经跑完的，列表不随用得久而无界增长；剩下的都是「还没回填 id」的。
+        tagCreations.removeAll { it.isCompleted }
+        tagCreations += viewModelScope.launch {
             val tagId = repository.createTag(name, color)
             selectedTagIds = selectedTagIds + tagId
         }
@@ -243,42 +250,31 @@ class TaskEditorViewModel(
         _saving.value = true
         viewModelScope.launch {
             try {
-                // 刚在编辑器里新建的标签可能还在落库：等它，否则这次保存会漏掉它。
-                tagCreation?.join()
-                val savedTaskId = if (taskId == null) {
-                    repository.createTask(
-                        title = trimmedTitle,
-                        listId = listId,
-                        notes = notes,
-                        priority = priority,
-                        plannedDate = plannedDate,
-                        plannedTime = plannedTime,
-                        dueDate = dueDate,
-                        dueTime = dueTime,
-                        repeatRule = repeatRule
-                    )
-                } else {
-                    repository.updateTask(
-                        taskId = taskId,
-                        title = trimmedTitle,
-                        notes = notes,
-                        priority = priority,
-                        listId = listId,
-                        plannedDate = plannedDate,
-                        plannedTime = plannedTime,
-                        dueDate = dueDate,
-                        dueTime = dueTime,
-                        repeatRule = repeatRule
-                    )
-                    taskId
-                }
-                // 标签存在另一张表：把这条任务的标签整个换成勾中的这一组。
-                repository.setTaskTags(savedTaskId, selectedTagIds)
-                // 带规则的这条任务刚存下，立刻把后面两周那几次也落成独立任务，用户一回到
-                // 列表就能看见它们。
+                // 刚在编辑器里新建的标签可能还在落库：**全部**等回来，否则这次勾选会漏掉。
+                tagCreations.toList().forEach { it.join() }
+                // 任务字段与标签关系收在一个事务里落库（repository.saveTask）：标签那一步
+                // 失败时不再留下「任务写进去了、标签没写上」这种说不清的半完成状态。
+                repository.saveTask(
+                    taskId = taskId,
+                    title = trimmedTitle,
+                    listId = listId,
+                    notes = notes,
+                    priority = priority,
+                    plannedDate = plannedDate,
+                    plannedTime = plannedTime,
+                    dueDate = dueDate,
+                    dueTime = dueTime,
+                    repeatRule = repeatRule,
+                    tagIds = selectedTagIds
+                )
+                // 带规则的这条任务刚存下，立刻把后面那几次也落成独立任务，用户一回到
+                // 列表就能看见它们。这一步幂等，且失败不影响已经存好的任务字段。
                 if (repeatRule != null) repository.materializeRecurrences(today)
                 // 只有全部写完才算保存成功：中途出错时留在编辑页，绝不先关页面。
                 _saved.value = true
+            } catch (e: CancellationException) {
+                // 页面销毁 / 作用域取消：这是取消，不是保存失败，原样抛出去继续传播。
+                throw e
             } catch (e: Exception) {
                 // 写库中途失败：留在编辑页把错误说出来（照 addSubtask 那处的做法，
                 // 不让异常冒成崩溃，用户至少还能重试）。

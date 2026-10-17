@@ -71,6 +71,12 @@ data class TimerState(
  */
 object FocusTiming {
 
+    /**
+     * 一次专注最多按 24 小时算。计时基准错乱（例如 lastResumeAtElapsed 被留成 0）会让
+     * 差值变成几十年，这里夹一个可信上限，别把荒谬的数字写进统计。
+     */
+    private const val MaxFocusSeconds = 24 * 60 * 60
+
     /** Focus seconds of the session so far. Paused time never counts. */
     fun focusSeconds(state: TimerState, nowElapsedMillis: Long): Int {
         val banked = if (state.accumulatedFocusSeconds > 0) state.accumulatedFocusSeconds else 0
@@ -78,12 +84,11 @@ object FocusTiming {
         val sinceResume = nowElapsedMillis - state.lastResumeAtElapsed
         // 差值也可能大到离谱（例如迁移把 lastResumeAtElapsed 留成了 0）：Long 转 Int 是
         // 截断，溢出会回绕成负数，而负的专注秒数会被记录函数原样存进库里污染统计。
-        val running = if (sinceResume > 0) {
-            (sinceResume / 1000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        } else {
-            0
-        }
-        return banked + running
+        val running = if (sinceResume > 0) sinceResume / 1000 else 0L
+        // 两个 Int 相加本身也会回绕（banked 非零时），所以整段用 Long 算完再夹一次上限：
+        // 一次专注超过 [MaxFocusSeconds] 只可能是计时基准错乱，不该记成几十年。
+        val total = banked.toLong() + running
+        return total.coerceIn(0L, MaxFocusSeconds.toLong()).toInt()
     }
 
     /** Seconds left for a timed mode, or null for 正向计时 which has no target. */

@@ -239,11 +239,13 @@ fun CalendarScreen(
     val weekStartsMonday = displaySettings.weekStartsMonday
 
     // 周 / 三日 / 年 的翻页只挪选中的日期，不动任何任务的日期；月视图靠左右滑。
+    // 三日那一档要从**窗口起点**往前翻，翻的是窗口本身；从 selectedDate 翻会在
+    // 「点了窗口里的某一天」之后一次跳三格、把中间那一格整段跳过。
     val onStep: (Int) -> Unit = { step ->
         onSelectDate(
             when (view) {
                 CalendarView.WEEK -> selectedDate.plusWeeks(step.toLong())
-                CalendarView.THREE_DAY -> selectedDate.plusDays(3L * step)
+                CalendarView.THREE_DAY -> threeDayStart.plusDays(3L * step)
                 CalendarView.YEAR -> selectedDate.plusYears(step.toLong())
                 CalendarView.MONTH -> selectedDate
             }
@@ -252,7 +254,7 @@ fun CalendarScreen(
 
     Column(modifier = modifier.fillMaxWidth()) {
         CalendarHeader(
-            title = calendarTitle(view, selectedDate, visibleMonth, weekStartsMonday),
+            title = calendarTitle(view, selectedDate, visibleMonth, weekStartsMonday, threeDayStart),
             subtitle = if (view == CalendarView.MONTH) {
                 stringResource(R.string.calendar_year, visibleMonth.year)
             } else {
@@ -551,7 +553,8 @@ private fun calendarTitle(
     view: CalendarView,
     selectedDate: LocalDate,
     visibleMonth: YearMonth,
-    weekStartsMonday: Boolean
+    weekStartsMonday: Boolean,
+    threeDayStart: LocalDate
 ): String =
     when (view) {
         CalendarView.MONTH -> stringResource(monthNameRes(visibleMonth.monthValue))
@@ -562,10 +565,12 @@ private fun calendarTitle(
             monthDayText(weekOf(selectedDate, weekStartsMonday).last())
         )
 
+        // 标题跟下面那三列用同一个窗口起点：用 selectedDate 会在「点窗口内的列头」时
+        // 和列错开（标题 19–21、列却是 18–20），再翻页还会整段跳过一天。
         CalendarView.THREE_DAY -> stringResource(
             R.string.date_range,
-            monthDayText(selectedDate),
-            monthDayText(selectedDate.plusDays(2))
+            monthDayText(threeDayStart),
+            monthDayText(threeDayStart.plusDays(2))
         )
     }
 
@@ -771,7 +776,7 @@ private fun DayCell(
             modifier = Modifier.height(DotSize + 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            dots.sortedByDescending { it.priority.ordinal }.take(MaxDotsPerDay).forEach { task ->
+            dots.sortedByDescending { it.priority.rank }.take(MaxDotsPerDay).forEach { task ->
                 Box(
                     modifier = Modifier
                         .size(DotSize)

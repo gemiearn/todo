@@ -76,6 +76,8 @@ fun TagScreen(
     // null = closed; a tag = editing it; the reserved "new" sentinel = creating.
     var editing by remember { mutableStateOf<Tag?>(null) }
     var creating by remember { mutableStateOf(false) }
+    // 删除要二次确认：删一个标签会清掉它在所有任务上的连线，而且拿不回来。
+    var deleting by remember { mutableStateOf<Tag?>(null) }
 
     Scaffold(
         topBar = {
@@ -127,7 +129,7 @@ fun TagScreen(
                 TagRow(
                     tag = tag,
                     onEdit = { editing = tag },
-                    onDelete = { viewModel.delete(tag.id) }
+                    onDelete = { deleting = tag }
                 )
             }
         }
@@ -156,6 +158,29 @@ fun TagScreen(
                 editing = null
             },
             onDismiss = { editing = null }
+        )
+    }
+
+    deleting?.let { tag ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text(stringResource(R.string.tag_delete_title)) },
+            text = { Text(stringResource(R.string.tag_delete_message, tag.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.delete(tag.id)
+                        deleting = null
+                    }
+                ) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
         )
     }
 }

@@ -90,6 +90,8 @@
     <string name="tag_name_label">标签名称</string>
     <string name="tag_color_label">颜色</string>
     <string name="tag_delete">删除标签</string>
+    <string name="tag_delete_title">删除这个标签？</string>
+    <string name="tag_delete_message">「%1$s」会从所有任务上移除，删了拿不回来。</string>
     <string name="tag_empty">还没有标签。新建一个，就能给任务打上标记。</string>
     <string name="more_entry_tags">标签管理</string>
     <string name="task_tags_label">标签</string>

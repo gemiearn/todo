@@ -524,6 +524,59 @@ class TaskRepository(
         )
     }
 
+    /**
+     * 编辑器保存一条任务的完整业务动作：任务字段与标签关系在**同一个事务**里落库。
+     *
+     * 之前编辑器自己分三步调用（建/改任务 → 设标签 → 生成重复实例），标签那一步失败就
+     * 会留下「任务写进去了、标签没写上」的半完成状态，界面也说不清究竟存没存。收成一个
+     * 事务后，这两步要么都成、要么都不落。重复实例生成是幂等的，仍留在事务之外单独跑。
+     *
+     * @return 落库后的任务 id。
+     */
+    suspend fun saveTask(
+        taskId: Long?,
+        title: String,
+        listId: Long,
+        notes: String?,
+        priority: Priority,
+        plannedDate: LocalDate?,
+        plannedTime: LocalTime?,
+        dueDate: LocalDate?,
+        dueTime: LocalTime?,
+        repeatRule: RepeatRule?,
+        tagIds: Collection<Long>
+    ): Long = db.withTransaction {
+        val savedId = if (taskId == null) {
+            createTask(
+                title = title,
+                listId = listId,
+                notes = notes,
+                priority = priority,
+                plannedDate = plannedDate,
+                plannedTime = plannedTime,
+                dueDate = dueDate,
+                dueTime = dueTime,
+                repeatRule = repeatRule
+            )
+        } else {
+            updateTask(
+                taskId = taskId,
+                title = title,
+                notes = notes,
+                priority = priority,
+                listId = listId,
+                plannedDate = plannedDate,
+                plannedTime = plannedTime,
+                dueDate = dueDate,
+                dueTime = dueTime,
+                repeatRule = repeatRule
+            )
+            taskId
+        }
+        setTaskTags(savedId, tagIds)
+        savedId
+    }
+
     /** @return true when the task just became completed. */
     suspend fun completeTask(taskId: Long): Boolean = db.withTransaction {
         val task = taskDao.getById(taskId) ?: return@withTransaction false

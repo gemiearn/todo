@@ -80,10 +80,32 @@ internal fun TaskDateSheet(
 ) {
     val colors = LocalTodoColors.current
     var tabIndex by rememberSaveable { mutableIntStateOf(tab.index) }
-    var month by remember { mutableStateOf(YearMonth.from(viewModel.plannedDate ?: viewModel.today)) }
+
+    // 弹层里的改动先落在这份草稿上，点 ✓ 才写回编辑器；✕、下滑、返回都当放弃。
+    // 旧实现是「点一下立即改 viewModel」，✕ 与 ✓ 都只是关窗——用户以为 ✕ 是取消，
+    // 其实日期早就改掉了，选错了也收不回来。
+    var draftPlannedDate by remember { mutableStateOf(viewModel.plannedDate) }
+    var draftPlannedTime by remember { mutableStateOf(viewModel.plannedTime) }
+    var draftDueDate by remember { mutableStateOf(viewModel.dueDate) }
+    var draftDueTime by remember { mutableStateOf(viewModel.dueTime) }
+    var draftRule by remember { mutableStateOf(viewModel.repeatRule) }
+
+    var month by remember { mutableStateOf(YearMonth.from(draftPlannedDate ?: viewModel.today)) }
+    var dueMonth by remember { mutableStateOf(YearMonth.from(draftDueDate ?: draftPlannedDate ?: viewModel.today)) }
     var timeField by remember { mutableStateOf<SheetTimeField?>(null) }
+    var duePickerOpen by remember { mutableStateOf(false) }
     var rulePickerOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // 点 ✓ 才把草稿写回编辑器：日期先、重复后（规则没有起点时会落到计划日）。
+    fun confirm() {
+        viewModel.onPlannedDateChange(draftPlannedDate)
+        viewModel.onPlannedTimeChange(draftPlannedTime.takeIf { draftPlannedDate != null })
+        viewModel.onDueDateChange(draftDueDate)
+        viewModel.onDueTimeChange(draftDueTime.takeIf { draftDueDate != null })
+        viewModel.onRepeatChange(draftRule)
+        onDismiss()
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -119,7 +141,7 @@ internal fun TaskDateSheet(
                         onClick = { tabIndex = DateSheetTab.RANGE.index }
                     )
                 }
-                IconButton(onClick = onDismiss) {
+                IconButton(onClick = { confirm() }) {
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = stringResource(R.string.action_confirm)
@@ -132,22 +154,22 @@ internal fun TaskDateSheet(
             if (tabIndex == DateSheetTab.DATE.index) {
                 MonthCalendar(
                     month = month,
-                    selected = viewModel.plannedDate,
+                    selected = draftPlannedDate,
                     today = viewModel.today,
-                    onSelect = { viewModel.onPlannedDateChange(it) },
+                    onSelect = { draftPlannedDate = it },
                     onStepMonth = { month = month.plusMonths(it) }
                 )
                 Spacer(Modifier.height(12.dp))
                 Panel {
                     SheetValueRow(
                         label = stringResource(R.string.editor_time_label),
-                        value = viewModel.plannedTime?.let { timeText(it) }
+                        value = draftPlannedTime?.let { timeText(it) }
                             ?: stringResource(R.string.editor_value_none),
                         onClick = { timeField = SheetTimeField.PLANNED }
                     )
                     SheetValueRow(
                         label = stringResource(R.string.editor_repeat_label),
-                        value = repeatText(viewModel.repeatRule),
+                        value = repeatText(draftRule),
                         onClick = { rulePickerOpen = true }
                     )
                 }
@@ -155,25 +177,30 @@ internal fun TaskDateSheet(
                 Panel {
                     SheetValueRow(
                         label = stringResource(R.string.task_planned_date_label),
-                        value = viewModel.plannedDate?.let { calendarDateText(it, viewModel.today) }
+                        value = draftPlannedDate?.let { calendarDateText(it, viewModel.today) }
                             ?: stringResource(R.string.editor_value_none),
                         onClick = { /* 开始日期就在上面那个页签里挑 */ }
                     )
                     SheetValueRow(
                         label = stringResource(R.string.task_planned_time_label),
-                        value = viewModel.plannedTime?.let { timeText(it) }
+                        value = draftPlannedTime?.let { timeText(it) }
                             ?: stringResource(R.string.editor_value_none),
                         onClick = { timeField = SheetTimeField.PLANNED }
                     )
                     SheetValueRow(
                         label = stringResource(R.string.task_due_date_label),
-                        value = viewModel.dueDate?.let { calendarDateText(it, viewModel.today) }
+                        value = draftDueDate?.let { calendarDateText(it, viewModel.today) }
                             ?: stringResource(R.string.editor_value_none),
-                        onClick = { viewModel.onDueDateChange(viewModel.plannedDate ?: viewModel.today) }
+                        // 点这一行要「打开日期选择器」，不是把截止日悄悄改成计划日/今天：
+                        // 那样碰一下就把它改成逾期，而且全 App 再没有第二处能改回来。
+                        onClick = {
+                            dueMonth = YearMonth.from(draftDueDate ?: draftPlannedDate ?: viewModel.today)
+                            duePickerOpen = true
+                        }
                     )
                     SheetValueRow(
                         label = stringResource(R.string.task_due_time_label),
-                        value = viewModel.dueTime?.let { timeText(it) }
+                        value = draftDueTime?.let { timeText(it) }
                             ?: stringResource(R.string.editor_value_none),
                         onClick = { timeField = SheetTimeField.DUE }
                     )
@@ -183,9 +210,11 @@ internal fun TaskDateSheet(
             Spacer(Modifier.height(8.dp))
             TextButton(
                 onClick = {
-                    viewModel.onRepeatChange(null)
-                    viewModel.onDueDateChange(null)
-                    viewModel.onPlannedDateChange(null)
+                    draftRule = null
+                    draftDueDate = null
+                    draftDueTime = null
+                    draftPlannedDate = null
+                    draftPlannedTime = null
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -199,8 +228,8 @@ internal fun TaskDateSheet(
 
     timeField?.let { field ->
         val start = when (field) {
-            SheetTimeField.PLANNED -> viewModel.plannedTime
-            SheetTimeField.DUE -> viewModel.dueTime
+            SheetTimeField.PLANNED -> draftPlannedTime
+            SheetTimeField.DUE -> draftDueTime
         } ?: DefaultSheetTime
         val timeState = rememberTimePickerState(
             initialHour = start.hour,
@@ -228,17 +257,15 @@ internal fun TaskDateSheet(
                         when (field) {
                             SheetTimeField.PLANNED -> {
                                 // 一个时刻要挂在一天上，先没有日期就先落到今天。
-                                if (viewModel.plannedDate == null) {
-                                    viewModel.onPlannedDateChange(viewModel.today)
-                                }
-                                viewModel.onPlannedTimeChange(time)
+                                if (draftPlannedDate == null) draftPlannedDate = viewModel.today
+                                draftPlannedTime = time
                             }
 
                             SheetTimeField.DUE -> {
-                                if (viewModel.dueDate == null) {
-                                    viewModel.onDueDateChange(viewModel.plannedDate ?: viewModel.today)
+                                if (draftDueDate == null) {
+                                    draftDueDate = draftPlannedDate ?: viewModel.today
                                 }
-                                viewModel.onDueTimeChange(time)
+                                draftDueTime = time
                             }
                         }
                         timeField = null
@@ -255,11 +282,35 @@ internal fun TaskDateSheet(
         )
     }
 
+    if (duePickerOpen) {
+        AlertDialog(
+            onDismissRequest = { duePickerOpen = false },
+            title = { Text(stringResource(R.string.task_due_date_label)) },
+            text = {
+                MonthCalendar(
+                    month = dueMonth,
+                    selected = draftDueDate,
+                    today = viewModel.today,
+                    onSelect = {
+                        draftDueDate = it
+                        duePickerOpen = false
+                    },
+                    onStepMonth = { dueMonth = dueMonth.plusMonths(it) }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { duePickerOpen = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
     if (rulePickerOpen) {
         RepeatRuleDialog(
-            current = viewModel.repeatRule,
+            current = draftRule,
             onPick = {
-                viewModel.onRepeatChange(it)
+                draftRule = it
                 rulePickerOpen = false
             },
             onDismiss = { rulePickerOpen = false }
