@@ -15,6 +15,7 @@ import com.personal.todo.model.Priority
 import com.personal.todo.model.RepeatRule
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -96,24 +97,55 @@ class TaskEditorViewModel(
     var titleHasError by mutableStateOf(false)
         private set
 
+    /** 保存失败（写库中途出错）：留在编辑页把话说出来，不要先关页面再丢数据。 */
+    var saveFailed by mutableStateOf(false)
+        private set
+
+    /**
+     * 编辑已有任务时先读库、读完再让用户动表单。
+     *
+     * 读库是挂起的，而 `title` 初始为空、输入框立刻绑上去：打开编辑页后、读库返回前敲进去
+     * 的字会被数据库回流整个覆盖掉；标签是第二次挂起读，回来得更晚，连用户新勾的标签也一并
+     * 被替换。[loading] 为 true 时页面不画表单，这一段窗口就不存在了。
+     */
+    private val _loading = MutableStateFlow(taskId != null)
+    val loading: StateFlow<Boolean> = _loading
+
+    /**
+     * 保存中。连点两次保存会建出两条一模一样的任务，第二次成功事件还会让路由连退两层；
+     * 保存期间两个保存按钮都被禁用，[save] 自己也再挡一道。
+     */
+    private val _saving = MutableStateFlow(false)
+    val saving: StateFlow<Boolean> = _saving
+
+    /** 编辑器里刚新建的标签还在异步回填：保存前先等它落库，否则这次勾选会漏掉它。 */
+    private var tagCreation: Job? = null
+
     private val _saved = MutableStateFlow(false)
     val saved: StateFlow<Boolean> = _saved
 
     init {
-        if (taskId != null) {
+        if (taskId == null) {
+            _loading.value = false
+        } else {
             viewModelScope.launch {
-                val task = repository.getTask(taskId) ?: return@launch
-                title = task.title
-                notes = task.notes.orEmpty()
-                priority = task.priority
-                listId = task.listId
-                plannedDate = task.plannedDate
-                plannedTime = task.plannedTime
-                dueDate = task.dueDate
-                dueTime = task.dueTime
-                repeatRule = task.repeatRule
-                // 标签是另一张表，单独取一次（first 拿到当前值就够，标签数很少）。
-                selectedTagIds = repository.observeTagsOf(taskId).first().map { it.id }.toSet()
+                try {
+                    val task = repository.getTask(taskId) ?: return@launch
+                    title = task.title
+                    notes = task.notes.orEmpty()
+                    priority = task.priority
+                    listId = task.listId
+                    plannedDate = task.plannedDate
+                    plannedTime = task.plannedTime
+                    dueDate = task.dueDate
+                    dueTime = task.dueTime
+                    repeatRule = task.repeatRule
+                    // 标签是另一张表，单独取一次（first 拿到当前值就够，标签数很少）。
+                    selectedTagIds = repository.observeTagsOf(taskId).first().map { it.id }.toSet()
+                } finally {
+                    // 读不到这条任务也要放开：空表单也比把用户永久关在「加载中」里强。
+                    _loading.value = false
+                }
             }
         }
     }
@@ -175,7 +207,7 @@ class TaskEditorViewModel(
      */
     fun createTag(name: String, color: Int) {
         if (name.isBlank()) return
-        viewModelScope.launch {
+        tagCreation = viewModelScope.launch {
             val tagId = repository.createTag(name, color)
             selectedTagIds = selectedTagIds + tagId
         }
@@ -200,45 +232,60 @@ class TaskEditorViewModel(
     }
 
     fun save() {
+        // 还在读库、或上一次保存还没回来：直接挡住（按钮那边也被禁用了，这里是第二道）。
+        if (_loading.value || _saving.value) return
         val trimmedTitle = title.trim()
         if (trimmedTitle.isEmpty()) {
             titleHasError = true
             return
         }
+        saveFailed = false
+        _saving.value = true
         viewModelScope.launch {
-            val savedTaskId = if (taskId == null) {
-                repository.createTask(
-                    title = trimmedTitle,
-                    listId = listId,
-                    notes = notes,
-                    priority = priority,
-                    plannedDate = plannedDate,
-                    plannedTime = plannedTime,
-                    dueDate = dueDate,
-                    dueTime = dueTime,
-                    repeatRule = repeatRule
-                )
-            } else {
-                repository.updateTask(
-                    taskId = taskId,
-                    title = trimmedTitle,
-                    notes = notes,
-                    priority = priority,
-                    listId = listId,
-                    plannedDate = plannedDate,
-                    plannedTime = plannedTime,
-                    dueDate = dueDate,
-                    dueTime = dueTime,
-                    repeatRule = repeatRule
-                )
-                taskId
+            try {
+                // 刚在编辑器里新建的标签可能还在落库：等它，否则这次保存会漏掉它。
+                tagCreation?.join()
+                val savedTaskId = if (taskId == null) {
+                    repository.createTask(
+                        title = trimmedTitle,
+                        listId = listId,
+                        notes = notes,
+                        priority = priority,
+                        plannedDate = plannedDate,
+                        plannedTime = plannedTime,
+                        dueDate = dueDate,
+                        dueTime = dueTime,
+                        repeatRule = repeatRule
+                    )
+                } else {
+                    repository.updateTask(
+                        taskId = taskId,
+                        title = trimmedTitle,
+                        notes = notes,
+                        priority = priority,
+                        listId = listId,
+                        plannedDate = plannedDate,
+                        plannedTime = plannedTime,
+                        dueDate = dueDate,
+                        dueTime = dueTime,
+                        repeatRule = repeatRule
+                    )
+                    taskId
+                }
+                // 标签存在另一张表：把这条任务的标签整个换成勾中的这一组。
+                repository.setTaskTags(savedTaskId, selectedTagIds)
+                // 带规则的这条任务刚存下，立刻把后面两周那几次也落成独立任务，用户一回到
+                // 列表就能看见它们。
+                if (repeatRule != null) repository.materializeRecurrences(today)
+                // 只有全部写完才算保存成功：中途出错时留在编辑页，绝不先关页面。
+                _saved.value = true
+            } catch (e: Exception) {
+                // 写库中途失败：留在编辑页把错误说出来（照 addSubtask 那处的做法，
+                // 不让异常冒成崩溃，用户至少还能重试）。
+                saveFailed = true
+            } finally {
+                _saving.value = false
             }
-            // 标签存在另一张表：把这条任务的标签整个换成勾中的这一组。
-            repository.setTaskTags(savedTaskId, selectedTagIds)
-            // 带规则的这条任务刚存下，立刻把后面两周那几次也落成独立任务，用户一回到
-            // 列表就能看见它们。
-            if (repeatRule != null) repository.materializeRecurrences(today)
-            _saved.value = true
         }
     }
 

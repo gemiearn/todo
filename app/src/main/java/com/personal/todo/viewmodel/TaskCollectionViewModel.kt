@@ -82,7 +82,7 @@ class TaskCollectionViewModel(
     val completedTasks: StateFlow<List<Task>> = when (collection) {
         TaskCollection.Inbox -> repository.observeCompletedInboxTasks()
         is TaskCollection.ListDetail -> repository.observeCompletedTasksInList(collection.listId)
-        TaskCollection.Today -> repository.observeCompletedTasksOn(repository.today())
+        TaskCollection.Today -> repository.observeCompletedTasksToday()
         is TaskCollection.DayView -> repository.observeCompletedTasksOn(collection.date)
         TaskCollection.Completed,
         TaskCollection.Trash,

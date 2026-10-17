@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -111,6 +112,10 @@ fun TaskEditorScreen(
     onBack: () -> Unit
 ) {
     val saved by viewModel.saved.collectAsStateWithLifecycle()
+    val loading by viewModel.loading.collectAsStateWithLifecycle()
+    val saving by viewModel.saving.collectAsStateWithLifecycle()
+    // 读库没回来、或者上一次保存还没回来：两个保存按钮都不收点击。
+    val saveEnabled = !loading && !saving
 
     LaunchedEffect(saved) {
         if (saved) {
@@ -131,10 +136,26 @@ fun TaskEditorScreen(
                         )
                     }
                 },
-                actions = { SaveIconButton(onClick = viewModel::save) }
+                actions = { SaveIconButton(onClick = viewModel::save, enabled = saveEnabled) }
             )
         }
     ) { innerPadding ->
+        if (loading) {
+            // 表单在读库返回前不画：输入框一旦画出来，用户敲的字就会被回流结果盖掉。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.editor_loading),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LocalTodoColors.current.dateMuted
+                )
+            }
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .padding(innerPadding)
@@ -166,6 +187,7 @@ fun NewTaskSheet(
     onDismiss: () -> Unit
 ) {
     val saved by viewModel.saved.collectAsStateWithLifecycle()
+    val saving by viewModel.saving.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LaunchedEffect(saved) {
@@ -191,6 +213,7 @@ fun NewTaskSheet(
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = viewModel::save,
+                enabled = !saving,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.action_save))
@@ -199,11 +222,12 @@ fun NewTaskSheet(
     }
 }
 
-/** The purple ↑ of the reference: the one way to save a task. */
+/** The purple ↑ of the reference: the one way to save a task. 保存中 / 读库中时它不收点击。 */
 @Composable
-private fun SaveIconButton(onClick: () -> Unit) {
+private fun SaveIconButton(onClick: () -> Unit, enabled: Boolean) {
     FilledIconButton(
         onClick = onClick,
+        enabled = enabled,
         colors = IconButtonDefaults.filledIconButtonColors(
             containerColor = LocalTodoColors.current.accent,
             contentColor = Color.White
@@ -277,6 +301,16 @@ internal fun TaskEditorBody(
 
                 EditorGroup.NOTES -> NotesGroup(viewModel = viewModel)
             }
+        }
+
+        // 写库失败：留在这一页，把话说出来（页面与弹层共用这一段）。
+        if (viewModel.saveFailed) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.editor_save_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalTodoColors.current.dateOverdue
+            )
         }
     }
     dateSheet?.let { tab ->

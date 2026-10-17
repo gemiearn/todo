@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,7 +72,7 @@ fun TaskDetailScreen(
     val subtasks by viewModel.subtasks.collectAsStateWithLifecycle()
     val events by viewModel.events.collectAsStateWithLifecycle()
     val tags by viewModel.tags.collectAsStateWithLifecycle()
-    val subtaskAddFailed by viewModel.subtaskAddFailed.collectAsStateWithLifecycle()
+    val subtaskAddFailures by viewModel.subtaskAddFailures.collectAsStateWithLifecycle()
     val nowMillis = rememberNowMillis()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -94,8 +95,10 @@ fun TaskDetailScreen(
 
     // The add row is hidden for deleted tasks, but a refused add can still be
     // triggered from elsewhere - report it instead of letting it crash.
-    LaunchedEffect(subtaskAddFailed) {
-        if (subtaskAddFailed) {
+    // 用「失败次数」当 key：连点两次都失败时值会变，第二次也提示得到（原来的 Boolean
+    // 在提示还没消失时不会变，第二次失败完全静默）。
+    LaunchedEffect(subtaskAddFailures) {
+        if (subtaskAddFailures > 0) {
             snackbarHostState.showSnackbar(addFailedMessage)
             viewModel.consumeSubtaskAddFailure()
         }
@@ -331,7 +334,9 @@ private fun EventRow(event: TaskEvent) {
 
 @Composable
 private fun AddSubtaskRow(onAdd: (String) -> Unit) {
-    var value by remember { mutableStateOf("") }
+    // 这一行住在 LazyColumn 的 item 里，滚出视口就会被销毁重画：用 rememberSaveable，
+    // 滚下去再滚回来时打到一半的字还在。
+    var value by rememberSaveable { mutableStateOf("") }
 
     Row(
         modifier = Modifier

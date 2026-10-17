@@ -48,6 +48,9 @@ android {
         // Robolectric based tests run on the JVM and need the Android resources
         // of this module (string labels, ...).
         unitTests.isIncludeAndroidResources = true
+        // 4 个 Compose 冒烟测试放在 `src/testDebug/`：只有 debug 变体的单测会编译并运行它们
+        // （CI 跑的正是 testDebugUnitTest），release 变体的单测不跑。其余单测在 `src/test/`，
+        // 两个变体都会跑。
     }
 }
 

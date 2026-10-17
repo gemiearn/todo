@@ -99,8 +99,12 @@ class FocusViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** 今日 / 本周 totals, always recomputed from the sessions (spec section 5.3). */
-    val stats: StateFlow<FocusStats> = focusRepository.observeSessions()
-        .map { focusStatsOf(it, LocalDate.now(zone), zone) }
+    val stats: StateFlow<FocusStats> = combine(
+        focusRepository.observeSessions(),
+        // 「今天」跟着跨天翻页：原来只在 sessions 发射时才重算，23:59 打开专注页过零点
+        // 后，顶部「今日 xx 分钟」会一直停在昨天，直到又产生一条专注记录。
+        taskRepository.observeToday()
+    ) { sessions, today -> focusStatsOf(sessions, today, zone) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FocusStats(0, 0, 0))
 
     /**

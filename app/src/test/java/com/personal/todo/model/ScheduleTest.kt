@@ -24,6 +24,16 @@ class ScheduleTest {
 
     private val dueToday: LocalDate = LocalDate.of(2026, 10, 14)
 
+    /** 只有截止日期（没有计划日期）时的标签：就是把 plannedDate 传成 null 的那一份。 */
+    private fun overdueLabelOf(now: Long, dueDate: LocalDate?): DateLabel =
+        Schedule.overdueLabel(
+            nowMillis = now,
+            plannedDate = null,
+            dueDate = dueDate,
+            dueTime = null,
+            zone = shanghai
+        )
+
     // ------------------------------------------------------------ 逾期判定
 
     @Test
@@ -207,20 +217,20 @@ class ScheduleTest {
     fun dueLabelsAddTheOverdueState() {
         val now = atTime(LocalDateTime.of(2026, 10, 14, 18, 0))
 
-        assertEquals(DateLabel.None, Schedule.dueLabel(now, null, null, shanghai))
-        assertEquals(DateLabel.Today, Schedule.dueLabel(now, dueToday, null, shanghai))
+        assertEquals(DateLabel.None, overdueLabelOf(now, null))
+        assertEquals(DateLabel.Today, overdueLabelOf(now, dueToday))
         assertEquals(
             DateLabel.OverdueDays(3),
-            Schedule.dueLabel(now, dueToday.minusDays(3), null, shanghai)
+            overdueLabelOf(now, dueToday.minusDays(3))
         )
         assertEquals(
             DateLabel.Overdue,
-            Schedule.dueLabel(now, dueToday, LocalTime.of(12, 0), shanghai)
+            Schedule.overdueLabel(now, null, dueToday, LocalTime.of(12, 0), shanghai)
         )
         assertEquals(
             "还剩的日期仍然显示为当天",
             DateLabel.Today,
-            Schedule.dueLabel(now, dueToday, LocalTime.of(20, 0), shanghai)
+            Schedule.overdueLabel(now, null, dueToday, LocalTime.of(20, 0), shanghai)
         )
         assertEquals(
             "没有截止日期时，计划日期结束后显示逾期",

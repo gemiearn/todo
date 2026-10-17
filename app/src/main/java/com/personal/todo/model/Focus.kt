@@ -76,7 +76,13 @@ object FocusTiming {
         val banked = if (state.accumulatedFocusSeconds > 0) state.accumulatedFocusSeconds else 0
         if (!state.running) return banked
         val sinceResume = nowElapsedMillis - state.lastResumeAtElapsed
-        val running = if (sinceResume > 0) (sinceResume / 1000).toInt() else 0
+        // 差值也可能大到离谱（例如迁移把 lastResumeAtElapsed 留成了 0）：Long 转 Int 是
+        // 截断，溢出会回绕成负数，而负的专注秒数会被记录函数原样存进库里污染统计。
+        val running = if (sinceResume > 0) {
+            (sinceResume / 1000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        } else {
+            0
+        }
         return banked + running
     }
 

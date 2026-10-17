@@ -104,16 +104,6 @@ object Schedule {
 
     private const val MINUTES_PER_DAY = 24L * 60L
 
-    /** Label for an explicit due date, including the overdue state. */
-    fun dueLabel(nowMillis: Long, dueDate: LocalDate?, dueTime: LocalTime?, zone: ZoneId): DateLabel =
-        overdueLabel(
-            nowMillis = nowMillis,
-            plannedDate = null,
-            dueDate = dueDate,
-            dueTime = dueTime,
-            zone = zone
-        )
-
     /**
      * Label for the effective overdue boundary. An explicit due date wins;
      * otherwise the planned date is shown and can become overdue after its day

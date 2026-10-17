@@ -78,6 +78,17 @@ data class TaskFilter(
     val tagIds: Set<Long> = emptySet()
 ) {
     val isEmpty: Boolean get() = listIds.isEmpty() && priorities.isEmpty() && tagIds.isEmpty()
+
+    /**
+     * 只留下库**确实还存在**的清单 / 标签。
+     *
+     * 筛子落盘在偏好里，而删清单、删标签都不会回头改那份偏好：留下的死 id 会让这一维
+     * 永远匹配不到任何任务，列表被永久筛成空白，界面上还看不出是筛子的问题。
+     */
+    fun retainingExisting(existingListIds: Set<Long>, existingTagIds: Set<Long>): TaskFilter = copy(
+        listIds = listIds intersect existingListIds,
+        tagIds = tagIds intersect existingTagIds
+    )
 }
 
 /**

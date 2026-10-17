@@ -67,9 +67,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.FocusSettings
@@ -159,16 +156,8 @@ fun FocusScreen(
     var taskPickerOpen by remember { mutableStateOf(false) }
     val colors = LocalTodoColors.current
 
-    // Leaving the foreground banks the time focused so far, so a process death
-    // cannot take more than the current second with it (spec section 5.2).
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) viewModel.checkpoint()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    // 离开前台时的 checkpoint 挂在壳层（TodoApp 的 MainScreen）上：它必须与专注页是否
+    // 显示无关，否则切到别的页签再进后台就没人把专注时长落盘了。
 
     // The ambience is part of the session, not of the screen: it starts and stops
     // with the timer itself.

@@ -12,8 +12,10 @@ import com.personal.todo.model.RepeatRule
 import com.personal.todo.model.Schedule
 import com.personal.todo.model.TaskEventType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -44,11 +46,16 @@ import java.time.temporal.ChronoUnit
  */
 private const val RecurrenceHorizonDays = 365
 
+/** 「今天」那条流多久重新读一次日期：60 秒足够，跨过午夜后最多晚一分钟翻页。 */
+private const val TodayRefreshMillis = 60_000L
+
 class TaskRepository(
     private val db: TodoDatabase,
     private val inboxName: String,
     private val now: () -> Long = System::currentTimeMillis,
-    val zone: ZoneId = ZoneId.systemDefault()
+    val zone: ZoneId = ZoneId.systemDefault(),
+    /** [observeToday] 的重新读日期间隔；测试传 1 毫秒，这样跨天只等一次 tick。 */
+    private val todayRefreshMillis: Long = TodayRefreshMillis
 ) {
 
     private val listDao = db.taskListDao()
@@ -240,8 +247,24 @@ class TaskRepository(
     /** The local date "today" is resolved in the device's time zone. */
     fun today(): LocalDate = Schedule.todayOf(now(), zone)
 
+    /**
+     * 今天的日期，每 [todayRefreshMillis] 重新读一次。
+     *
+     * 进程活过午夜时，「今天 / 未来 / 逾期 / 四象限」必须跟着翻页，不能停在「这条流
+     * 建立的那一天」：那些查询的日期是建流时定死的，而订阅它们的 ViewModel 长期住在
+     * Activity 的 ViewModelStore 里，界面自己不会重新建流。日期没变时不重复发射。
+     */
+    fun observeToday(): Flow<LocalDate> = flow {
+        while (true) {
+            emit(today())
+            delay(todayRefreshMillis)
+        }
+    }.distinctUntilChanged()
+
     /** Open tasks planned for today or due today - each task appears once. */
-    fun observeTodayTasks(): Flow<List<Task>> = taskDao.observeOpenTasksOnDate(today())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeTodayTasks(): Flow<List<Task>> =
+        observeToday().flatMapLatest { taskDao.observeOpenTasksOnDate(it) }
 
     /**
      * Open tasks the calendar day of [date] lists: tasks dated that day and tasks
@@ -252,24 +275,34 @@ class TaskRepository(
         taskDao.observeOpenTasksCoveringDate(date)
 
     /** Open tasks dated after today, planned or due. */
-    fun observeFutureTasks(): Flow<List<Task>> = taskDao.observeOpenTasksAfterDate(today())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeFutureTasks(): Flow<List<Task>> =
+        observeToday().flatMapLatest { taskDao.observeOpenTasksAfterDate(it) }
+
+    /** 今天完成的任务 - 「今天」页那个折叠分组用，日期同样跟着跨天翻页。 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeCompletedTasksToday(): Flow<List<Task>> =
+        observeToday().flatMapLatest { taskDao.observeCompletedTasksOn(it) }
 
     /**
      * Open tasks past their effective overdue moment. An explicit due date
      * wins; without one, the end of the planned date is the fallback. The exact
      * instant is applied here rather than in SQL.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun observeOverdueTasks(): Flow<List<Task>> =
-        taskDao.observeOpenTasksOverdueCandidate(today()).map { rows ->
-            val currentTime = now()
-            rows.filter { task ->
-                Schedule.isOverdue(
-                    nowMillis = currentTime,
-                    plannedDate = task.plannedDate,
-                    dueDate = task.dueDate,
-                    dueTime = task.dueTime,
-                    zone = zone
-                )
+        observeToday().flatMapLatest { date ->
+            taskDao.observeOpenTasksOverdueCandidate(date).map { rows ->
+                val currentTime = now()
+                rows.filter { task ->
+                    Schedule.isOverdue(
+                        nowMillis = currentTime,
+                        plannedDate = task.plannedDate,
+                        dueDate = task.dueDate,
+                        dueTime = task.dueTime,
+                        zone = zone
+                    )
+                }
             }
         }
 
@@ -290,7 +323,9 @@ class TaskRepository(
      * 计划日期或截止日期早于今天的任务不进四象限（那是「决定接下来做什么」的地方，过期
      * 的该去清单/逾期里收）；**没有日期的任务照旧留着**，它们只是还没安排时间。
      */
-    fun observeQuadrantTasks(): Flow<List<Task>> = taskDao.observeOpenTasksNotPast(today())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeQuadrantTasks(): Flow<List<Task>> =
+        observeToday().flatMapLatest { taskDao.observeOpenTasksNotPast(it) }
 
     /**
      * Open tasks whose dates overlap [start]..[end] - the task dots of one
@@ -306,10 +341,6 @@ class TaskRepository(
      */
     fun observeTasksSpanning(start: LocalDate, end: LocalDate): Flow<List<Task>> =
         taskDao.observeTasksSpanning(start, end)
-
-    /** True when this task is past its explicit due date or planned-date fallback. */
-    fun isOverdue(task: Task): Boolean =
-        Schedule.isOverdue(now(), task.plannedDate, task.dueDate, task.dueTime, zone)
 
     fun observeSubtasks(parentTaskId: Long): Flow<List<Task>> =
         taskDao.observeSubtasks(parentTaskId)

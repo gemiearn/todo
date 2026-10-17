@@ -9,6 +9,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -102,6 +103,43 @@ class TaskDateViewTest {
         assertEquals(
             setOf(tomorrow, nextWeek),
             repository.observeFutureTasks().first().map { it.id }.toSet()
+        )
+    }
+
+    /**
+     * 跨过午夜后，今天 / 逾期这些视图要**自己**翻页，而不是停在「流建立的那一天」。
+     *
+     * 订阅它们的 view model 长期住在 Activity 的 ViewModelStore 里，界面自己不会重建
+     * 流，所以日期必须由流自己去读：这里把 tick 间隔调成 1 毫秒，跨天只等一次 tick。
+     */
+    @Test
+    fun theDateDrivenViewsFollowAMidnightRollover() = runBlocking {
+        val ticking = TaskRepository(
+            db = db,
+            inboxName = "收件箱",
+            now = { clock },
+            zone = shanghai,
+            todayRefreshMillis = 1
+        )
+        val taskId = ticking.createTask("今天要做", inboxId, plannedDate = today)
+
+        assertEquals(listOf(taskId), ticking.observeTodayTasks().first { it.isNotEmpty() }.map { it.id })
+        assertTrue("计划日期是今天：还没逾期", ticking.observeOverdueTasks().first().isEmpty())
+
+        // 跨过午夜。不重启进程、不重建任何一条流。
+        clock = millisOf(LocalDateTime.of(2026, 10, 15, 0, 0, 30))
+
+        assertEquals(
+            "跨天后今天视图应该自己空了",
+            emptyList<Long>(),
+            withTimeout(5_000) { ticking.observeTodayTasks().first { it.isEmpty() } }
+                .map { it.id }
+        )
+        assertEquals(
+            "跨天后这条任务应该自己进逾期",
+            listOf(taskId),
+            withTimeout(5_000) { ticking.observeOverdueTasks().first { it.isNotEmpty() } }
+                .map { it.id }
         )
     }
 

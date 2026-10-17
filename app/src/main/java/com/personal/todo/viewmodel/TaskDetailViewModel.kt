@@ -41,10 +41,17 @@ class TaskDetailViewModel(
     val tags: StateFlow<List<Tag>> = repository.observeTagsOf(taskId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _subtaskAddFailed = MutableStateFlow(false)
+    /**
+     * 拒绝添加子任务的次数，只增不改（显示完再归零）。
+     *
+     * 原来是一个 Boolean：第一次失败提示要挂大约 4 秒，这期间再失败一次，值没变、StateFlow
+     * 不发射、`LaunchedEffect` 的 key 也没变——第二次失败**完全没有提示**，用户以为加上了。
+     * 用次数就每次都变，提示一次都不会漏。
+     */
+    private val _subtaskAddFailures = MutableStateFlow(0)
 
-    /** True when the last "add subtask" attempt was refused by the repository. */
-    val subtaskAddFailed: StateFlow<Boolean> = _subtaskAddFailed
+    /** 加子任务被拒绝的次数；每次 +1，页面提示完调 [consumeSubtaskAddFailure] 归零。 */
+    val subtaskAddFailures: StateFlow<Int> = _subtaskAddFailures
 
     fun complete() {
         viewModelScope.launch { repository.completeTask(taskId) }
@@ -69,19 +76,19 @@ class TaskDetailViewModel(
 
     /**
      * Never throws to the caller: a refused add (deleted parent, second level,
-     * ...) surfaces as [subtaskAddFailed] so the screen shows a message instead
+     * ...) surfaces as [subtaskAddFailures] so the screen shows a message instead
      * of crashing.
      */
     fun addSubtask(title: String) {
         if (title.isBlank()) return
         viewModelScope.launch {
             runCatching { repository.addSubtask(taskId, title) }
-                .onFailure { _subtaskAddFailed.value = true }
+                .onFailure { _subtaskAddFailures.value += 1 }
         }
     }
 
     fun consumeSubtaskAddFailure() {
-        _subtaskAddFailed.value = false
+        _subtaskAddFailures.value = 0
     }
 
     fun toggleSubtask(subtask: Task) {

@@ -159,6 +159,7 @@ fun eventLabel(type: TaskEventType): String = stringResource(
         TaskEventType.REOPENED -> R.string.event_reopened
         TaskEventType.DELETED -> R.string.event_deleted
         TaskEventType.RESTORED -> R.string.event_restored
+        TaskEventType.UNKNOWN -> R.string.event_unknown
     }
 )
 
@@ -218,29 +219,29 @@ internal fun taskDateLabel(task: Task, nowMillis: Long, zone: ZoneId): Pair<Stri
 
     val today = Schedule.todayOf(nowMillis, zone)
     val plannedLabel = Schedule.dateLabel(task.plannedDate, today)
-    val dueLabel = Schedule.overdueLabel(
+    // 有效逾期边界的标签：有截止日期时是它，没有截止日期时退到计划日期。
+    val effectiveLabel = Schedule.overdueLabel(
         nowMillis = nowMillis,
         plannedDate = task.plannedDate,
         dueDate = task.dueDate,
         dueTime = task.dueTime,
         zone = zone
     )
-    val label = dueLabel
 
     val text = when {
         task.plannedDate != null && task.dueDate != null -> {
             val start = dateLabelText(plannedLabel)
-            val end = dateLabelText(dueLabel)
+            val end = dateLabelText(effectiveLabel)
             if (start != null && end != null) stringResource(R.string.date_range, start, end) else end
         }
 
         // A finished task that never had a date still shows when it was finished.
-        else -> dateLabelText(label) ?: task.completedAt?.let { completedAtText(it, zone) }
+        else -> dateLabelText(effectiveLabel) ?: task.completedAt?.let { completedAtText(it, zone) }
     }
     val color = when {
         completed -> colors.doneInk
         overdue -> colors.dateOverdue
-        label == DateLabel.Today || plannedLabel == DateLabel.Today -> colors.dateToday
+        effectiveLabel == DateLabel.Today || plannedLabel == DateLabel.Today -> colors.dateToday
         else -> colors.dateMuted
     }
     return text to color

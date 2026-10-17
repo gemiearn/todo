@@ -235,9 +235,14 @@
     <string name="event_reopened">重新打开</string>
     <string name="event_deleted">删除</string>
     <string name="event_restored">恢复</string>
+    <!-- 库里存着一个认不出来的事件名时显示这个（见 Converters 的兜底） -->
+    <string name="event_unknown">未知操作</string>
 
     <!-- 编辑器：顶部 ✕ 与 ↑、工具条的四组、优先级两个开关（照创建任务UI的图） -->
     <string name="editor_title_edit">编辑任务</string>
+    <!-- 编辑已有任务时要先读库：读完再放表单，免得数据库回流把用户刚敲的字盖掉 -->
+    <string name="editor_loading">加载中…</string>
+    <string name="editor_save_failed">保存失败，请重试</string>
     <string name="editor_tab_date">日期</string>
     <string name="editor_tab_list">清单</string>
     <string name="editor_tab_notes">备注</string>

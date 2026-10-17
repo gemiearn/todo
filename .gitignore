@@ -2,6 +2,10 @@
 build/
 .gradle/
 
+# 本地工具目录（构建/助手留下的，不进版本库）
+.kotlin/
+.workbuddy/
+
 # Keep the Gradle wrapper JAR under version control (CI must not need a
 # pre-installed Gradle).
 !gradle/wrapper/gradle-wrapper.jar

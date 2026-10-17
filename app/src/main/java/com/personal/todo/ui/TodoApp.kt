@@ -57,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -81,6 +82,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personal.todo.R
@@ -110,6 +114,7 @@ import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 // ---------------------------------------------------------------- routes
@@ -203,8 +208,11 @@ fun TodoApp(
     onColorStyleChange: (ColorStyle) -> Unit = {}
 ) {
     // 冷启动先把重复任务后面两周那几次补上。生成器幂等（同一天不会生成两遍），所以
-    // 每次进来跑一遍是安全的。
-    LaunchedEffect(Unit) { repository.materializeRecurrences(repository.today()) }
+    // 每次进来跑一遍是安全的。跟着「今天」那条流跑：进程活过午夜时要再补一次，否则
+    // 新那一天的实例谁也不会生成（原来只在启动时跑一遍）。
+    LaunchedEffect(repository) {
+        repository.observeToday().collect { repository.materializeRecurrences(it) }
+    }
 
     val nav = rememberNavStack()
     val route = nav.current
@@ -267,7 +275,12 @@ fun TodoApp(
     val allTags by tagViewModel.tags.collectAsStateWithLifecycle()
 
     // 习惯页也是推入页（从「更多」进），同样在这里无条件建一次 view model。
-    val habitViewModel: HabitViewModel = viewModel(factory = HabitViewModel.factory(habitRepository))
+    // key 里带上当天日期：习惯页的「今天」是建实例那一刻取的，跨天再进这一页就是一个
+    // 拿新日期的新实例（旧实例留在 store 里，没人订阅、没有开销）。
+    val habitViewModel: HabitViewModel = viewModel(
+        key = "habits-${repository.today().toEpochDay()}",
+        factory = HabitViewModel.factory(habitRepository)
+    )
 
     // 专注 is a root of the bottom bar (今天/日历/四象限/专注/更多), so its view model
     // and settings are created here - once, for every route. It is *not* a pushed
@@ -278,6 +291,18 @@ fun TodoApp(
         key = HomeTab.Focus.route,
         factory = FocusViewModel.factory(focusRepository, repository, focusSettings)
     )
+
+    // 计时器是 App 级状态，落盘（checkpoint）不能挂在专注页上：切到别的页签后专注页就不在
+    // 组合里了，那时 App 进后台没人把已经确认的专注时长写下去，进程被杀就丢那一段。挂在
+    // 壳层——它对每条路由都在组合里。ON_STOP 只在整个 App 进后台时来，切页签不会误触发。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, focusViewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) focusViewModel.checkpoint()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     when (kind) {
         ROUTE_TASK -> {
@@ -391,6 +416,16 @@ internal fun MainScreen(
     val viewSettings = remember(context) { ViewSettingsStore(context) }
     var listFilter by remember { mutableStateOf(viewSettings.readListFilter()) }
     var calendarFilter by remember { mutableStateOf(viewSettings.readCalendarFilter()) }
+
+    // 落盘的筛子里可能留着已经被删掉的清单 / 标签 id——删清单、删标签都不会回头改这份
+    // 偏好，而那种筛子永远匹配不到任务，列表会被永久筛成空白、界面上还看不出原因。
+    // 这里从库里取一次「实际存在的 id」把死 id 剔掉；只读库、不动用户此刻在改的筛子。
+    LaunchedEffect(repository) {
+        val liveListIds = repository.observeLists().first().map { it.id }.toSet()
+        val liveTagIds = repository.observeTags().first().map { it.id }.toSet()
+        listFilter = viewSettings.readListFilter().retainingExisting(liveListIds, liveTagIds)
+        calendarFilter = viewSettings.readCalendarFilter().retainingExisting(liveListIds, liveTagIds)
+    }
     var calendarSettings by remember { mutableStateOf(viewSettings.readCalendarSettings()) }
     var filterPanelOpen by remember { mutableStateOf(false) }
     var calendarOptionsOpen by remember { mutableStateOf(false) }
@@ -414,7 +449,10 @@ internal fun MainScreen(
 
     // The day the app opened on. It decides which tasks are 今日 and which are
     // 逾期; both are read-only views, so nothing here ever moves a due date.
-    val today = remember { repository.today() }
+    // 跟着「今天」那条流走：进程活过午夜时，日历的今天标记、空态文案、单日面板的
+    // 「今天」判断都要换到新的一天（原来只是建页面时取一次）。
+    val todayFlow = remember(repository) { repository.observeToday() }
+    val today by todayFlow.collectAsStateWithLifecycle(initialValue = repository.today())
 
     // The view of this route. The calendar day is part of the key, so swiping to
     // another month loads that day instead of reusing the old query.
