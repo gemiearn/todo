@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.personal.todo.R
+import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.ui.theme.LocalTodoColors
@@ -54,6 +55,8 @@ fun SettingsScreen(
     onThemeChoiceChange: (ThemeChoice) -> Unit,
     colorStyle: ColorStyle,
     onColorStyleChange: (ColorStyle) -> Unit,
+    backgroundStyle: BackgroundStyle,
+    onBackgroundStyleChange: (BackgroundStyle) -> Unit,
     onOpenFocus: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenTags: () -> Unit,
@@ -101,6 +104,15 @@ fun SettingsScreen(
                     label = stringResource(colorStyleLabelRes(style)),
                     selected = style == colorStyle,
                     onClick = { onColorStyleChange(style) }
+                )
+            }
+
+            SectionLabel(stringResource(R.string.settings_section_background))
+            BackgroundStyle.entries.forEach { style ->
+                ChoiceRow(
+                    label = stringResource(backgroundStyleLabelRes(style)),
+                    selected = style == backgroundStyle,
+                    onClick = { onBackgroundStyleChange(style) }
                 )
             }
 
@@ -212,4 +224,12 @@ private fun colorStyleLabelRes(style: ColorStyle): Int = when (style) {
     ColorStyle.CLASSIC -> R.string.settings_color_classic
     ColorStyle.MACARON -> R.string.settings_color_macaron
     ColorStyle.MORANDI -> R.string.settings_color_morandi
+}
+
+private fun backgroundStyleLabelRes(style: BackgroundStyle): Int = when (style) {
+    BackgroundStyle.PLAIN -> R.string.settings_background_plain
+    BackgroundStyle.WARM -> R.string.settings_background_warm
+    BackgroundStyle.MINT -> R.string.settings_background_mint
+    BackgroundStyle.LILAC -> R.string.settings_background_lilac
+    BackgroundStyle.DUSK -> R.string.settings_background_dusk
 }

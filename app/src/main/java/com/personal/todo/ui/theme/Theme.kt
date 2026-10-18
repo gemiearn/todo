@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.ThemeChoice
 
@@ -21,6 +22,7 @@ import com.personal.todo.data.ThemeChoice
 fun TodoPomodoroTheme(
     themeChoice: ThemeChoice = ThemeChoice.SYSTEM,
     colorStyle: ColorStyle = ColorStyle.CLASSIC,
+    backgroundStyle: BackgroundStyle = BackgroundStyle.PLAIN,
     content: @Composable () -> Unit
 ) {
     val darkTheme = when (themeChoice) {
@@ -28,9 +30,10 @@ fun TodoPomodoroTheme(
         ThemeChoice.LIGHT -> false
         ThemeChoice.DARK -> true
     }
-    val colors = remember(darkTheme, colorStyle) {
+    val colors = remember(darkTheme, colorStyle, backgroundStyle) {
         (if (darkTheme) DarkTodoColors else LightTodoColors)
             .copy(quadrants = colorStyle.quadrantColors())
+            .tintBackground(backgroundStyle, darkTheme)
     }
     CompositionLocalProvider(LocalTodoColors provides colors) {
         MaterialTheme(

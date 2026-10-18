@@ -14,7 +14,16 @@ enum class ThemeChoice { SYSTEM, LIGHT, DARK }
  */
 enum class ColorStyle { CLASSIC, MACARON, MORANDI }
 
-/** 外观偏好：主题与色系。两者都只是看的方式，存 SharedPreferences，不进数据库。 */
+/**
+ * 背景风格：给整页的底色掺一层很淡的「纸色」，让几种风格一眼能分开，又不影响卡片和文字
+ * 的对比度。**只动底色**（页面底 / 分组底 / 卡片底），不碰强调色、不碰四象限色。
+ *
+ * 默认 [PLAIN]＝现在的灰底，什么也不掺。以后要做真正的渐变或背景图，只要在这里加档、
+ * 在主题层铺一层画刷即可，不必再动各个页面。
+ */
+enum class BackgroundStyle { PLAIN, WARM, MINT, LILAC, DUSK }
+
+/** 外观偏好：主题、色系与背景风格。三者都只是看的方式，存 SharedPreferences，不进数据库。 */
 class AppearanceSettingsStore(context: Context) {
 
     private val prefs = context.applicationContext
@@ -36,9 +45,18 @@ class AppearanceSettingsStore(context: Context) {
         prefs.edit().putString(KeyColorStyle, style.name).apply()
     }
 
+    fun readBackgroundStyle(): BackgroundStyle =
+        BackgroundStyle.entries.firstOrNull { it.name == prefs.getString(KeyBackgroundStyle, null) }
+            ?: BackgroundStyle.PLAIN
+
+    fun writeBackgroundStyle(style: BackgroundStyle) {
+        prefs.edit().putString(KeyBackgroundStyle, style.name).apply()
+    }
+
     private companion object {
         const val Name = "appearance_settings"
         const val KeyTheme = "theme"
         const val KeyColorStyle = "color_style"
+        const val KeyBackgroundStyle = "background_style"
     }
 }

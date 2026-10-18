@@ -20,6 +20,11 @@ interface TaskDao {
      * Top level tasks (no parent) of one list that are still open: not
      * completed and not soft deleted. Subtasks are shown in the parent's
      * detail screen, so they are excluded from the list level queries.
+     *
+     * 重复任务算下来的一次次也是独立任务（说明文档 4.5），但它们**不进清单行**：一条
+     * 「每天重复」会铺满未来一年，清单会被 365 条实例淹掉（用户看到的就是收件箱 366）。
+     * 清单里只留**规则源**那一条代表整条系列；实例照旧按日期出现在「今天 / 日历 / 未来」，
+     * 那才是它们要被勾掉的地方。
      */
     @Query(
         """
@@ -28,6 +33,7 @@ interface TaskDao {
           AND parentTaskId IS NULL
           AND deletedAt IS NULL
           AND completedAt IS NULL
+          AND recurrenceSourceId IS NULL
         ORDER BY createdAt ASC, id ASC
         """
     )
@@ -48,6 +54,9 @@ interface TaskDao {
      * Completed top level tasks of one list: the tasks the list view folds away
      * behind its "已完成 N" header, so a finished task leaves the working list
      * without disappearing.
+     *
+     * 重复任务的实例同样不进这个分组：一条每天重复的任务会留下几百条已完成实例，把
+     * 「已完成 N」撑成几百；它们按日期归在「今天 / 日历」里，那里才看得到。
      */
     @Query(
         """
@@ -56,6 +65,7 @@ interface TaskDao {
           AND parentTaskId IS NULL
           AND deletedAt IS NULL
           AND completedAt IS NOT NULL
+          AND recurrenceSourceId IS NULL
         ORDER BY completedAt DESC, id DESC
         """
     )
@@ -109,6 +119,9 @@ interface TaskDao {
      * rows the list view can display, so completing or trashing a task changes
      * it immediately. Subtasks belong to their parent's detail screen and are
      * therefore not counted here.
+     *
+     * 重复任务的实例也不计入（见 [observeOpenTasksInList]）：整条系列只算规则源那一条，
+     * 否则一条「每天重复」会让收件箱徽章变成 366。
      */
     @Query(
         """
@@ -116,6 +129,7 @@ interface TaskDao {
         WHERE parentTaskId IS NULL
           AND deletedAt IS NULL
           AND completedAt IS NULL
+          AND recurrenceSourceId IS NULL
         GROUP BY listId
         """
     )
@@ -124,11 +138,15 @@ interface TaskDao {
     /**
      * Every not soft deleted task per list, in any state and including
      * subtasks: the number of tasks a list delete would move to the inbox.
+     *
+     * 重复任务的实例同样不数：它们确实会被一起移走，但用户心里那是「一条重复任务」，
+     * 报 366 只会吓人；这里报的是**源**的条数。
      */
     @Query(
         """
         SELECT listId, COUNT(*) AS taskCount FROM tasks
         WHERE deletedAt IS NULL
+          AND recurrenceSourceId IS NULL
         GROUP BY listId
         """
     )

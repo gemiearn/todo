@@ -116,11 +116,19 @@ internal fun dayDotTag(date: LocalDate, taskId: Long): String = "dot-${date.toEp
 /** How many months can be swiped before and after the month the screen opens on. */
 private const val MonthsAround = 60
 
-/** Six rows of days always fit: a month needs at most six weeks. */
-private const val WeeksPerMonth = 6
-
+/**
+ * 月视图网格只画这个月**真正需要**的那几行（4–6 行，见 [monthRowCount]），不再为了「每月
+ * 都一样高」而在末尾补一整行下个月的日期——多出来的那些格子既是假信息，也让月末看着像
+ * 已经排满了下个月的事。
+ */
 private const val RowHeightDp = 48
-private const val GridHeightDp = RowHeightDp * WeeksPerMonth
+
+/**
+ * 年视图里每个小月块固定画六行：那一块只有几十像素高，行数跟着月份跳反而更显眼，而且
+ * 点选它是按「块内第几行第几列」算的（见 [yearDateAt]）。**月视图不沿用这个常数**——
+ * 它按 [monthRowCount] 只画这个月真正需要的行。
+ */
+private const val WeeksPerMonth = 6
 
 /** How many task dots a day shows at most, before it would get crowded. */
 private const val MaxDotsPerDay = 3
@@ -639,11 +647,14 @@ private fun MonthView(
             }
         }
 
+        // 高度跟着「已经停稳的那个月」走：滑动过程中不跟着变，落定之后才按那个月真正需要
+        // 的行数收一次，免得来回抖。
+        val settledMonth = startMonth.plusMonths(pagerState.settledPage.toLong())
         HorizontalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(GridHeightDp.dp)
+                .height((RowHeightDp * monthRowCount(settledMonth, weekStartsMonday)).dp)
                 .testTag(calendarBodyTag(CalendarView.MONTH)),
             key = { page -> page }
         ) { page ->
@@ -674,9 +685,11 @@ private fun MonthGrid(
     val firstOfMonth = month.atDay(1)
     // The week the grid starts on: Monday by default, Sunday when the user asks.
     val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))
-    val lastCell = firstCell.plusDays((WeeksPerMonth * DaysPerWeek - 1).toLong())
+    // 行数按这个月实际需要算，不补下个月的整周（见 [monthRowCount]）。
+    val rows = monthRowCount(month, weekStartsMonday)
+    val lastCell = firstCell.plusDays((rows * DaysPerWeek - 1).toLong())
 
-    // The grid asks for the six weeks it draws, not just its own month: a span that
+    // The grid asks for the weeks it draws, not just its own month: a span that
     // starts in the previous month has to keep its dots as they cross the edge
     // instead of stopping dead at the 1st.
     val monthTasks by remember(month, tasksInRange) {
@@ -685,7 +698,7 @@ private fun MonthGrid(
     val dotsByDate = remember(monthTasks) { tasksByDate(monthTasks, firstCell, lastCell) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        repeat(WeeksPerMonth) { week ->
+        repeat(rows) { week ->
             Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 if (showWeekNumbers) {
                     WeekNumberCell(
@@ -713,6 +726,15 @@ private fun MonthGrid(
 /** How many days the first day of [date]'s month is past the start of its week. */
 private fun weekStartOffset(date: LocalDate, weekStartsMonday: Boolean): Long =
     if (weekStartsMonday) (date.dayOfWeek.value - 1).toLong() else (date.dayOfWeek.value % 7).toLong()
+
+/**
+ * 这个月需要画几行日历格（4–6）。第一格前面的占位加上本月天数，向上取整就是行数；那一周
+ * 里属于下个月的几天照画（它们和本月同处一周），但**整周都在下个月**的尾巴不再补。
+ */
+private fun monthRowCount(month: YearMonth, weekStartsMonday: Boolean): Int {
+    val leading = weekStartOffset(month.atDay(1), weekStartsMonday)
+    return ((leading + month.lengthOfMonth() + DaysPerWeek - 1) / DaysPerWeek).toInt()
+}
 
 /** The `W12` label of one row of the grid; numbering follows the ISO week of its Monday. */
 @Composable
@@ -776,12 +798,16 @@ private fun DayCell(
             modifier = Modifier.height(DotSize + 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 圆点只说「这天有多少事、还剩几件」：未完成是强调色，已完成是绿色。**不再用
+            // 优先级色**——圆点跟着「设置 → 色系」变的话，改一次色系就得让日历、任务卡、
+            // 四象限三处同步改，日历上又只有 5dp 大，本来就分不出四档深浅。轻重缓急交给
+            // 任务卡左边那条色条和四象限去表达。今天那一格另有淡蓝细圈，不用再靠圆点认。
             dots.sortedByDescending { it.priority.rank }.take(MaxDotsPerDay).forEach { task ->
                 Box(
                     modifier = Modifier
                         .size(DotSize)
                         .clip(CircleShape)
-                        .background(priorityColor(task.priority))
+                        .background(if (task.completedAt != null) colors.success else colors.accent)
                         .testTag(dayDotTag(date, task.id))
                 )
                 Spacer(Modifier.width(3.dp))
@@ -973,7 +999,7 @@ private fun DayColumnsView(
     }
 }
 
-/** One task inside a day column: a card with its priority dot and, if set, its time. */
+/** One task inside a day column: a card with its state dot and, if set, its time. */
 @Composable
 private fun DayEntry(task: Task, onClick: () -> Unit) {
     val colors = LocalTodoColors.current
@@ -986,11 +1012,13 @@ private fun DayEntry(task: Task, onClick: () -> Unit) {
             .padding(horizontal = 5.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 和月视图的圆点同一套口径：只有「还没完成（强调色）/ 已完成（绿）」，不表达
+        // 优先级，日历整页都不再跟「色系」设置联动。
         Box(
             modifier = Modifier
                 .size(5.dp)
                 .clip(CircleShape)
-                .background(priorityColor(task.priority))
+                .background(if (task.completedAt != null) colors.success else colors.accent)
         )
         Spacer(Modifier.width(4.dp))
         Column(modifier = Modifier.weight(1f)) {

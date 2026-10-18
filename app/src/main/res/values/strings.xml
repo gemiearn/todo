@@ -59,6 +59,13 @@
     <string name="settings_color_classic">经典</string>
     <string name="settings_color_macaron">马卡龙</string>
     <string name="settings_color_morandi">莫兰迪</string>
+    <!-- 背景风格：只给页面底/分组底/卡片底掺一层很淡的纸色，不换强调色与象限色 -->
+    <string name="settings_section_background">背景</string>
+    <string name="settings_background_plain">原色</string>
+    <string name="settings_background_warm">暖杏</string>
+    <string name="settings_background_mint">薄荷</string>
+    <string name="settings_background_lilac">雾紫</string>
+    <string name="settings_background_dusk">暮蓝</string>
     <string name="settings_section_more">更多</string>
     <string name="settings_export">数据导出</string>
     <string name="settings_export_soon_short">即将推出</string>

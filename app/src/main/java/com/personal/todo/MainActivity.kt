@@ -33,7 +33,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             var themeChoice by remember { mutableStateOf(appearance.readTheme()) }
             var colorStyle by remember { mutableStateOf(appearance.readColorStyle()) }
-            TodoPomodoroTheme(themeChoice = themeChoice, colorStyle = colorStyle) {
+            var backgroundStyle by remember { mutableStateOf(appearance.readBackgroundStyle()) }
+            TodoPomodoroTheme(
+                themeChoice = themeChoice,
+                colorStyle = colorStyle,
+                backgroundStyle = backgroundStyle
+            ) {
                 TodoApp(
                     repository = repository,
                     focusRepository = focusRepository,
@@ -47,6 +52,11 @@ class MainActivity : ComponentActivity() {
                     onColorStyleChange = {
                         colorStyle = it
                         appearance.writeColorStyle(it)
+                    },
+                    backgroundStyle = backgroundStyle,
+                    onBackgroundStyleChange = {
+                        backgroundStyle = it
+                        appearance.writeBackgroundStyle(it)
                     }
                 )
             }

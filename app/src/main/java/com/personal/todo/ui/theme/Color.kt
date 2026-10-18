@@ -5,6 +5,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.ColorStyle
 
 /**
@@ -123,6 +125,41 @@ fun ColorStyle.quadrantColors(): QuadrantColors = when (this) {
     ColorStyle.CLASSIC -> ClassicQuadrants
     ColorStyle.MACARON -> MacaronQuadrants
     ColorStyle.MORANDI -> MorandiQuadrants
+}
+
+/**
+ * 背景风格往底色里掺的那点颜色；[BackgroundStyle.PLAIN] 是 null，什么都不掺。
+ *
+ * 只给一个「掺什么色」，具体掺多浓由 [tintBackground] 决定——那样深浅主题可以给不同的
+ * 比例，不用为每种风格各写一套色。
+ */
+fun BackgroundStyle.tintColor(): Color? = when (this) {
+    BackgroundStyle.PLAIN -> null
+    BackgroundStyle.WARM -> Color(0xFFE4C08A)
+    BackgroundStyle.MINT -> Color(0xFF93CFB8)
+    BackgroundStyle.LILAC -> Color(0xFFB9ACDF)
+    BackgroundStyle.DUSK -> Color(0xFF889FBE)
+}
+
+/** 浅色主题下掺得明显一点，深色主题下只轻轻提一下，别把暗色版面提花。 */
+private const val CanvasTintLight = 0.18f
+private const val CanvasTintDark = 0.10f
+private const val CardTintLight = 0.09f
+private const val CardTintDark = 0.05f
+
+/**
+ * 按背景风格给一份配色掺色：页面底、分组底、卡片底三处一起动，卡片仍与页面底拉开层次，
+ * 文字与强调色一个都不碰。
+ */
+fun TodoColors.tintBackground(style: BackgroundStyle, dark: Boolean): TodoColors {
+    val tint = style.tintColor() ?: return this
+    val canvasAmount = if (dark) CanvasTintDark else CanvasTintLight
+    val cardAmount = if (dark) CardTintDark else CardTintLight
+    return copy(
+        canvas = lerp(canvas, tint, canvasAmount),
+        groupHeader = lerp(groupHeader, tint, canvasAmount),
+        card = lerp(card, tint, cardAmount)
+    )
 }
 
 internal val LightTodoColors = TodoColors(
