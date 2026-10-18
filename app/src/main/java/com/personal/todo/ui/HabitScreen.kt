@@ -154,6 +154,9 @@ fun HabitScreen(
 ) {
     val habits by viewModel.habits.collectAsStateWithLifecycle()
     val counts by viewModel.counts.collectAsStateWithLifecycle()
+    // 「今天」与最近 7 天都来自流：页面一直开着跨过午夜时，它们会自己翻到新的一天。
+    val today by viewModel.today.collectAsStateWithLifecycle()
+    val week by viewModel.week.collectAsStateWithLifecycle()
 
     // null = 关着；editing = 改这个；deleting = 删这个之前先问一次。
     var editing by remember { mutableStateOf<Habit?>(null) }
@@ -223,7 +226,7 @@ fun HabitScreen(
                 HabitSummaryCard(
                     done = habits.count { habit ->
                         HabitRules.isComplete(
-                            counts[habit.id]?.get(viewModel.today) ?: 0,
+                            counts[habit.id]?.get(today) ?: 0,
                             habit.dailyTarget,
                             habit.step
                         )
@@ -234,8 +237,8 @@ fun HabitScreen(
             items(habits, key = { it.id }) { habit ->
                 HabitCard(
                     habit = habit,
-                    week = viewModel.week,
-                    today = viewModel.today,
+                    week = week,
+                    today = today,
                     countsOfHabit = counts[habit.id].orEmpty(),
                     onIncrement = viewModel::increment,
                     onDecrement = viewModel::decrement,
@@ -698,7 +701,11 @@ private fun HabitEditSheet(
                 color = colors.dateMuted
             )
             Spacer(Modifier.height(6.dp))
-            IconPickerRow(selected = icon, onPick = { icon = it })
+            IconPickerRow(
+                selected = icon,
+                onPick = { icon = it },
+                preferredCategory = IconCategory.HABIT
+            )
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(
                 value = unit,

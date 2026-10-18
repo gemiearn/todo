@@ -292,10 +292,10 @@ fun TodoApp(
     val allTags by tagViewModel.tags.collectAsStateWithLifecycle()
 
     // 习惯页也是推入页（从「更多」进），同样在这里无条件建一次 view model。
-    // key 里带上当天日期：习惯页的「今天」是建实例那一刻取的，跨天再进这一页就是一个
-    // 拿新日期的新实例（旧实例留在 store 里，没人订阅、没有开销）。
+    // 现在不需要按当天日期当 key 了：HabitViewModel 的「今天」是跟着钟走的流，跨天时
+    // 最右那一格与打卡落点会自己翻页，一个实例长期活着即可。
     val habitViewModel: HabitViewModel = viewModel(
-        key = "habits-${repository.today().toEpochDay()}",
+        key = "habits",
         factory = HabitViewModel.factory(habitRepository)
     )
 

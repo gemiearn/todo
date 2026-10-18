@@ -511,6 +511,33 @@ class TaskDateViewTest {
         assertEquals(listOf(crossing), inOctober.map { it.id })
     }
 
+    /**
+     * 端点写反了（计划日晚于截止日）也不能漏：日历铺日期时按较小 / 较大端点归一化，DAO 也得
+     * 两个方向都判。这里两个端点都落在 10 月之外（计划 11-03、截止 09-28），区间却横穿 10 月，
+     * 只在原来的「计划 <= 末、截止 >= 初」一个方向里判会把这条任务整条丢掉。
+     */
+    @Test
+    fun theCalendarRangeKeepsAReversedIntervalThroughTheMonth() = runBlocking {
+        val reversed = repository.createTask(
+            "倒着填的跨月事",
+            inboxId,
+            plannedDate = LocalDate.of(2026, 11, 3),
+            dueDate = LocalDate.of(2026, 9, 28)
+        )
+
+        assertEquals(
+            "跨月区间：两个端点都在 10 月外，仍要被日历收进来",
+            listOf(reversed),
+            repository.observeOpenTasksSpanning(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))
+                .first().map { it.id }
+        )
+        assertEquals(
+            "某一天同样要盖住",
+            listOf(reversed),
+            repository.observeOpenTasksCovering(LocalDate.of(2026, 10, 15)).first().map { it.id }
+        )
+    }
+
     @Test
     fun theCalendarDayListShowsATaskOnEveryDayOfItsInterval() = runBlocking {
         val spanning = repository.createTask(

@@ -157,6 +157,14 @@ fun FocusScreen(
         taskTags[viewModel.linkedTaskId].orEmpty().map { it.id }
     }
 
+    // 选中的任务如果从「可专注」的列表里消失了（在别的页面被完成 / 删除 / 挪成子任务），
+    // 就把这个失效的选择清掉，免得按钮还亮着、点下去才被仓库拒绝。列表为空时不判——初次
+    // 组合时那条流还没发射，空表只是「还没加载」，不是「任务没了」。
+    LaunchedEffect(openTasks, viewModel.linkedTaskId) {
+        val id = viewModel.linkedTaskId ?: return@LaunchedEffect
+        if (openTasks.isNotEmpty() && openTasks.none { it.id == id }) viewModel.clearLink()
+    }
+
     var taskPickerOpen by remember { mutableStateOf(false) }
     val colors = LocalTodoColors.current
 

@@ -282,6 +282,9 @@ interface TaskDao {
      * day, or spanning it because the planned date and the due date form an
      * interval around it. The calendar shows a task on every day of its interval
      * (a display decision), while the 今日 view keeps the exact rule.
+     *
+     * 两个端点的先后不限：`CalendarScreen` 铺日期时按较小 / 较大端点归一化，所以这里
+     * 也两个方向都判——计划日晚于截止日的任务同样算「盖住这一天」，两边口径一致。
      */
     @Query(
         """
@@ -294,6 +297,8 @@ interface TaskDao {
                 OR dueDate = :date
                 OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
                     AND plannedDate <= :date AND dueDate >= :date)
+                OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
+                    AND dueDate <= :date AND plannedDate >= :date)
               )
         """
     )
@@ -304,6 +309,8 @@ interface TaskDao {
      * The calendar draws a task's dots across the whole interval between its
      * planned and its due date, so an interval that merely passes through the
      * range counts too. Read only: it never shifts a date.
+     *
+     * 端点先后不限：正序与倒序两个方向都判，与日历按较小 / 较大端点归一化的铺法一致。
      */
     @Query(
         """
@@ -316,6 +323,8 @@ interface TaskDao {
                 OR (dueDate BETWEEN :start AND :end)
                 OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
                     AND plannedDate <= :end AND dueDate >= :start)
+                OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
+                    AND dueDate <= :end AND plannedDate >= :start)
               )
         """
     )
@@ -336,6 +345,8 @@ interface TaskDao {
                 OR (dueDate BETWEEN :start AND :end)
                 OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
                     AND plannedDate <= :end AND dueDate >= :start)
+                OR (plannedDate IS NOT NULL AND dueDate IS NOT NULL
+                    AND dueDate <= :end AND plannedDate >= :start)
               )
         """
     )
@@ -377,6 +388,15 @@ interface TaskDao {
 
     @Update
     suspend fun update(task: Task)
+
+    /**
+     * 把一个父任务的**全部**子任务搬到另一个清单（含已完成、已删的）。
+     *
+     * 移动父任务必须连同子任务一起走：父子同清单是「子任务只在父任务详情里出现、且与
+     * 父任务同属一地」这条不变式的前提，只改父任务那一行会让库里出现归属不一致的父子。
+     */
+    @Query("UPDATE tasks SET listId = :listId, updatedAt = :at WHERE parentTaskId = :parentTaskId")
+    suspend fun moveSubtasksToList(parentTaskId: Long, listId: Long, at: Long): Int
 
     @Query("UPDATE tasks SET deletedAt = :at, updatedAt = :at WHERE id = :id AND deletedAt IS NULL")
     suspend fun markDeleted(id: Long, at: Long): Int

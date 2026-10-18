@@ -40,6 +40,10 @@ interface TagDao {
     @Query("SELECT * FROM task_tags")
     fun observeAllLinks(): Flow<List<TaskTag>>
 
+    /** 一条任务身上的标签 id（不带 Flow）：生成重复实例时把源任务的标签照搬过去。 */
+    @Query("SELECT tagId FROM task_tags WHERE taskId = :taskId")
+    suspend fun tagIdsOf(taskId: Long): List<Long>
+
     @Query(
         """
         SELECT t.* FROM tags t

@@ -87,7 +87,7 @@ class HabitScreenSmokeTest {
     fun aHabitRowChecksInAndOutOnTheDayItIsPressed() {
         val habitId = runBlocking { habits.createHabit("喝水", 5) }
         val viewModel = habitViewModel()
-        val yesterday = viewModel.today.minusDays(1)
+        val yesterday = viewModel.today.value.minusDays(1)
         launchHabits(viewModel)
 
         compose.waitUntilNodeCount(hasText("今天 0/5 次"), 1, TimeoutMillis)
@@ -98,7 +98,7 @@ class HabitScreenSmokeTest {
         compose.onNodeWithTag(habitDayCellTag(habitId, yesterday)).performClick()
         compose.onNodeWithTag(habitDayCellTag(habitId, yesterday)).performClick()
         compose.waitUntilNodeCount(hasText("今天 1/5 次"), 1, TimeoutMillis)
-        assertEquals(1, runBlocking { db.habitDao().getCheckIn(habitId, viewModel.today)?.count })
+        assertEquals(1, runBlocking { db.habitDao().getCheckIn(habitId, viewModel.today.value)?.count })
         assertEquals(2, runBlocking { db.habitDao().getCheckIn(habitId, yesterday)?.count })
     }
 

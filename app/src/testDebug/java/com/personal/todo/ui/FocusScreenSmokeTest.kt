@@ -27,6 +27,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -182,6 +183,41 @@ class FocusScreenSmokeTest {
             "只起了一次表，就只能记一次",
             1,
             runBlocking { db.habitDao().getCheckIn(habitId, habits.today())?.count }
+        )
+    }
+
+    /**
+     * 选中的任务在别处被完成之后，起表要被拒绝，并且不给关联习惯打卡（审查报告 #1）。
+     *
+     * 走一遍真实顺序：先在专注页选好任务，然后「跑到别的页面」把它完成，再回来按开始。
+     * 界面上的失效选择会被清掉；即便没来得及清，起表前的复核也会拦住它——两条路都保证
+     * 不会有计时器被建出来、也不会有一次误打卡。
+     */
+    @Test
+    fun aTaskCompletedElsewhereCannotBeStarted() = runBlocking {
+        val task = tasks.observeAllOpenTasks().first().first { it.title == "写季度报告" }
+        val habitId = habits.createHabit("写周报", 5, linkedTaskId = task.id, autoCheckInOnFocus = true)
+        val viewModel = FocusViewModel(
+            focus,
+            tasks,
+            FocusSettingsStore(RuntimeEnvironment.getApplication()),
+            habits
+        )
+        viewModel.linkTask(task)
+        launchFocus(viewModel)
+
+        // 在别处把它完成（用户在其它页面勾掉了）。
+        tasks.completeTask(task.id)
+        repeat(20) { compose.waitForIdle() }
+
+        compose.runOnIdle { viewModel.start() }
+        repeat(20) { compose.waitForIdle() }
+
+        assertNull("已完成的任务不该起表", runBlocking { focus.observeActiveTimer().first() })
+        assertEquals(
+            "没起表就不该自动打卡",
+            0,
+            runBlocking { db.habitDao().getCheckIn(habitId, habits.today())?.count ?: 0 }
         )
     }
 

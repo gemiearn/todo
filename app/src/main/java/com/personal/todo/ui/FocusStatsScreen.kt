@@ -107,6 +107,14 @@ internal const val FocusStatsTag = "focus-stats"
 /** The tag the smoke tests use to reach the 按标签筛选 chip row. */
 internal const val FocusStatsTagFilterTag = "focus-stats-tag-filter"
 
+/**
+ * 标签筛选的两种键：`i:<id>` 认当前标签表里的标签（改名不丢身份），`n:<名字>` 认只剩名字的
+ * 历史标签（那个标签已经从标签表里删掉了）。用带前缀的字符串而不是裸名字，是为了让「当前
+ * 标签」和「历史标签」在同名时也能各自选中、且 `rememberSaveable` 存得下。
+ */
+private const val TagFilterIdPrefix = "i:"
+private const val TagFilterNamePrefix = "n:"
+
 private val DonutSize = 132.dp
 private val DonutStroke = 16.dp
 private val TrendChartHeight = 130.dp
@@ -157,33 +165,47 @@ fun FocusStatsScreen(
 ) {
     val all by sessions.collectAsStateWithLifecycle(initialValue = emptyList())
 
-    val tagNames = remember(tags) { tags.map { it.name } }
-
     // 整页按标签筛：选一个标签，五张卡都只看那一段记录。空串代表「全部」——用一个哨兵
-    // 而不是 null，是因为 rememberSaveable 对可空状态的存取更容易出岔子。
+    // 而不是 null，是因为 rememberSaveable 对可空状态的存取更容易出岔子。键分两种：
+    // `i:<id>` 认当前标签表里的标签（改名也不丢身份），`n:<名字>` 认只剩名字的历史标签。
     var tagFilter by rememberSaveable { mutableStateOf("") }
-    val tagIdByName = remember(tags) { tags.associate { it.name to it.id } }
-    val visible = remember(all, tagFilter, tagIdByName) {
-        if (tagFilter.isEmpty()) {
-            all
-        } else {
-            val id = tagIdByName[tagFilter]
-            all.filter { session ->
-                // 标签表里还有这个标签：按 **id** 认人，这样标签改名之后，改名之前那些
-                // 老记录仍然归在同一个标签下（名字变了，id 没变）。
-                (id != null && FocusTagSnapshot.matchesId(session.tagIdsSnapshot, id)) ||
-                    // 没有 id 快照的老记录、以及标签表里已经没有的老名字：只能退回按名字认。
-                    (session.tagIdsSnapshot == null &&
-                        FocusTagSnapshot.matches(session.tagNamesSnapshot, tagFilter))
+    val liveIds = remember(tags) { tags.map { it.id }.toSet() }
+    val liveNames = remember(tags) { tags.map { it.name }.toSet() }
+    val visible = remember(all, tagFilter, tags) {
+        when {
+            tagFilter.isEmpty() -> all
+
+            tagFilter.startsWith(TagFilterIdPrefix) -> {
+                val id = tagFilter.removePrefix(TagFilterIdPrefix).toLongOrNull()
+                val name = tags.firstOrNull { it.id == id }?.name
+                all.filter { session ->
+                    // 标签表里还有这个标签：按 **id** 认人，改名之后那些老记录仍归在同一个
+                    // 标签下（名字变了，id 没变）。
+                    (id != null && FocusTagSnapshot.matchesId(session.tagIdsSnapshot, id)) ||
+                        // 没有 id 快照的老记录（这一列还不存在时写下的）只能退回按名字认。
+                        (session.tagIdsSnapshot == null && name != null &&
+                            FocusTagSnapshot.matches(session.tagNamesSnapshot, name))
+                }
+            }
+
+            else -> {
+                val name = tagFilter.removePrefix(TagFilterNamePrefix)
+                all.filter { session ->
+                    FocusTagSnapshot.matches(session.tagNamesSnapshot, name) &&
+                        // 带 id 快照的记录，只要其中还有活着的标签 id，就归当前标签管，
+                        // 不能算作这个历史名字下的记录。
+                        FocusTagSnapshot.ids(session.tagIdsSnapshot).none { it in liveIds }
+                }
             }
         }
     }
-    // 「历史标签」：只在没有 id 快照的老记录里出现过、现在标签表里已经没有的名字。它们
-    // 按 id 是认不出来的，但至少要能看见、能点，而不是被静默丢掉。
-    val historyTagNames = remember(all, tagNames) {
-        all.filter { it.tagIdsSnapshot == null }
+    // 「历史标签」：名字出现过、但那个标签已经从标签表里消失的。带 id 快照的记录只要 id 全都
+    // 不在标签表里（或根本没有 id 快照），它的名字才算历史；名字还被某个活标签占着的也不列，
+    // 免得与当前标签重名、两边指的不是同一个东西。
+    val historyTagNames = remember(all, tags) {
+        all.filter { FocusTagSnapshot.ids(it.tagIdsSnapshot).none { id -> id in liveIds } }
             .flatMap { FocusTagSnapshot.names(it.tagNamesSnapshot) }
-            .filter { it !in tagNames }
+            .filter { it !in liveNames }
             .distinct()
     }
     // 底部那一段逐条记录按天分组。sessions 本来就是「新的在前」，groupBy 保持遇到顺序，
@@ -261,10 +283,10 @@ fun FocusStatsScreen(
                 }
             } else {
                 // 一个当前标签都没有、也没有历史标签时，这行只会是个死控件，不放。
-                if (tagNames.isNotEmpty() || historyTagNames.isNotEmpty()) {
+                if (tags.isNotEmpty() || historyTagNames.isNotEmpty()) {
                     item(key = "tag-filter") {
                         StatsTagFilterRow(
-                            tagNames = tagNames,
+                            tags = tags,
                             historyTagNames = historyTagNames,
                             selected = tagFilter,
                             onSelect = { tagFilter = it }
@@ -1363,11 +1385,12 @@ private fun Segments(labels: List<String>, selectedIndex: Int, onSelect: (Int) -
  * 一个标签最清楚，多选拼在一起的数反而不好读。
  *
  * 当前标签按 **id** 认人（改名之后的老记录仍归在同一个标签下），历史标签只能按名字认，
- * 所以分开列，用户看得清哪些是已经不在标签表里的名字。
+ * 所以分开列，用户看得清哪些是已经不在标签表里的名字。两者的选中键不同（`i:` / `n:`），
+ * 所以即使历史标签和某个当前标签同名，也各自可选、不会互相点亮。
  */
 @Composable
 private fun StatsTagFilterRow(
-    tagNames: List<String>,
+    tags: List<Tag>,
     historyTagNames: List<String>,
     selected: String,
     onSelect: (String) -> Unit
@@ -1387,12 +1410,13 @@ private fun StatsTagFilterRow(
                 accent = colors.focusAccent,
                 onClick = { onSelect("") }
             )
-            tagNames.forEach { name ->
+            tags.forEach { tag ->
+                val key = TagFilterIdPrefix + tag.id
                 ToggleChip(
-                    label = name,
-                    selected = selected == name,
+                    label = tag.name,
+                    selected = selected == key,
                     accent = colors.focusAccent,
-                    onClick = { onSelect(name) }
+                    onClick = { onSelect(key) }
                 )
             }
         }
@@ -1411,11 +1435,12 @@ private fun StatsTagFilterRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 historyTagNames.forEach { name ->
+                    val key = TagFilterNamePrefix + name
                     ToggleChip(
                         label = name,
-                        selected = selected == name,
+                        selected = selected == key,
                         accent = colors.focusAccent,
-                        onClick = { onSelect(name) }
+                        onClick = { onSelect(key) }
                     )
                 }
             }

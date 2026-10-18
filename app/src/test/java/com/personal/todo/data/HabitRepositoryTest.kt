@@ -4,9 +4,13 @@ import androidx.room.Room
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.Schedule
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -181,4 +185,31 @@ class HabitRepositoryTest {
 
     private suspend fun count(habitId: Long, date: LocalDate): Int =
         db.habitDao().getCheckIn(habitId, date)?.count ?: 0
+
+    /**
+     * 「今天」跟着钟走：习惯页一直开着跨过午夜时，最右那一格与打卡落点必须自己翻到新的一天，
+     * 而不是停在「这一份建立的那一天」。tick 间隔调成 1 毫秒，跨天只等一次 tick。
+     */
+    @Test
+    fun todayFollowsAMidnightRollover() = runBlocking {
+        var clock = millisOf(LocalDateTime.of(2026, 10, 14, 23, 59))
+        val ticking = HabitRepository(db, now = { clock }, zone = shanghai, todayRefreshMillis = 1)
+
+        val emitted = mutableListOf<LocalDate>()
+        val collector = launch { ticking.observeToday().collect { emitted += it } }
+        try {
+            withTimeout(5_000) { while (emitted.isEmpty()) delay(5) }
+            assertEquals(LocalDate.of(2026, 10, 14), emitted.last())
+
+            // 跨过午夜：不重启进程、不重建流。
+            clock = millisOf(LocalDateTime.of(2026, 10, 15, 0, 0, 30))
+            withTimeout(5_000) { while (emitted.last() != LocalDate.of(2026, 10, 15)) delay(5) }
+            assertEquals(LocalDate.of(2026, 10, 15), emitted.last())
+        } finally {
+            collector.cancel()
+        }
+    }
+
+    private fun millisOf(dateTime: LocalDateTime): Long =
+        dateTime.atZone(shanghai).toInstant().toEpochMilli()
 }

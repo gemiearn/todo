@@ -445,6 +445,18 @@ class TaskRepository(
     fun observeTask(taskId: Long): Flow<Task?> = taskDao.observeById(taskId)
 
     /**
+     * 「这条任务现在还能起一次专注吗」：它必须存在、没被删、没完成、而且是顶层任务。
+     *
+     * 专注页在选择任务之后、真正开始之前复核一次：选中的那一刻它在列表里，之后用户可能
+     * 到别的页面把它完成或者删掉。那时若还照着旧的选择起表，就会把一段专注记在一条已经
+     * 结束的任务上（还会触发关联习惯的自动打卡）。子任务也不接受——专注只绑真实任务。
+     */
+    suspend fun isStartableForFocus(taskId: Long): Boolean {
+        val task = taskDao.getById(taskId) ?: return false
+        return task.deletedAt == null && task.completedAt == null && task.parentTaskId == null
+    }
+
+    /**
      * Creates a task or a subtask. Titles are mandatory and trimmed; notes are
      * optional. Subtasks may only be created under a top level task of the same
      * list (one level only, spec section 4.3).
@@ -551,6 +563,12 @@ class TaskRepository(
                     )
                 )
                 recordEvent(occurrenceId, TaskEventType.CREATED, source.title, time)
+                // 标签连线跟源任务照搬过来：实例是一张独立的任务行，标签存在 task_tags
+                // 里，不复制的话按标签筛「今天 / 未来 / 日历」时这些实例根本不会出现，
+                // 专注开始的标签快照也会是空的（说明文档 4.5 与标签是同一件事）。
+                tagDao.tagIdsOf(source.id).forEach { tagId ->
+                    tagDao.link(TaskTag(taskId = occurrenceId, tagId = tagId))
+                }
                 created++
             }
         }
@@ -594,20 +612,29 @@ class TaskRepository(
         val targetListId = if (task.parentTaskId != null) task.listId else listId
         requireNotNull(listDao.getById(targetListId)) { "清单不存在: $targetListId" }
 
-        taskDao.update(
-            task.copy(
-                title = trimmedTitle,
-                notes = notes?.trim()?.ifEmpty { null },
-                priority = priority,
-                listId = targetListId,
-                updatedAt = now(),
-                plannedDate = plannedDate,
-                plannedTime = plannedTime,
-                dueDate = dueDate,
-                dueTime = dueTime,
-                repeatRule = repeatRule
+        db.withTransaction {
+            val time = now()
+            taskDao.update(
+                task.copy(
+                    title = trimmedTitle,
+                    notes = notes?.trim()?.ifEmpty { null },
+                    priority = priority,
+                    listId = targetListId,
+                    updatedAt = time,
+                    plannedDate = plannedDate,
+                    plannedTime = plannedTime,
+                    dueDate = dueDate,
+                    dueTime = dueTime,
+                    repeatRule = repeatRule
+                )
             )
-        )
+            // 顶层任务换清单时，它的子任务跟着一起搬——否则持久化出来的父子会分属两个
+            // 清单，与「父子同清单」这条不变式矛盾（子任务分支里 targetListId 就是原清单，
+            // 不必再搬）。
+            if (task.parentTaskId == null && task.listId != targetListId) {
+                taskDao.moveSubtasksToList(taskId, targetListId, time)
+            }
+        }
     }
 
     /**

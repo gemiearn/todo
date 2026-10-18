@@ -6,6 +6,7 @@ import com.personal.todo.model.RepeatKind
 import com.personal.todo.model.RepeatRule
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -90,6 +91,30 @@ class RecurrenceGenerationTest {
         repository.materializeRecurrences(today, window)
         assertEquals("幂等：再跑一次一条都不多", 0, repository.materializeRecurrences(today, window))
         assertEquals(14, db.taskDao().getOccurrencesOf(sourceId).size)
+    }
+
+    /**
+     * 实例是一张独立的任务行，标签存在 task_tags 里，所以生成时必须把源任务的标签连线一起
+     * 复制过去；否则按标签筛「今天 / 未来 / 日历」时这些实例根本不会出现，专注开始的标签
+     * 快照也会是空的。
+     */
+    @Test
+    fun generatedOccurrencesInheritTheSourceTags() = runBlocking {
+        val morning = repository.createTag("晨间", 0xFF00FF00.toInt())
+        val sourceId = dailyTask()
+        repository.setTaskTags(sourceId, listOf(morning))
+
+        repository.materializeRecurrences(today, window)
+
+        val occurrences = db.taskDao().getOccurrencesOf(sourceId)
+        assertTrue("确实生成了实例", occurrences.isNotEmpty())
+        occurrences.forEach { occurrence ->
+            assertEquals(
+                "每条实例都跟着源任务带上同一个标签",
+                listOf(morning),
+                repository.observeTagsOf(occurrence.id).first().map { it.id }
+            )
+        }
     }
 
     @Test

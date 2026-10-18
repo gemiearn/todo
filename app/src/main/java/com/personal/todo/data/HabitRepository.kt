@@ -8,7 +8,16 @@ import com.personal.todo.model.HabitRules
 import com.personal.todo.model.Schedule
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
+
+/**
+ * 「今天」那条流多久重新读一次日期：60 秒足够，跨过午夜后最多晚一分钟翻页。任务侧
+ * [TaskRepository.observeToday] 用的是同一个数。
+ */
+private const val TodayRefreshMillis = 60_000L
 
 /**
  * 习惯与打卡（需求文档 3）。
@@ -21,13 +30,28 @@ import kotlinx.coroutines.flow.Flow
 class HabitRepository(
     private val db: TodoDatabase,
     private val now: () -> Long = System::currentTimeMillis,
-    val zone: ZoneId = ZoneId.systemDefault()
+    val zone: ZoneId = ZoneId.systemDefault(),
+    /** [observeToday] 的重新读日期间隔；测试传 1 毫秒，这样跨天只等一次 tick。 */
+    private val todayRefreshMillis: Long = TodayRefreshMillis
 ) {
 
     private val habitDao = db.habitDao()
 
     /** 今天（本地日期），页面的「今天」列与打卡的默认落点。 */
     fun today(): LocalDate = Schedule.todayOf(now(), zone)
+
+    /**
+     * 今天的日期，每 [todayRefreshMillis] 重新读一次。
+     *
+     * 习惯页的「最近 7 天」最右是今天，打卡的默认落点也是今天。进程活过午夜时这一格必须
+     * 跟着翻页：页面一直开着不动，不能还停在「这一份建立的那一天」。日期没变时不重复发射。
+     */
+    fun observeToday(): Flow<LocalDate> = flow {
+        while (true) {
+            emit(today())
+            delay(todayRefreshMillis)
+        }
+    }.distinctUntilChanged()
 
     fun observeHabits(): Flow<List<Habit>> = habitDao.observeHabits()
 

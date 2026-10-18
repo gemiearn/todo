@@ -366,6 +366,51 @@ class TaskRepositoryTest {
         assertEquals("子任务改", repository.getTask(subtaskId)?.title)
     }
 
+    /**
+     * 移动顶层任务时子任务必须跟着走：父子同清单是「子任务只显示在父任务详情里」这条不变式
+     * 的前提；只改父任务那一行会让库里出现归属不一致的父子（后续新增的子任务又会落到新清单）。
+     * 已完成、已删除的子任务同样要跟着搬，否则它们各自留在旧清单。
+     */
+    @Test
+    fun movingAParentTaskMovesItsSubtasksWithIt() = runBlocking {
+        val workListId = repository.createList("工作")
+        val parentId = repository.createTask("父任务", inboxId)
+        val openSubtask = repository.addSubtask(parentId, "未完成的子任务")
+        val doneSubtask = repository.addSubtask(parentId, "已完成的子任务")
+        val trashedSubtask = repository.addSubtask(parentId, "已删除的子任务")
+        repository.completeTask(doneSubtask)
+        repository.deleteTask(trashedSubtask)
+
+        repository.updateTask(parentId, title = "父任务", notes = null, priority = Priority.DEFAULT, listId = workListId)
+
+        assertEquals("父任务搬到新清单", workListId, repository.getTask(parentId)?.listId)
+        assertEquals("未完成的子任务跟着搬", workListId, repository.getTask(openSubtask)?.listId)
+        assertEquals("已完成的子任务一起搬", workListId, repository.getTask(doneSubtask)?.listId)
+        assertEquals("回收站里的子任务也一起搬", workListId, repository.getTask(trashedSubtask)?.listId)
+    }
+
+    /**
+     * 专注只绑「真实、还活着、还是顶层」的任务：选中的那一刻它在列表里，之后可能被完成 /
+     * 删除 / 挪成子任务，起表前要能复核出来（否则会把一段专注记在一条已经结束的任务上，
+     * 还会触发关联习惯的自动打卡）。
+     */
+    @Test
+    fun onlyALiveTopLevelTaskCanStartFocus() = runBlocking {
+        val open = repository.createTask("未完成", inboxId)
+        val done = repository.createTask("已完成", inboxId)
+        val trashed = repository.createTask("已删除", inboxId)
+        val parent = repository.createTask("父任务", inboxId)
+        val subtask = repository.addSubtask(parent, "子任务")
+        repository.completeTask(done)
+        repository.deleteTask(trashed)
+
+        assertTrue(repository.isStartableForFocus(open))
+        assertFalse("完成的任务不能再起表", repository.isStartableForFocus(done))
+        assertFalse("删除的任务不能再起表", repository.isStartableForFocus(trashed))
+        assertFalse("子任务不能起表", repository.isStartableForFocus(subtask))
+        assertFalse("不存在的任务不能起表", repository.isStartableForFocus(999_999L))
+    }
+
     @Test
     fun subtaskCountsAreReportedPerParent() = runBlocking {
         val parentId = repository.createTask("父任务", inboxId)

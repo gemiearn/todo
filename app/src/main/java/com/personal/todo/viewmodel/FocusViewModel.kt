@@ -75,7 +75,7 @@ object FocusDurations {
  */
 class FocusViewModel(
     private val focusRepository: FocusRepository,
-    taskRepository: TaskRepository,
+    private val taskRepository: TaskRepository,
     private val settingsStore: FocusSettingsStore,
     /** 习惯：起一次计时就给「关联到这条任务、且开着自动打卡」的习惯记一次（v14）。 */
     private val habitRepository: HabitRepository
@@ -196,6 +196,15 @@ class FocusViewModel(
         linkedTaskTitle = task.title
     }
 
+    /**
+     * 清掉当前的选择。选中的任务在别处被完成 / 删除 / 变子任务之后，它就不该再留在
+     * 专注页上——界面据此把「开始」按回去，起表前的复核也用同一条判断。
+     */
+    fun clearLink() {
+        linkedTaskId = null
+        linkedTaskTitle = null
+    }
+
     // ---------------------------------------------------------------- actions
 
     /**
@@ -226,6 +235,13 @@ class FocusViewModel(
         val tagSnapshot = FocusTagSnapshot.encode(tagNames)
         val tagIdSnapshot = FocusTagSnapshot.encodeIds(tagIds)
         viewModelScope.launch {
+            // 选中的那一刻任务还在列表里，之后可能被完成 / 删除 / 挪成子任务。起表前
+            // 复核一次：不合格就清掉这个失效的选择并放弃，绝不把一段专注记在一条已经
+            // 结束的任务上——`autoCheckInForTask` 在 `if (started)` 之后，也就不会误打卡。
+            if (!taskRepository.isStartableForFocus(taskId)) {
+                clearLink()
+                return@launch
+            }
             // 只有计时**真的起来了**才给习惯记这次打卡：`startTimer` 里有「已经有一个计时器
             // 就拒绝」的守卫，连点两下「开始」时第二次会返回 false——不看返回值，就会出现
             // 「只起了一次表、习惯却记了两次」。
