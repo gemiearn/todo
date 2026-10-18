@@ -7,7 +7,9 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -144,6 +146,46 @@ class TaskDateViewTest {
     }
 
     // ------------------------------------------------------------- 逾期视图
+
+    /**
+     * 逾期是按**时刻**判的：库一动不动的时候，时间自己也在走。
+     *
+     * 任务今天 10:00 到期，9:00 起一直把这一页摆在面前到 11:00——中间**一次库都不写**，
+     * 这条流也必须自己把它算成逾期（台账 N6：原来只在 Room 发射时求一次 `now()`，于是
+     * 逾期视图与抽屉徽章会一直停在旧结果）。tick 间隔调成 1 毫秒，到点只要等一次 tick。
+     */
+    @Test
+    fun theOverdueViewFollowsTheClockWithoutWaitingForAWrite() = runBlocking {
+        val ticking = TaskRepository(
+            db = db,
+            inboxName = "收件箱",
+            now = { clock },
+            zone = shanghai,
+            overdueRefreshMillis = 1
+        )
+        val taskId = ticking.createTask(
+            "十点到期",
+            inboxId,
+            dueDate = today,
+            dueTime = LocalTime.of(10, 0)
+        )
+
+        val emitted = mutableListOf<List<Long>>()
+        val collector = launch {
+            ticking.observeOverdueTasks().collect { rows -> emitted += rows.map { task -> task.id } }
+        }
+        try {
+            withTimeout(5_000) { while (emitted.isEmpty()) delay(5) }
+            assertTrue("9:00 还没到点，不该是逾期", emitted.last().isEmpty())
+
+            // 把钟拨到 11:00，**不碰数据库**：只有那条时刻节拍能让它变。
+            clock = millisOf(LocalDateTime.of(2026, 10, 14, 11, 0))
+            withTimeout(5_000) { while (emitted.last().isEmpty()) delay(5) }
+            assertEquals(listOf(taskId), emitted.last())
+        } finally {
+            collector.cancel()
+        }
+    }
 
     @Test
     fun aTaskWithoutAnyDateIsNeverOverdue() = runBlocking {

@@ -50,6 +50,15 @@ private const val RecurrenceHorizonDays = 365
 private const val TodayRefreshMillis = 60_000L
 
 /**
+ * 「逾期」那条流多久重新判一次时刻。
+ *
+ * 逾期是**按时刻**判的（说明文档 4.1）：任务 10:00 到期，9:00 就把 App 摆在面前一直看着，
+ * 到 11:00 它就该是逾期了——但 Room 只在库里真的变了才发射，一天不动库就一天不重判，
+ * 那段时间「逾期」视图与抽屉徽章会一直停在旧结果（台账 N6）。60 秒重判一次足够。
+ */
+private const val OverdueRefreshMillis = 60_000L
+
+/**
  * 清单页顶部那条小结：未删除顶层任务的**总数**、其中**已完成**的条数，以及该清单累计的
  * **专注秒数**。任务页的「已完成 n / 共 m」与完成率都从这三个数算，不另存一份。
  */
@@ -72,7 +81,9 @@ class TaskRepository(
     private val now: () -> Long = System::currentTimeMillis,
     val zone: ZoneId = ZoneId.systemDefault(),
     /** [observeToday] 的重新读日期间隔；测试传 1 毫秒，这样跨天只等一次 tick。 */
-    private val todayRefreshMillis: Long = TodayRefreshMillis
+    private val todayRefreshMillis: Long = TodayRefreshMillis,
+    /** [observeNow] 的重新读时刻间隔；测试传 1 毫秒，这样「到点了」只等一次 tick。 */
+    private val overdueRefreshMillis: Long = OverdueRefreshMillis
 ) {
 
     private val listDao = db.taskListDao()
@@ -345,24 +356,39 @@ class TaskRepository(
         observeToday().flatMapLatest { taskDao.observeCompletedTasksOn(it) }
 
     /**
+     * 「现在」，每 [observeNow] 对应的间隔重新读一次，值没变就不重复发射。
+     *
+     * 给「按时刻判」的那些流当一个节拍：光靠 Room 发射不够，库不动的时候时间也在走。
+     */
+    private fun observeNow(): Flow<Long> = flow {
+        while (true) {
+            emit(now())
+            delay(overdueRefreshMillis)
+        }
+    }.distinctUntilChanged()
+
+    /**
      * Open tasks past their effective overdue moment. An explicit due date
      * wins; without one, the end of the planned date is the fallback. The exact
      * instant is applied here rather than in SQL.
+     *
+     * 候选行只随「哪一天」重查（一天一次），**判定本身跟着 [observeNow] 每分钟重跑**：
+     * 这样 10:00 到期的任务在 11:00 自己进逾期，不必等下一次写库（台账 N6）。
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observeOverdueTasks(): Flow<List<Task>> =
-        observeToday().flatMapLatest { date ->
-            taskDao.observeOpenTasksOverdueCandidate(date).map { rows ->
-                val currentTime = now()
-                rows.filter { task ->
-                    Schedule.isOverdue(
-                        nowMillis = currentTime,
-                        plannedDate = task.plannedDate,
-                        dueDate = task.dueDate,
-                        dueTime = task.dueTime,
-                        zone = zone
-                    )
-                }
+        combine(
+            observeToday().flatMapLatest { date -> taskDao.observeOpenTasksOverdueCandidate(date) },
+            observeNow()
+        ) { rows, currentTime ->
+            rows.filter { task ->
+                Schedule.isOverdue(
+                    nowMillis = currentTime,
+                    plannedDate = task.plannedDate,
+                    dueDate = task.dueDate,
+                    dueTime = task.dueTime,
+                    zone = zone
+                )
             }
         }
 
