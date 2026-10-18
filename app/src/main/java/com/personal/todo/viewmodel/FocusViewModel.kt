@@ -196,13 +196,46 @@ class FocusViewModel(
         linkedTaskTitle = task.title
     }
 
-    /**
-     * 清掉当前的选择。选中的任务在别处被完成 / 删除 / 变子任务之后，它就不该再留在
+    /** 清掉当前的选择。选中的任务在别处被完成 / 删除 / 变子任务之后，它就不该再留在
      * 专注页上——界面据此把「开始」按回去，起表前的复核也用同一条判断。
      */
     fun clearLink() {
         linkedTaskId = null
         linkedTaskTitle = null
+    }
+
+    /**
+     * 改一条历史记录：换掉它的关联任务（传 null ＝取消关联），以及改这段专注的时长。
+     *
+     * 任务、标题、清单名与标签快照都由调用方（记录页的编辑弹层）按那时那刻的数据解析后
+     * 传进来——与开始一次专注时记快照的口径一致：换了任务，快照就换成那条任务现在的样子；
+     * 只改时长（任务没动）时，调用方把原来的快照原样传回，不做任何改写。
+     */
+    fun updateSession(
+        sessionId: Long,
+        taskId: Long?,
+        taskTitleSnapshot: String?,
+        listNameSnapshot: String?,
+        tagNames: List<String>,
+        tagIds: List<Long>,
+        seconds: Int
+    ) {
+        viewModelScope.launch {
+            focusRepository.updateSession(
+                sessionId = sessionId,
+                taskId = taskId,
+                taskTitleSnapshot = taskTitleSnapshot,
+                listNameSnapshot = listNameSnapshot,
+                tagNamesSnapshot = FocusTagSnapshot.encode(tagNames),
+                tagIdsSnapshot = FocusTagSnapshot.encodeIds(tagIds),
+                actualFocusSeconds = seconds
+            )
+        }
+    }
+
+    /** 删掉一条历史记录（用户主动删这一条）。 */
+    fun deleteSession(sessionId: Long) {
+        viewModelScope.launch { focusRepository.deleteSession(sessionId) }
     }
 
     // ---------------------------------------------------------------- actions

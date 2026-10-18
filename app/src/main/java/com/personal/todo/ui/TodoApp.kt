@@ -100,8 +100,6 @@ import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
-import com.personal.todo.data.db.FocusSession
-import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.TaskFilter
@@ -120,7 +118,6 @@ import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
-import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -142,6 +139,7 @@ private const val ROUTE_LIST = "list"
 private const val ROUTE_FUTURE = "future"
 private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_STATS = "stats"
+private const val ROUTE_RECORDS = "records"
 private const val ROUTE_CRASH = "crash"
 private const val ROUTE_TAGS = "tags"
 private const val ROUTE_HABITS = "habits"
@@ -291,6 +289,10 @@ fun TodoApp(
     val tagViewModel: TagViewModel = viewModel(factory = TagViewModel.factory(repository))
     val allTags by tagViewModel.tags.collectAsStateWithLifecycle()
 
+    // 专注记录页编辑「关联任务」时要按那条任务**现在**的标签记快照，所以这里也把标签连线
+    // 收下来（与 MainScreen 用的是同一份，StateFlow 共享，不会多查一次库）。
+    val tagsByTask by shellViewModel.tagsByTask.collectAsStateWithLifecycle()
+
     // 习惯页也是推入页（从「更多」进），同样在这里无条件建一次 view model。
     // 现在不需要按当天日期当 key 了：HabitViewModel 的「今天」是跟着钟走的流，跨天时
     // 最右那一格与打卡落点会自己翻页，一个实例长期活着即可。
@@ -362,6 +364,24 @@ fun TodoApp(
         )
 
         ROUTE_CRASH -> CrashLogScreen(onBack = { nav.pop() })
+
+        ROUTE_RECORDS -> {
+            // 记录页用专注页那份「还没做完的任务」清单当选择器（与专注页、习惯弹层同一个
+            // 口径：一串重复任务只露最近那条），不再另开一条查询。
+            val openTasks by focusViewModel.openTasks.collectAsStateWithLifecycle()
+            FocusRecordsScreen(
+                // 走专注页那个 view model 已经收集着的 sessions，不再额外开一条 Room 查询。
+                sessions = focusViewModel.sessions,
+                openTasks = openTasks,
+                lists = lists,
+                taskTags = tagsByTask,
+                zone = focusRepository.zone,
+                today = repository.today(),
+                onUpdate = focusViewModel::updateSession,
+                onDelete = focusViewModel::deleteSession,
+                onBack = { nav.pop() }
+            )
+        }
 
         ROUTE_TAGS -> TagScreen(viewModel = tagViewModel, onBack = { nav.pop() })
 
@@ -678,16 +698,15 @@ internal fun MainScreen(
     // sort / list actions that belong to the task screens.
     val showsFocusChrome = kind == HomeTab.Focus.route
 
-    // 左滑面板按路由分三种（用户 2026-10-18 拍板）：任务视图与日历＝清单抽屉；专注页＝
-    // 专注统计（原来那只是右上角推进去的一页，现在也成了这块面板）；四象限与更多页
-    // **不给**抽屉——那里没有「清单」这回事，左滑不出来才是对的。
+    // 左滑面板按路由分三种：任务视图与日历＝清单抽屉；专注页＝一个**导航面板**（只有
+    // 「专注记录」这种能跳过去的入口，不是把整页内容塞进来——用户 2026-10-19 纠正）；
+    // 四象限与更多页 **不给**抽屉——那里没有「清单」这回事，左滑不出来才是对的。
     val drawerMode = when (kind) {
-        HomeTab.Focus.route -> DrawerMode.STATS
+        HomeTab.Focus.route -> DrawerMode.FOCUS
         HomeTab.Quadrant.route, HomeTab.More.route -> DrawerMode.NONE
         else -> DrawerMode.LISTS
     }
-    val drawerWidthFraction =
-        if (drawerMode == DrawerMode.STATS) StatsDrawerWidthFraction else DrawerWidthFraction
+    val drawerWidthFraction = DrawerWidthFraction
 
     // 「清单 / 习惯」两格开关：有任务列表的那些视图（收件箱 / 清单 / 今天 / 未来 / 逾期 /
     // 已完成 / 回收站）顶栏都有它，点「习惯」就进习惯页；日历自己有一套，不放这个。
@@ -718,17 +737,12 @@ internal fun MainScreen(
                             onNewList = { showNewListDialog = true }
                         )
 
-                        // 专注页的面板就是专注统计本身：不画它自己的返回箭头（onBack = null），
-                        // 顶上那行标题由这里给，右边留一个「展开」推进整页。
-                        DrawerMode.STATS -> FocusStatsDrawer(
-                            sessions = focusViewModel.sessions,
-                            // 专注页自己的 view model 就带着时区，不另外传一个仓库进来。
-                            zone = focusViewModel.zone,
-                            today = repository.today(),
-                            // 按标签筛那一行用的就是外壳这份标签表。
-                            tags = allTags,
-                            onOpenFullPage = {
-                                nav.push(ROUTE_STATS)
+                        // 专注页的面板只放**入口**：一行「专注记录」，点它推进记录页（逐条
+                        // 记录可以在那里改关联任务与时长、也能删）。原来把整页统计塞进来，
+                        // 拉出来就顶掉半屏、也看不出能跳到哪，用户 2026-10-19 让改掉。
+                        DrawerMode.FOCUS -> FocusDrawer(
+                            onOpenRecords = {
+                                nav.push(ROUTE_RECORDS)
                                 scope.launch { drawerState.close() }
                             }
                         )
@@ -1301,16 +1315,13 @@ private fun MoreEntry(label: String, trailing: Int? = null, onClick: () -> Unit)
 // ---------------------------------------------------------------- the drawer
 
 /**
- * 抽屉占屏幕宽度的比例。原来只有六成，清单名稍长就被裁；按抽屉设计稿加宽到 84%，拉出来
- * 只留一条窄边提示「这是一层盖上去的面板」。
+ * 抽屉占屏幕宽度的比例。原来只有六成，清单名稍长就被裁；按抽屉设计稿一度加宽到 84%，
+ * 但用户 2026-10-19 觉得拉出来这块太占屏，要求缩回**当前宽度的约六成**（84% × 0.6 ≈ 50%）。
  */
-private const val DrawerWidthFraction = 0.84f
+private const val DrawerWidthFraction = 0.5f
 
-/** 专注统计那块面板比清单抽屉更宽：五张图表要宽度才看得清。 */
-private const val StatsDrawerWidthFraction = 0.94f
-
-/** 左滑面板按路由分三种：清单抽屉 / 专注统计 / 不给面板。 */
-private enum class DrawerMode { LISTS, STATS, NONE }
+/** 左滑面板按路由分三种：清单抽屉 / 专注页的导航面板 / 不给面板。 */
+private enum class DrawerMode { LISTS, FOCUS, NONE }
 
 /**
  * 抽屉里清单色点的取色顺序（值是 [TagPalette] 的下标）：先用蓝 / 紫 / 番茄红这些比较中性
@@ -1412,44 +1423,31 @@ private fun ListsDrawer(
 }
 
 /**
- * 专注页左滑出来的那块面板：把专注统计整页塞进抽屉里。
+ * 专注页左滑出来的那块面板：一个**导航面板**，只放能跳过去的入口（用户 2026-10-19）。
  *
- * 顶部那行是自己给的（标题 + 「展开」），下面直接复用统计页本身——统计页的 onBack 传
- * null 时它不画自己的返回箭头，因为抽屉里没有「上一页」可退。点「展开」才是推入整页，
- * 那才是能横着看完整图表的形态。
+ * 原来这里塞的是整页专注统计（内容本身），拉出来就顶掉半屏、也看不出「能跳到哪」。现在
+ * 与清单抽屉同一个形态：一行一个目的地。专注页目前只有一个去处——「专注记录」（逐条
+ * 记录可以在那一页改关联任务与时长、也能删）；统计图表仍走顶栏右上角那个图标。
  */
 @Composable
-private fun FocusStatsDrawer(
-    sessions: Flow<List<FocusSession>>,
-    zone: ZoneId,
-    today: LocalDate,
-    tags: List<Tag>,
-    onOpenFullPage: () -> Unit,
+private fun FocusDrawer(
+    onOpenRecords: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.more_entry_stats),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = onOpenFullPage) {
-                Text(stringResource(R.string.drawer_stats_open_full))
-            }
-        }
-        FocusStatsScreen(
-            sessions = sessions,
-            zone = zone,
-            today = today,
-            tags = tags,
-            onBack = null,
-            modifier = Modifier.weight(1f)
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(vertical = 10.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.focus_title),
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+        )
+        DrawerRow(
+            label = stringResource(R.string.focus_history_title),
+            selected = false,
+            onClick = onOpenRecords
         )
     }
 }

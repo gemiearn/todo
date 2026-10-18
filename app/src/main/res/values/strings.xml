@@ -319,6 +319,9 @@
     <!-- 名字前面那个小图标（清单 / 习惯共用一行备选） -->
     <string name="icon_label">图标</string>
     <string name="icon_none">无</string>
+    <string name="icon_category_list">清单</string>
+    <string name="icon_category_habit">习惯</string>
+    <string name="icon_category_other">其他</string>
 
     <!-- 顶栏「清单 / 习惯」两格开关 -->
     <string name="switch_lists">清单</string>
@@ -352,7 +355,6 @@
     <!-- 「更多」页里的入口名，带上「番茄钟」才找得到 -->
     <string name="more_entry_focus">专注（番茄钟）</string>
     <string name="more_entry_stats">专注统计</string>
-    <string name="drawer_stats_open_full">展开</string>
     <!-- 统计页（照滴答清单/番茄ToDo那一页） -->
     <string name="focus_stats_open">统计</string>
     <string name="stats_detail_title">专注详情</string>
@@ -455,6 +457,17 @@
     <string name="focus_duration_seconds">%1$d 秒</string>
     <string name="focus_duration_minutes">%1$d 分钟</string>
     <string name="focus_duration_minutes_seconds">%1$d 分 %2$d 秒</string>
+
+    <!-- 专注记录页：逐条记录可以改关联任务与时长、也可以删掉 -->
+    <string name="records_empty">还没有专注记录</string>
+    <string name="record_more">更多操作</string>
+    <string name="record_edit_title">修改记录</string>
+    <string name="record_task_label">关联任务</string>
+    <string name="record_pick_task">选择任务</string>
+    <string name="record_unlink_task">取消关联</string>
+    <string name="record_minutes_label">时长（分钟）</string>
+    <string name="record_delete_title">删除这条专注记录？</string>
+    <string name="record_delete_message">删掉后这段专注时长不再计入统计，也拿不回来。</string>
 
     <!-- 崩溃日志（手机上自查闪退原因） -->
     <string name="crash_log_title">崩溃日志</string>

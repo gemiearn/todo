@@ -236,6 +236,37 @@ class FocusRepository(
     /** Ends the session early as 中断, keeping its real focus seconds (spec section 5.2). */
     suspend fun abandonTimer(): Boolean = endTimer(FocusStatus.INTERRUPTED)
 
+    /**
+     * 改一条已经结束的历史记录：换掉它的关联任务（连带标题 / 清单 / 标签快照），以及改这段
+     * 专注的时长。开始时刻、模式与「完成 / 中断」都不动——那些是那次专注真实发生过的事。
+     *
+     * [actualFocusSeconds] 至少 1 秒：一段 0 秒的专注在记里没有意义，也不该被写进去。
+     */
+    suspend fun updateSession(
+        sessionId: Long,
+        taskId: Long?,
+        taskTitleSnapshot: String?,
+        listNameSnapshot: String?,
+        tagNamesSnapshot: String?,
+        tagIdsSnapshot: String?,
+        actualFocusSeconds: Int
+    ): Boolean = db.withTransaction {
+        focusDao.updateSession(
+            id = sessionId,
+            taskId = taskId,
+            title = taskTitleSnapshot,
+            listName = listNameSnapshot,
+            tagNames = tagNamesSnapshot,
+            tagIds = tagIdsSnapshot,
+            seconds = actualFocusSeconds.coerceAtLeast(MinRecordedSeconds)
+        ) > 0
+    }
+
+    /** 删掉一条历史记录：这是用户**主动**删这一条，与「删任务不删专注历史」那条硬规则无关。 */
+    suspend fun deleteSession(sessionId: Long): Boolean = db.withTransaction {
+        focusDao.deleteSession(sessionId) > 0
+    }
+
     private suspend fun endTimer(status: FocusStatus): Boolean = db.withTransaction {
         val timer = focusDao.getActiveTimer() ?: return@withTransaction false
         // A break is not focus: it ends without a session, which is how 休息时间
@@ -291,5 +322,8 @@ class FocusRepository(
     private companion object {
         /** Nobody focuses for less than a minute; a shorter target is a typo. */
         const val MinTimedSeconds = 60
+
+        /** 手改历史记录时允许的最小时长：0 秒的专注没有意义。 */
+        const val MinRecordedSeconds = 1
     }
 }

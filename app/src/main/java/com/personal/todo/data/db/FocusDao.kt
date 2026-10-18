@@ -39,6 +39,38 @@ interface FocusDao {
     suspend fun getSessions(): List<FocusSession>
 
     /**
+     * 改一条历史记录：只改「关联任务」（连带它的标题 / 清单 / 标签快照）与「专注时长」。
+     * 开始时刻、模式、状态都不动——那是那次专注真实发生过的事，不手改。
+     *
+     * @return 受影响的位数；0 表示这条记录已经不在库里。
+     */
+    @Query(
+        """
+        UPDATE focus_sessions
+        SET taskId = :taskId,
+            taskTitleSnapshot = :title,
+            listNameSnapshot = :listName,
+            tagNamesSnapshot = :tagNames,
+            tagIdsSnapshot = :tagIds,
+            actualFocusSeconds = :seconds
+        WHERE id = :id
+        """
+    )
+    suspend fun updateSession(
+        id: Long,
+        taskId: Long?,
+        title: String?,
+        listName: String?,
+        tagNames: String?,
+        tagIds: String?,
+        seconds: Int
+    ): Int
+
+    /** 删掉一条历史记录（用户主动删这一条，不是删任务时的连带行为）。 */
+    @Query("DELETE FROM focus_sessions WHERE id = :id")
+    suspend fun deleteSession(id: Long): Int
+
+    /**
      * 一条任务上的专注合计：累计秒数、session 条数、以及其中「跑完的番茄钟」个数。
      *
      * 口径与统计页一致：只有 `status = COMPLETED` 的番茄才算番茄，中断的不算；休息是计时器

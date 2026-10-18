@@ -713,22 +713,37 @@ fun TextInputDialog(
 internal const val NoIcon = ""
 
 /**
- * 清单与习惯名字前面那个小图标的备选（一行，可横滑）。
+ * 清单与习惯名字前面那个小图标的备选，按用途分组后横向浏览。
  *
  * 用 emoji 文本而不是 Material 图标集：用户参照的是嘀嗒清单那种**彩色**小图标，而本项目
  * 只依赖 `material-icons-core`（能选的图标少、还是单色的）。库里存的就是这个字符串，
  * 空＝没有图标——若以后换成图标集，换的只是这一行与存值格式，列不用改。
  */
-internal val IconChoices = listOf(
-    "📋", "📌", "⭐", "❤️", "🔥", "🎯", "📚", "💼", "🛒", "💰",
-    "🏠", "🍎", "💧", "☕", "💊", "🏃", "💪", "😴", "🎵", "✈️",
-    "🎨", "🌱", "🐱", "🎮", "🎓", "🧹"
+enum class IconCategory { LIST, HABIT, OTHER }
+
+private val ListIcons = listOf(
+    "📋", "📌", "⭐", "🎯", "📚", "💼", "🛒", "💰", "🏠", "✈️", "🎨", "🎓", "🧹",
+    "🗂️", "🗓️", "📝", "📁", "💻", "🔧", "🧾", "🎁", "🚗", "🧳", "🍽️", "🏡", "🪴",
+    "🗃️", "📊", "📈", "📣", "📞", "✉️", "🖥️", "⌨️", "🖨️", "🔑", "🏢", "🏦", "🏫",
+    "🏥", "🏪", "🏖️", "🏕️", "🚆", "🚲", "⛽", "🛠️", "🔨", "📦", "🧰", "🗒️", "📍", "🧭", "🪪"
 )
+private val HabitIcons = listOf(
+    "❤️", "🔥", "🍎", "💧", "☕", "💊", "🏃", "💪", "😴", "🎵", "🌱",
+    "📖", "🧘", "🚶", "🥗", "🦷", "🛌", "⏰", "✍️", "🧠", "🏊", "🚴", "🌞", "🍵",
+    "🥛", "🥤", "🍳", "🍊", "🍋", "🥑", "🥦", "🍚", "🏋️", "🤸", "🧗", "⚽", "🏀", "🎾",
+    "🧼", "🧴", "🪥", "📵", "📱", "🚶‍♀️", "🚶‍♂️", "🧘‍♀️", "🧘‍♂️", "🧑‍🍳", "🧑‍💻", "🌙", "🌼", "🌳"
+)
+private val OtherIcons = listOf(
+    "🐱", "🎮", "🎬", "📷", "🎧", "🌈", "🐶", "🎉", "🐰", "🦊", "🐼", "🐻", "🦁", "🐸",
+    "🐧", "🦋", "🐢", "🦄", "🚀", "⚽️", "🏆", "🎲", "🧩", "🎤", "🎹", "🎸", "🪄", "💎", "🌻"
+)
+
+internal val IconChoices = ListIcons + HabitIcons + OtherIcons
 
 private val IconChipSize = 40.dp
 
 /**
- * 一行可横滑的图标备选：第一个是「无」（清空），点某个图标即选中它。
+ * 按分类横向浏览图标：第一个是「无」（清空），点某个图标即选中它。
  *
  * 只负责「选中了哪个」，落库时机由上层决定（清单弹层是点 ✓ 才写，习惯弹层同理）。
  */
@@ -736,28 +751,59 @@ private val IconChipSize = 40.dp
 fun IconPickerRow(
     selected: String,
     onPick: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    preferredCategory: IconCategory = IconCategory.LIST
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconChoiceChip(
-            text = stringResource(R.string.icon_none),
-            emoji = false,
-            selected = selected.isEmpty(),
-            onPick = { onPick(NoIcon) }
-        )
-        IconChoices.forEach { icon ->
+    val initialCategory = when (selected) {
+        in ListIcons -> IconCategory.LIST
+        in HabitIcons -> IconCategory.HABIT
+        in OtherIcons -> IconCategory.OTHER
+        else -> preferredCategory
+    }
+    var category by remember { mutableStateOf(initialCategory) }
+    val choices = when (category) {
+        IconCategory.LIST -> ListIcons
+        IconCategory.HABIT -> HabitIcons
+        IconCategory.OTHER -> OtherIcons
+    }
+    val colors = LocalTodoColors.current
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            IconCategory.entries.forEach { option ->
+                val label = when (option) {
+                    IconCategory.LIST -> R.string.icon_category_list
+                    IconCategory.HABIT -> R.string.icon_category_habit
+                    IconCategory.OTHER -> R.string.icon_category_other
+                }
+                TextButton(onClick = { category = option }) {
+                    Text(
+                        text = stringResource(label),
+                        color = if (category == option) colors.accent else colors.dateMuted
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             IconChoiceChip(
-                text = icon,
-                emoji = true,
-                selected = selected == icon,
-                onPick = { onPick(icon) }
+                text = stringResource(R.string.icon_none),
+                emoji = false,
+                selected = selected.isEmpty(),
+                onPick = { onPick(NoIcon) }
             )
+            choices.forEach { icon ->
+                IconChoiceChip(
+                    text = icon,
+                    emoji = true,
+                    selected = selected == icon,
+                    onPick = { onPick(icon) }
+                )
+            }
         }
     }
 }

@@ -270,4 +270,115 @@ class FocusRepositoryTest {
         assertEquals(listOf("等回复", "重要"), FocusTagSnapshot.names(session.tagNamesSnapshot))
         assertTrue(FocusTagSnapshot.matches(session.tagNamesSnapshot, "等回复"))
     }
+
+    // ------------------------------------------------------- 改 / 删历史记录
+
+    /**
+     * 改一条记录：换关联任务（连带标题 / 清单 / 标签快照）与时长。开始时刻、模式与状态
+     * 都不动——那是那次专注真实发生过的事。
+     */
+    @Test
+    fun editingASessionChangesItsTaskAndSecondsOnly() = runBlocking {
+        val tasks = TaskRepository(db, "收件箱", now = { wallClock }, zone = shanghai)
+        val first = tasks.createTask("写报告", tasks.ensureInbox())
+        val second = tasks.createTask("改方案", tasks.ensureInbox())
+        focus.startTimer(
+            mode = FocusMode.POMODORO,
+            plannedSeconds = 1_500,
+            taskId = first,
+            taskTitleSnapshot = "写报告",
+            listNameSnapshot = "收件箱"
+        )
+        advance(600)
+        assertTrue(focus.finishTimer())
+        val sessionId = onlySession().id
+        val startedAt = onlySession().startedAt
+
+        assertTrue(
+            focus.updateSession(
+                sessionId = sessionId,
+                taskId = second,
+                taskTitleSnapshot = "改方案",
+                listNameSnapshot = "收件箱",
+                tagNamesSnapshot = FocusTagSnapshot.encode(listOf("要紧")),
+                tagIdsSnapshot = FocusTagSnapshot.encodeIds(listOf(7L)),
+                actualFocusSeconds = 1_800
+            )
+        )
+
+        val session = onlySession()
+        assertEquals(second, session.taskId)
+        assertEquals("改方案", session.taskTitleSnapshot)
+        assertEquals(1_800, session.actualFocusSeconds)
+        assertEquals("开始时刻不动", startedAt, session.startedAt)
+        assertEquals("模式与状态不动", FocusMode.POMODORO, session.mode)
+        assertEquals(FocusStatus.COMPLETED, session.status)
+        assertEquals(listOf(7L), FocusTagSnapshot.ids(session.tagIdsSnapshot))
+    }
+
+    /** 取消关联：任务清空，但那条记录本身还在（只是不再挂在任何任务上）。 */
+    @Test
+    fun clearingTheTaskOfASessionKeepsTheRecord() = runBlocking {
+        val tasks = TaskRepository(db, "收件箱", now = { wallClock }, zone = shanghai)
+        val taskId = tasks.createTask("写报告", tasks.ensureInbox())
+        focus.startTimer(
+            mode = FocusMode.POMODORO,
+            plannedSeconds = 1_500,
+            taskId = taskId,
+            taskTitleSnapshot = "写报告"
+        )
+        advance(600)
+        assertTrue(focus.finishTimer())
+        val sessionId = onlySession().id
+
+        assertTrue(
+            focus.updateSession(
+                sessionId = sessionId,
+                taskId = null,
+                taskTitleSnapshot = null,
+                listNameSnapshot = null,
+                tagNamesSnapshot = null,
+                tagIdsSnapshot = null,
+                actualFocusSeconds = 600
+            )
+        )
+
+        val session = onlySession()
+        assertNull(session.taskId)
+        assertNull(session.taskTitleSnapshot)
+    }
+
+    /** 手改时长的下限是 1 秒：0 秒的专注没有意义，也不会被写进去。 */
+    @Test
+    fun anEditedDurationIsNeverZero() = runBlocking {
+        focus.startTimer(FocusMode.STOPWATCH, 0)
+        advance(30)
+        assertTrue(focus.finishTimer())
+        val sessionId = onlySession().id
+
+        focus.updateSession(
+            sessionId = sessionId,
+            taskId = null,
+            taskTitleSnapshot = null,
+            listNameSnapshot = null,
+            tagNamesSnapshot = null,
+            tagIdsSnapshot = null,
+            actualFocusSeconds = 0
+        )
+
+        assertEquals(1, onlySession().actualFocusSeconds)
+    }
+
+    @Test
+    fun aDeletedSessionLeavesTheHistory() = runBlocking {
+        focus.startTimer(FocusMode.POMODORO, 1_500)
+        advance(60)
+        assertTrue(focus.finishTimer())
+        val sessionId = onlySession().id
+
+        assertTrue(focus.deleteSession(sessionId))
+
+        assertTrue("删掉之后历史里就没有它了", db.focusDao().getSessions().isEmpty())
+        assertFalse("同一条再删一次是空操作", focus.deleteSession(sessionId))
+    }
 }

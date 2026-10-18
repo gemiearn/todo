@@ -1,5 +1,6 @@
 package com.personal.todo.ui
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
@@ -347,11 +349,11 @@ class TodoAppSmokeTest {
     }
 
     /**
-     * 逐条专注记录只在统计页底部出现：专注页不再自己堆历史；记录行也不再写计时模式
-     * （正计时 / 倒计时 / 番茄钟），只留开始时刻与结果。
+     * 逐条专注记录在它自己的那一页，入口在专注页左滑面板里：面板只放一行「专注记录」，
+     * 点它才推进记录页（记录行只留开始时刻与结果，不写计时模式）。
      */
     @Test
-    fun theRecordListLivesOnTheStatsPageWithoutTheTimerMode() {
+    fun theRecordListLivesOnItsOwnPageReachedFromTheFocusDrawer() {
         runBlocking {
             val taskId = tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
             focus.startTimer(
@@ -366,24 +368,57 @@ class TodoAppSmokeTest {
 
         launchApp()
 
-        // 专注页上没有那一段记录。
+        // 专注页：拉开左滑面板，里面是一行能跳过去的「专注记录」。抽屉是 ModalDrawerSheet，
+        // 坐标点击落不到它的行上（与 ModalBottomSheet 同一个坑），所以走语义动作。
         compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("专注记录").assertDoesNotExist()
-
-        // 记录在统计页底部，滚过去看它。
-        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
-        compose.waitForIdle()
-        compose.onNodeWithText("专注统计").performClick()
-        compose.waitForIdle()
-        compose.waitUntilNodeCount(hasText("专注详情"), 1, TimeoutMillis)
-
-        compose.onNodeWithTag(FocusStatsTag).performScrollToNode(hasText("专注记录"))
+        compose.onNodeWithContentDescription("打开清单列表").performClick()
+        repeat(20) { compose.waitForIdle() }
         compose.onNodeWithText("专注记录").assertExists()
-        compose.onNodeWithTag(FocusStatsTag).performScrollToNode(hasText("写季度报告"))
-        compose.onNodeWithText("写季度报告").assertExists()
+        compose.onNodeWithText("专注记录").performSemanticsAction(SemanticsActions.OnClick)
+        repeat(20) { compose.waitForIdle() }
+
+        // 记录页：那条记录整行都在，只有「时刻 · 结果」，没有计时模式。
+        compose.onNodeWithTag(FocusRecordsTag).assertExists()
+        compose.waitUntilNodeCount(hasText("写季度报告"), 1, TimeoutMillis)
         compose.onNodeWithText("已完成", substring = true).assertExists()
         compose.onNodeWithText("番茄钟", substring = true).assertDoesNotExist()
+    }
+
+    /** 记录可以删：⋮ → 删除 → 确认之后它就离开历史，页面回到空态。 */
+    @Test
+    fun aRecordCanBeDeletedFromItsOwnPage() {
+        runBlocking {
+            val taskId = tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
+            focus.startTimer(
+                mode = FocusMode.POMODORO,
+                plannedSeconds = 1_500,
+                taskId = taskId,
+                taskTitleSnapshot = "写季度报告",
+                listNameSnapshot = "收件箱"
+            )
+            focus.finishTimer()
+        }
+
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("打开清单列表").performClick()
+        repeat(20) { compose.waitForIdle() }
+        compose.onNodeWithText("专注记录").performSemanticsAction(SemanticsActions.OnClick)
+        repeat(20) { compose.waitForIdle() }
+        compose.waitUntilNodeCount(hasText("写季度报告"), 1, TimeoutMillis)
+
+        // 记录行最右那个 ⋮ 是「修改 / 删除」；弹出菜单与对话框里的按钮同样走语义动作。
+        compose.onNodeWithContentDescription("更多操作").performClick()
+        repeat(20) { compose.waitForIdle() }
+        compose.onNodeWithText("删除").performSemanticsAction(SemanticsActions.OnClick)
+        repeat(20) { compose.waitForIdle() }
+
+        // 确认框里再点一次「删除」。
+        compose.onNodeWithText("删除这条专注记录？").assertExists()
+        compose.onNodeWithText("删除").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntilNodeCount(hasText("还没有专注记录"), 1, TimeoutMillis)
     }
 
     /**
