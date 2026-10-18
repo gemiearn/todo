@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.FocusSession
+import com.personal.todo.data.db.Tag
 import com.personal.todo.model.FocusDay
 import com.personal.todo.model.FocusHourBar
 import com.personal.todo.model.FocusPeriod
@@ -147,18 +148,40 @@ fun FocusStatsScreen(
     sessions: Flow<List<FocusSession>>,
     zone: ZoneId,
     today: LocalDate,
-    tagNames: List<String>,
+    tags: List<Tag>,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val all by sessions.collectAsStateWithLifecycle(initialValue = emptyList())
 
+    val tagNames = remember(tags) { tags.map { it.name } }
+
     // 整页按标签筛：选一个标签，五张卡都只看那一段记录。空串代表「全部」——用一个哨兵
     // 而不是 null，是因为 rememberSaveable 对可空状态的存取更容易出岔子。
     var tagFilter by rememberSaveable { mutableStateOf("") }
-    val visible = remember(all, tagFilter) {
-        if (tagFilter.isEmpty()) all
-        else all.filter { FocusTagSnapshot.matches(it.tagNamesSnapshot, tagFilter) }
+    val tagIdByName = remember(tags) { tags.associate { it.name to it.id } }
+    val visible = remember(all, tagFilter, tagIdByName) {
+        if (tagFilter.isEmpty()) {
+            all
+        } else {
+            val id = tagIdByName[tagFilter]
+            all.filter { session ->
+                // 标签表里还有这个标签：按 **id** 认人，这样标签改名之后，改名之前那些
+                // 老记录仍然归在同一个标签下（名字变了，id 没变）。
+                (id != null && FocusTagSnapshot.matchesId(session.tagIdsSnapshot, id)) ||
+                    // 没有 id 快照的老记录、以及标签表里已经没有的老名字：只能退回按名字认。
+                    (session.tagIdsSnapshot == null &&
+                        FocusTagSnapshot.matches(session.tagNamesSnapshot, tagFilter))
+            }
+        }
+    }
+    // 「历史标签」：只在没有 id 快照的老记录里出现过、现在标签表里已经没有的名字。它们
+    // 按 id 是认不出来的，但至少要能看见、能点，而不是被静默丢掉。
+    val historyTagNames = remember(all, tagNames) {
+        all.filter { it.tagIdsSnapshot == null }
+            .flatMap { FocusTagSnapshot.names(it.tagNamesSnapshot) }
+            .filter { it !in tagNames }
+            .distinct()
     }
     // 底部那一段逐条记录按天分组。sessions 本来就是「新的在前」，groupBy 保持遇到顺序，
     // 所以日期与同一天里的记录都自然是从近到远。
@@ -232,11 +255,12 @@ fun FocusStatsScreen(
                     }
                 }
             } else {
-                // 有标签表才给筛选行：一个标签都没有时这行只会是个死控件，不放。
-                if (tagNames.isNotEmpty()) {
+                // 一个当前标签都没有、也没有历史标签时，这行只会是个死控件，不放。
+                if (tagNames.isNotEmpty() || historyTagNames.isNotEmpty()) {
                     item(key = "tag-filter") {
                         StatsTagFilterRow(
                             tagNames = tagNames,
+                            historyTagNames = historyTagNames,
                             selected = tagFilter,
                             onSelect = { tagFilter = it }
                         )
@@ -1323,39 +1347,70 @@ private fun Segments(labels: List<String>, selectedIndex: Int, onSelect: (Int) -
 }
 
 /**
- * 统计页顶部的「按标签筛」：一行胶囊，「全部」加每个标签。
+ * 统计页顶部的「按标签筛」：一行胶囊，「全部」加每个标签；标签表里已经删掉、只在老记录
+ * 里留下的名字另起一小段「历史标签」。
  *
  * 这一行筛的是整页——达成率环、总时长、排行、趋势、时间线、热力图都只看筛出来的那
  * 一段记录。只留单选：这一页看的是「这段时间我到底在哪些标签上花了时间」，一次只看
  * 一个标签最清楚，多选拼在一起的数反而不好读。
+ *
+ * 当前标签按 **id** 认人（改名之后的老记录仍归在同一个标签下），历史标签只能按名字认，
+ * 所以分开列，用户看得清哪些是已经不在标签表里的名字。
  */
 @Composable
 private fun StatsTagFilterRow(
     tagNames: List<String>,
+    historyTagNames: List<String>,
     selected: String,
     onSelect: (String) -> Unit
 ) {
     val colors = LocalTodoColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .testTag(FocusStatsTagFilterTag),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        ToggleChip(
-            label = stringResource(R.string.stats_tag_filter_all),
-            selected = selected.isEmpty(),
-            accent = colors.focusAccent,
-            onClick = { onSelect("") }
-        )
-        tagNames.forEach { name ->
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .testTag(FocusStatsTagFilterTag),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             ToggleChip(
-                label = name,
-                selected = selected == name,
+                label = stringResource(R.string.stats_tag_filter_all),
+                selected = selected.isEmpty(),
                 accent = colors.focusAccent,
-                onClick = { onSelect(name) }
+                onClick = { onSelect("") }
             )
+            tagNames.forEach { name ->
+                ToggleChip(
+                    label = name,
+                    selected = selected == name,
+                    accent = colors.focusAccent,
+                    onClick = { onSelect(name) }
+                )
+            }
+        }
+        if (historyTagNames.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.stats_tag_filter_history),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.dateMuted
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                historyTagNames.forEach { name ->
+                    ToggleChip(
+                        label = name,
+                        selected = selected == name,
+                        accent = colors.focusAccent,
+                        onClick = { onSelect(name) }
+                    )
+                }
+            }
         }
     }
 }

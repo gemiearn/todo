@@ -357,6 +357,7 @@
     <string name="stats_duration_hours_minutes">%1$dh%2$dm</string>
     <string name="stats_empty">还没有专注记录。去专注一次，这里就会长出趋势和热力图。</string>
     <string name="stats_tag_filter_all">全部</string>
+    <string name="stats_tag_filter_history">历史标签</string>
     <string name="stats_tag_filter_empty">这个标签下还没有专注记录</string>
     <string name="focus_task_none_label">未关联任务</string>
     <string name="focus_mode_stopwatch">正向计时</string>

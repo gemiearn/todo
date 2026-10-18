@@ -339,8 +339,8 @@ fun TodoApp(
             sessions = focusViewModel.sessions,
             zone = focusRepository.zone,
             today = repository.today(),
-            // 「按标签筛」的那一行胶囊就是这些标签名。
-            tagNames = allTags.map { it.name },
+            // 「按标签筛」那一行胶囊就是这些标签；页面内部按 id 认人，改名后老记录仍归位。
+            tags = allTags,
             onBack = { nav.pop() }
         )
 

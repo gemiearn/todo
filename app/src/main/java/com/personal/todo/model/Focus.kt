@@ -173,17 +173,20 @@ enum class FocusTrendUnit { WEEK, MONTH, YEAR }
 enum class FocusRankBy { TASK, LIST }
 
 /**
- * 一段专注身上带的标签快照：开始时绑定的任务当时有的标签名。
+ * 一段专注身上带的标签快照：开始时绑定的任务当时有的标签。
  *
- * 存成一个用 Unit Separator（U+001F，正常标签名里不会出现的控制字符）连起来的字符串，
- * 而不是另开一张连线表——统计页只需要「这段专注当时带着哪些标签」这一个事实，名字连
- * 起来就够了，也天然跟着 session 一起写成快照：标签以后改名或删掉，都不会改写历史。
+ * 存成两列字符串：**名字**（用 Unit Separator 连起来）负责历史展示，**id**（用逗号连
+ * 起来）负责身份。名字会改、标签会删，id 不会——所以统计页按「当前标签表里那个标签」筛
+ * 整页记录时看 id，改名之后老记录仍归在同一个标签下；只有名字的老记录（这一列还不存在
+ * 时写下的）退回按名字筛，在页面上作为「历史标签」单独列出来，不会被静默丢掉。
  *
- * `null` / 空串都表示「没有标签」：任务当时就没打标签，或者这段记录早于这个列存在。
+ * 两列都不另开连线表：这里要的只是「这段专注当时带着哪些标签」这一个事实。
+ * `null` / 空串都表示「没有标签」。
  */
 object FocusTagSnapshot {
 
     private const val Separator = "\u001F"
+    private const val IdSeparator = ","
 
     /** 把标签名合成快照；没有有效名字时返回 null，不写一个空字符串。 */
     fun encode(names: List<String>): String? {
@@ -195,8 +198,21 @@ object FocusTagSnapshot {
     fun names(snapshot: String?): List<String> =
         snapshot?.split(Separator)?.filter { it.isNotEmpty() } ?: emptyList()
 
-    /** 这条快照里有没有 [name] 这个标签；统计页按标签筛整页记录时用它。 */
+    /** 这条快照里有没有 [name] 这个标签；只在没有 id 快照的老记录上用它。 */
     fun matches(snapshot: String?, name: String): Boolean = name in names(snapshot)
+
+    /** 把标签 id 合成快照；没有有效 id 时返回 null。 */
+    fun encodeIds(ids: List<Long>): String? {
+        val cleaned = ids.filter { it > 0L }.distinct()
+        return if (cleaned.isEmpty()) null else cleaned.joinToString(IdSeparator)
+    }
+
+    /** id 快照里的标签 id；这一列还不存在时写下的老记录返回空。 */
+    fun ids(snapshot: String?): List<Long> =
+        snapshot?.split(IdSeparator)?.mapNotNull { it.trim().toLongOrNull() } ?: emptyList()
+
+    /** 这条快照里有没有 [id] 这个标签；统计页按当前标签筛整页时用它。 */
+    fun matchesId(snapshot: String?, id: Long): Boolean = id in ids(snapshot)
 }
 
 /** 一段可以左右步进的日期区间，含首尾。 */

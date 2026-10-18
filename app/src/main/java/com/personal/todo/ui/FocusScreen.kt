@@ -152,6 +152,10 @@ fun FocusScreen(
     val linkedTagNames = remember(viewModel.linkedTaskId, taskTags) {
         taskTags[viewModel.linkedTaskId].orEmpty().map { it.name }
     }
+    // 名字之外还要记 id：名字会改、标签会删，id 不会，统计页按标签筛时靠它认人。
+    val linkedTagIds = remember(viewModel.linkedTaskId, taskTags) {
+        taskTags[viewModel.linkedTaskId].orEmpty().map { it.id }
+    }
 
     var taskPickerOpen by remember { mutableStateOf(false) }
     val colors = LocalTodoColors.current
@@ -225,6 +229,7 @@ fun FocusScreen(
                         viewModel = viewModel,
                         linkedListName = linkedListName,
                         linkedTagNames = linkedTagNames,
+                        linkedTagIds = linkedTagIds,
                         onPickTask = { taskPickerOpen = true }
                     )
                 } else {
@@ -306,6 +311,7 @@ private fun SetupPanel(
     viewModel: FocusViewModel,
     linkedListName: String?,
     linkedTagNames: List<String>,
+    linkedTagIds: List<Long>,
     onPickTask: () -> Unit
 ) {
     val colors = LocalTodoColors.current
@@ -367,7 +373,7 @@ private fun SetupPanel(
         Button(
             // 开始的这一刻把清单名和标签一起记进 session，统计页就能按清单排行、按标签
             // 筛整页——任务以后换了清单或改了标签，也不会改写已经发生的这段专注。
-            onClick = { viewModel.start(linkedListName, linkedTagNames) },
+            onClick = { viewModel.start(linkedListName, linkedTagNames, linkedTagIds) },
             enabled = viewModel.linkedTaskId != null,
             colors = ButtonDefaults.buttonColors(containerColor = colors.focusAccent),
             modifier = Modifier

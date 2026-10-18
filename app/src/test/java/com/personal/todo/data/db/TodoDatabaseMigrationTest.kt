@@ -6,6 +6,7 @@ import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.HabitRepository
 import com.personal.todo.model.FocusMode
+import com.personal.todo.model.FocusPhase
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.model.Priority
@@ -632,6 +633,117 @@ class TodoDatabaseMigrationTest {
     }
 
     /**
+     * v3 -> v4: 计划时间那一列与两张标签表。`plannedTime` 可空、标签表从空的开始，所以
+     * 升级前的任务、日期与专注记录一个都没被动过；升完之后新列与新表都能正常写读。
+     */
+    @Test
+    fun migratingFromVersion3AddsThePlannedTimeAndTagTables() = runBlocking {
+        val name = "migration-3-to-4.db"
+        context.deleteDatabase(name)
+        createVersion3Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val task = requireNotNull(db.taskDao().getById(1L))
+            assertEquals("迁移前的任务", task.title)
+            assertEquals("升级不会被猜测出计划时间", null, task.plannedTime)
+            assertEquals(LocalDate.of(2026, 10, 14), task.plannedDate)
+
+            assertTrue("标签表是新建的，里面是空的", db.tagDao().observeTags().first().isEmpty())
+            assertEquals(
+                "专注记录照旧读得出来",
+                "迁移前的任务",
+                db.focusDao().getSessions().single().taskTitleSnapshot
+            )
+
+            // 新列与新表升完就能用。
+            val tagId = db.tagDao().insert(
+                Tag(
+                    name = "工作",
+                    color = 0x3D7BF7,
+                    sortOrder = 0,
+                    createdAt = 1_000L,
+                    updatedAt = 1_000L
+                )
+            )
+            db.tagDao().link(TaskTag(taskId = 1L, tagId = tagId))
+            assertEquals(listOf("工作"), db.tagDao().observeTagsOf(1L).first().map { it.name })
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * v4 -> v5: 计时器上新增 `phase` 这一列，而且是 `NOT NULL DEFAULT 'FOCUS'`。已经存在的
+     * 那一行必须原地变成「专注块」——那正是它本来的身份，也是这个默认值的来历。
+     */
+    @Test
+    fun migratingFromVersion4DefaultsTheExistingTimerToAFocusPhase() = runBlocking {
+        val name = "migration-4-to-5.db"
+        context.deleteDatabase(name)
+        createVersion4Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val timer = requireNotNull(db.focusDao().getActiveTimer())
+            assertEquals("老计时器就是一段专注块", FocusPhase.FOCUS, timer.phase)
+            assertEquals("老计时器的累计秒数照旧", 600, timer.accumulatedFocusSeconds)
+
+            val task = requireNotNull(db.taskDao().getById(1L))
+            assertEquals("迁移前的任务", task.title)
+            assertEquals(LocalDate.of(2026, 10, 14), task.plannedDate)
+            assertEquals(LocalTime.of(9, 30), task.dueTime)
+            assertEquals("升级不会被猜测出计划时间", null, task.plannedTime)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * v11 -> v12: 专注记录与计时器上加标签 **id** 快照。两列可空，所以老行回来仍是
+     * 「只有名字、没有 id」——统计页对它们退回按名字筛，并把老名字作为「历史标签」列出，
+     * 不会静默丢掉；升完之后新写进去的记录会带上 id。
+     */
+    @Test
+    fun migratingFromVersion11AddsTheTagIdSnapshotAndKeepsTheOldRows() = runBlocking {
+        val name = "migration-11-to-12.db"
+        context.deleteDatabase(name)
+        createVersion11Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val session = db.focusDao().getSessions().single()
+            assertEquals("迁移前的任务", session.taskTitleSnapshot)
+            assertEquals("工作", session.tagNamesSnapshot)
+            assertNull("老记录没有 id 快照，只能退回按名字筛", session.tagIdsSnapshot)
+
+            val timer = requireNotNull(db.focusDao().getActiveTimer())
+            assertNull("老计时器同样没有 id 快照", timer.tagIdsSnapshot)
+
+            // 列升完就能写：新记录会把 id 一起落库。
+            db.focusDao().upsertActiveTimer(
+                timer.copy(tagIdsSnapshot = FocusTagSnapshot.encodeIds(listOf(7L, 9L)))
+            )
+            assertEquals(
+                listOf(7L, 9L),
+                FocusTagSnapshot.ids(requireNotNull(db.focusDao().getActiveTimer()).tagIdsSnapshot)
+            )
+
+            val habit = db.habitDao().observeHabits().first().single()
+            assertEquals("喝水", habit.name)
+            assertEquals(15, habit.step)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Builds a file backed database exactly as version 10 would have left it: the
      * v9 DDL plus the two habit tables, one habit with a check-in, one finished
      * session and a running timer.
@@ -698,6 +810,178 @@ class TodoDatabaseMigrationTest {
                     "VALUES (1, '2026-10-16', 3, 1000)"
             )
             sqlite.version = 10
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
+     * Builds a file backed database exactly as version 11 would have left it: the
+     * v10 DDL plus 习惯的单位/单次基数与专注的小段列，一条带标签名的专注记录和一只计时器。
+     */
+    private fun createVersion11Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V5_TASK_LISTS)
+            sqlite.execSQL(V8_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V11_FOCUS_SESSIONS)
+            sqlite.execSQL(V11_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL(V11_HABITS)
+            sqlite.execSQL(V10_HABIT_CHECK_INS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_tasks_recurrenceSourceId` ON `tasks` (`recurrenceSourceId`)"
+            )
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habit_check_ins_habitId` ON `habit_check_ins` (`habitId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habit_check_ins_date` ON `habit_check_ins` (`date`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V11_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime, " +
+                    "repeatRule, recurrenceSourceId) " +
+                    "VALUES ('迁移前的任务', NULL, 1, NULL, 'IMPORTANT_NOT_URGENT', NULL, NULL, 0, 1000, 1000, " +
+                    "NULL, NULL, NULL, NULL, NULL, NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO task_events (taskId, eventAt, eventType, titleSnapshot, detailsJson) " +
+                    "VALUES (1, 1000, 'CREATED', '迁移前的任务', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO focus_sessions (taskId, taskTitleSnapshot, listNameSnapshot, tagNamesSnapshot, " +
+                    "mode, startedAt, endedAt, plannedSeconds, actualFocusSeconds, status, focusSegments, note) " +
+                    "VALUES (1, '迁移前的任务', '收件箱', '工作', 'POMODORO', 1000, 2000, 1500, 1500, " +
+                    "'COMPLETED', '1000-2000', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO active_timer (id, mode, phase, taskId, taskTitleSnapshot, listNameSnapshot, " +
+                    "tagNamesSnapshot, plannedSeconds, startedAt, lastResumeAtElapsed, lastResumeAtWallClock, " +
+                    "focusSegments, accumulatedFocusSeconds, running, updatedAt) " +
+                    "VALUES (1, 'POMODORO', 'FOCUS', 1, '迁移前的任务', '收件箱', '工作', 1500, 5000, 5000, " +
+                    "5000, NULL, 600, 1, 6000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO habits (id, name, dailyTarget, unitLabel, stepAmount, sortOrder, createdAt, updatedAt) " +
+                    "VALUES (1, '喝水', 60, '分钟', 15, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO habit_check_ins (habitId, date, count, updatedAt) " +
+                    "VALUES (1, '2026-10-16', 3, 1000)"
+            )
+            sqlite.version = 11
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
+     * Builds a file backed database exactly as version 3 would have left it: the
+     * v2 task shape plus the two focus tables, one task with its 计划日期, its
+     * finished 番茄钟 and a running timer.
+     */
+    private fun createVersion3Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V5_TASK_LISTS)
+            sqlite.execSQL(V2_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V3_FOCUS_SESSIONS)
+            sqlite.execSQL(V3_ACTIVE_TIMER)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V3_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, dueDate, dueTime) " +
+                    "VALUES ('迁移前的任务', NULL, 1, NULL, 'IMPORTANT_NOT_URGENT', NULL, NULL, 0, 1000, 1000, " +
+                    "'2026-10-14', NULL, NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO task_events (taskId, eventAt, eventType, titleSnapshot, detailsJson) " +
+                    "VALUES (1, 1000, 'CREATED', '迁移前的任务', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO focus_sessions (taskId, taskTitleSnapshot, mode, startedAt, endedAt, " +
+                    "plannedSeconds, actualFocusSeconds, status, note) " +
+                    "VALUES (1, '迁移前的任务', 'POMODORO', 1000, 2000, 1500, 1500, 'COMPLETED', NULL)"
+            )
+            sqlite.version = 3
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
+     * Builds a file backed database exactly as version 4 would have left it: the
+     * v3 shape plus 计划时间与两张标签表，一只正在跑的计时器（那时还没有 `phase` 列）。
+     */
+    private fun createVersion4Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V5_TASK_LISTS)
+            sqlite.execSQL(V5_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V3_FOCUS_SESSIONS)
+            sqlite.execSQL(V3_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V4_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime) " +
+                    "VALUES ('迁移前的任务', NULL, 1, NULL, 'IMPORTANT_NOT_URGENT', NULL, NULL, 0, 1000, 1000, " +
+                    "'2026-10-14', NULL, '2026-10-15', '09:30')"
+            )
+            sqlite.execSQL(
+                "INSERT INTO task_events (taskId, eventAt, eventType, titleSnapshot, detailsJson) " +
+                    "VALUES (1, 1000, 'CREATED', '迁移前的任务', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO active_timer (id, mode, taskId, taskTitleSnapshot, plannedSeconds, startedAt, " +
+                    "lastResumeAtElapsed, accumulatedFocusSeconds, running, updatedAt) " +
+                    "VALUES (1, 'POMODORO', 1, '迁移前的任务', 1500, 5000, 5000, 600, 1, 6000)"
+            )
+            sqlite.version = 4
         } finally {
             sqlite.close()
         }
@@ -923,6 +1207,56 @@ class TodoDatabaseMigrationTest {
                 "`startedAt` INTEGER NOT NULL, `lastResumeAtElapsed` INTEGER NOT NULL, " +
                 "`accumulatedFocusSeconds` INTEGER NOT NULL, `running` INTEGER NOT NULL, " +
                 "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+
+        /** The identity hash `schemas/.../3.json` records for version 3. */
+        const val V3_IDENTITY_HASH = "f8879af59eebbe101d1ad2d9373ac261"
+
+        /** 专注记录表到版本 3：第一版的样子，还没有 `listNameSnapshot`。 */
+        const val V3_FOCUS_SESSIONS =
+            "CREATE TABLE IF NOT EXISTS `focus_sessions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`taskId` INTEGER, `taskTitleSnapshot` TEXT, `mode` TEXT NOT NULL, " +
+                "`startedAt` INTEGER NOT NULL, `endedAt` INTEGER NOT NULL, `plannedSeconds` INTEGER NOT NULL, " +
+                "`actualFocusSeconds` INTEGER NOT NULL, `status` TEXT NOT NULL, `note` TEXT, " +
+                "FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        /** 计时器表到版本 3/4：还没有 `phase` 与 `listNameSnapshot`。 */
+        const val V3_ACTIVE_TIMER =
+            "CREATE TABLE IF NOT EXISTS `active_timer` (`id` INTEGER NOT NULL, `mode` TEXT NOT NULL, " +
+                "`taskId` INTEGER, `taskTitleSnapshot` TEXT, `plannedSeconds` INTEGER NOT NULL, " +
+                "`startedAt` INTEGER NOT NULL, `lastResumeAtElapsed` INTEGER NOT NULL, " +
+                "`accumulatedFocusSeconds` INTEGER NOT NULL, `running` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+
+        /** The identity hash `schemas/.../4.json` records for version 4. */
+        const val V4_IDENTITY_HASH = "c0f1de4f0b2452e68a5457492a44ef6f"
+
+        /** The identity hash `schemas/.../11.json` records for version 11. */
+        const val V11_IDENTITY_HASH = "91cdbb79617123c8fe32e8be2d294622"
+
+        /** 专注记录表到版本 11：v9 的那张再加上「真正在跑的小段」。 */
+        const val V11_FOCUS_SESSIONS =
+            "CREATE TABLE IF NOT EXISTS `focus_sessions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`taskId` INTEGER, `taskTitleSnapshot` TEXT, `listNameSnapshot` TEXT, `tagNamesSnapshot` TEXT, " +
+                "`mode` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, `endedAt` INTEGER NOT NULL, " +
+                "`plannedSeconds` INTEGER NOT NULL, `actualFocusSeconds` INTEGER NOT NULL, " +
+                "`status` TEXT NOT NULL, `focusSegments` TEXT, `note` TEXT, " +
+                "FOREIGN KEY(`taskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        /** 计时器表到版本 11：v9 的那张再加上小段列与「当前小段开始的墙上时刻」。 */
+        const val V11_ACTIVE_TIMER =
+            "CREATE TABLE IF NOT EXISTS `active_timer` (`id` INTEGER NOT NULL, `mode` TEXT NOT NULL, " +
+                "`phase` TEXT NOT NULL DEFAULT 'FOCUS', `taskId` INTEGER, `taskTitleSnapshot` TEXT, " +
+                "`listNameSnapshot` TEXT, `tagNamesSnapshot` TEXT, `plannedSeconds` INTEGER NOT NULL, " +
+                "`startedAt` INTEGER NOT NULL, `lastResumeAtElapsed` INTEGER NOT NULL, " +
+                "`lastResumeAtWallClock` INTEGER NOT NULL DEFAULT 0, `focusSegments` TEXT, " +
+                "`accumulatedFocusSeconds` INTEGER NOT NULL, `running` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+
+        /** 习惯表到版本 11：v10 的那张再加上单位与单次基数。 */
+        const val V11_HABITS =
+            "CREATE TABLE IF NOT EXISTS `habits` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `dailyTarget` INTEGER NOT NULL, `unitLabel` TEXT, `stepAmount` INTEGER, " +
+                "`sortOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
 
         const val V5_TAGS =
             "CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +

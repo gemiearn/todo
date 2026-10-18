@@ -207,12 +207,21 @@ class FocusViewModel(
      * [tagNames] are the 标签 the task carries right now, for the same reason: the
      * statistics page can filter the whole page by one tag afterwards, and moving
      * or renaming a tag later never rewrites what already happened.
+     *
+     * [tagIds] are those same tags' ids and the one that actually decides identity:
+     * a tag renamed later still matches its old sessions by id, while the name
+     * snapshot is what the history keeps showing.
      */
-    fun start(listName: String? = null, tagNames: List<String> = emptyList()) {
+    fun start(
+        listName: String? = null,
+        tagNames: List<String> = emptyList(),
+        tagIds: List<Long> = emptyList()
+    ) {
         val taskId = linkedTaskId ?: return
         val title = linkedTaskTitle
         val target = if (mode.timed) plannedLengthMinutes * 60 else 0
         val tagSnapshot = FocusTagSnapshot.encode(tagNames)
+        val tagIdSnapshot = FocusTagSnapshot.encodeIds(tagIds)
         viewModelScope.launch {
             focusRepository.startTimer(
                 mode = mode,
@@ -220,7 +229,8 @@ class FocusViewModel(
                 taskId = taskId,
                 taskTitleSnapshot = title,
                 listNameSnapshot = listName,
-                tagNamesSnapshot = tagSnapshot
+                tagNamesSnapshot = tagSnapshot,
+                tagIdsSnapshot = tagIdSnapshot
             )
         }
     }

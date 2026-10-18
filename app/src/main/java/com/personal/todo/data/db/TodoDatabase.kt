@@ -60,6 +60,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 都为空时按「次 / 1」算，老习惯显示不变）与 `focus_sessions.focusSegments` /
  * `active_timer.focusSegments` + `active_timer.lastResumeAtWallClock`（每段真正在跑的
  * 时间，供「最佳专注时间」按小段摊；老记录那列为空，统计退回旧口径）。
+ *
+ * Version 12 加 `focus_sessions.tagIdsSnapshot` 与 `active_timer.tagIdsSnapshot`：一段专注
+ * 开始时它绑定任务身上那些标签的 **id**。名字会改、标签会删，id 不会，统计页按标签筛整页
+ * 时看 id 才认得住「改名之后的同一个标签」。两列可空，升级前记下的记录没有 id，退回按
+ * 名字筛（页面把这种老名字作为「历史标签」列出来）。
  */
 @Database(
     entities = [
@@ -73,7 +78,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Habit::class,
         HabitCheckIn::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -318,6 +323,18 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v11 -> v12: 一段专注开始时任务身上那些标签的 id。两列可空，所以升级前记下的
+         * session、以及此刻正在跑的计时器，回来都是「没有 id 快照」——统计页对这种老记录
+         * 退回按名字筛，并把它作为「历史标签」列出来，不静默丢掉。
+         */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `focus_sessions` ADD COLUMN `tagIdsSnapshot` TEXT")
+                db.execSQL("ALTER TABLE `active_timer` ADD COLUMN `tagIdsSnapshot` TEXT")
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -329,7 +346,8 @@ abstract class TodoDatabase : RoomDatabase() {
             MIGRATION_7_8,
             MIGRATION_8_9,
             MIGRATION_9_10,
-            MIGRATION_10_11
+            MIGRATION_10_11,
+            MIGRATION_11_12
         )
     }
 }
