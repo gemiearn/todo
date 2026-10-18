@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标 F·青柠的背景层：青绿→蓝的斜向渐变，铺满整个 108dp 画布。
+
+    渐变背景没法用 <color> 表达，所以做成一张矢量：一个铺满画布的矩形，填色用
+    aapt 的 <gradient>（API 24+ 支持，本项目 minSdk 26）。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0 h108 v108 h-108 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108"
+                android:type="linear">
+                <item android:offset="0" android:color="#6BE3A0" />
+                <item android:offset="1" android:color="#35C4C4" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

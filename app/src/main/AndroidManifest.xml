@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
@@ -19,16 +19,103 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TodoPomodoro">
 
+        <!--
+            入口是 MainActivity，但**桌面图标不属于它**：图标在设置页可切换，做法是给它
+            挂 6 个 activity-alias，每个 alias 带自己的一套 android:icon，同一时刻只有
+            一个 enabled。MainActivity 因此不再挂 MAIN/LAUNCHER，否则桌面上会出现两个
+            入口。
+
+            切换由 PackageManager.setComponentEnabledSetting 完成（见
+            data/AppearanceSettings.kt 里的 LauncherIcon 与 applyLauncherIcon）。系统桌面
+            会在切完之后重建这一个入口。
+
+            alias 上不写 android:label：它会继承 targetActivity 的，也就是 @string/app_name，
+            写了反而多一条 RedundantLabel 警告。
+        -->
         <activity
             android:name=".MainActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="@string/app_name"
-            android:theme="@style/Theme.TodoPomodoro">
+            android:theme="@style/Theme.TodoPomodoro" />
+
+        <!-- 默认那版：B·计时环（也就是安装后桌面上看到的第一个图标）。 -->
+        <activity-alias
+            android:name=".MainActivityRing"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <!-- A·番茄 -->
+        <activity-alias
+            android:name=".MainActivityTomato"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_tomato"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- D·时钟面 -->
+        <activity-alias
+            android:name=".MainActivityClock"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_clock"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- E·四色方块 -->
+        <activity-alias
+            android:name=".MainActivityQuad"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_quad"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- F·青柠渐变 -->
+        <activity-alias
+            android:name=".MainActivityLime"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_lime"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- G·暖阳渐变 -->
+        <activity-alias
+            android:name=".MainActivitySun"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_sun"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
     </application>
 
 </manifest>
+

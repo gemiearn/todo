@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标 B·计时环的 monochrome 层：外环描边 + 勾。底色与高光环会被系统丢掉，所以这里
+    只画「环 + 勾」两笔；勾的端点离环内缘还有 1dp 出头，单色下不会糊到一起。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,54 m-19.5,0 a19.5,19.5 0 1,0 39,0 a19.5,19.5 0 1,0 -39,0"
+        android:strokeColor="#000000"
+        android:strokeWidth="7.5" />
+    <path
+        android:pathData="M45,55 L51,61 L64,49"
+        android:strokeColor="#000000"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

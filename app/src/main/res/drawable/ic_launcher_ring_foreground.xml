@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标 B·计时环（默认这版）：深蓝底，底环 + 跑动的红弧 + 细内环 + 一道很淡的高光环 + 白勾。
+
+    红弧是整圈的 80%（288°）：矢量图不支持 stroke-dasharray，所以直接画成一段弧——从 12
+    点方向顺时针转到 (35.45,47.97)，剩下的 72° 缺口正好落在勾的短臂那一侧。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,54 m-19.5,0 a19.5,19.5 0 1,0 39,0 a19.5,19.5 0 1,0 -39,0"
+        android:strokeColor="#24314D"
+        android:strokeWidth="7.5" />
+    <path
+        android:pathData="M54,34.5 A19.5,19.5 0 1 1 35.45,47.97"
+        android:strokeColor="#F0665B"
+        android:strokeWidth="7.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,54 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0"
+        android:strokeColor="#2C3A57"
+        android:strokeWidth="1.4" />
+    <path
+        android:pathData="M54,54 m-19.5,0 a19.5,19.5 0 1,0 39,0 a19.5,19.5 0 1,0 -39,0"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.08"
+        android:strokeWidth="11" />
+    <path
+        android:pathData="M45,55 L51,61 L64,49"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 图标 A·番茄：番茄本体居中（圆心 (54,57) 半径 20），叶子收小，圆形遮罩下不顶边。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,37 m-20,0 a20,20 0 1,0 40,0 a20,20 0 1,0 -40,0"
+        android:fillColor="#F0665B" />
+    <path
+        android:pathData="M47,50 m-6,0 a6,3.6 0 1,0 12,0 a6,3.6 0 1,0 -12,0"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.5" />
+    <path
+        android:pathData="M54,35 L42,29 L45,37 Z"
+        android:fillColor="#3DBE7B" />
+    <path
+        android:pathData="M54,35 L66,29 L63,37 Z"
+        android:fillColor="#3DBE7B" />
+    <path
+        android:pathData="M52.4,30.6 a1.6,1.6 0 0 1 3.2,0 v3.2 a1.6,1.6 0 0 1 -3.2,0 z"
+        android:fillColor="#2E9E63" />
+</vector>

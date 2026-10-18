@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标 E·四色方块：四个 20×20、圆角 6 的方块拼成四象限，颜色就是应用里那四色
+    （红 / 琥珀 / 蓝 / 绿），最鲜艳活泼的一版。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M38.5,32.5 h8 a6,6 0 0 1 6,6 v8 a6,6 0 0 1 -6,6 h-8 a6,6 0 0 1 -6,-6 v-8 a6,6 0 0 1 6,-6 z"
+        android:fillColor="#F0665B" />
+    <path
+        android:pathData="M61.5,32.5 h8 a6,6 0 0 1 6,6 v8 a6,6 0 0 1 -6,6 h-8 a6,6 0 0 1 -6,-6 v-8 a6,6 0 0 1 6,-6 z"
+        android:fillColor="#F5A623" />
+    <path
+        android:pathData="M38.5,55.5 h8 a6,6 0 0 1 6,6 v8 a6,6 0 0 1 -6,6 h-8 a6,6 0 0 1 -6,-6 v-8 a6,6 0 0 1 6,-6 z"
+        android:fillColor="#3D7BF7" />
+    <path
+        android:pathData="M61.5,55.5 h8 a6,6 0 0 1 6,6 v8 a6,6 0 0 1 -6,6 h-8 a6,6 0 0 1 -6,-6 v-8 a6,6 0 0 1 6,-6 z"
+        android:fillColor="#3DBE7B" />
+</vector>

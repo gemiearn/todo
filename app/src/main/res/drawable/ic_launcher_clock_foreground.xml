@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标 D·时钟面：白盘（圆心 (54,51) 半径 23）+ 四个刻度 + 指针 + 橙色秒针，
+    底下一道清单横条。
+
+    刻度与底下的横条宽度都小于 3dp，用「圆头短线段」代替圆角矩形——笔画两端各外扩半个
+    线宽，正好还原设计里的胶囊形状。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,51 m-23,0 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M54,32 L54,34.4"
+        android:strokeColor="#C9CDD4"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,68 L54,70.4"
+        android:strokeColor="#C9CDD4"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M32,51 L34.4,51"
+        android:strokeColor="#C9CDD4"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M73.6,51 L76,51"
+        android:strokeColor="#C9CDD4"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,51 L54,39"
+        android:strokeColor="#1C1C1E"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,51 L64.5,55"
+        android:strokeColor="#1C1C1E"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,51 L54,63"
+        android:strokeColor="#F5A623"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,51 m-2.9,0 a2.9,2.9 0 1,0 5.8,0 a2.9,2.9 0 1,0 -5.8,0"
+        android:fillColor="#1C1C1E" />
+    <path
+        android:pathData="M44.4,80.4 L63.6,80.4"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.6"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M48.2,85.8 L59.8,85.8"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.35"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round" />
+</vector>

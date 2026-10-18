@@ -58,6 +58,22 @@ interface FocusDao {
     fun observeTaskTotals(taskId: Long): Flow<TaskFocusTotals>
 
     /**
+     * 一条**重复任务整条系列**的累计专注秒数：规则源自己 + 它生成的所有实例。
+     *
+     * 任务详情页只在规则源那一行显示这个数（「本系列…」）；实例页读的是 [observeTaskTotals]，
+     * 只看自己那一天。删掉的实例不算——它们连会话都不该留在系列里。
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(actualFocusSeconds), 0)
+        FROM focus_sessions
+        WHERE taskId = :sourceId
+           OR taskId IN (SELECT id FROM tasks WHERE recurrenceSourceId = :sourceId)
+        """
+    )
+    fun observeSeriesFocusSeconds(sourceId: Long): Flow<Int>
+
+    /**
      * 一个清单的累计专注秒数：`focus_sessions` 按**任务当前所在清单**汇总。
      *
      * 用 join 而不是 `listNameSnapshot`——清单小结说的是「这个清单现在」，快照只说明当时

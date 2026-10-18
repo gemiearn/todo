@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
+import com.personal.todo.data.TaskSeriesTotals
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
@@ -84,6 +85,7 @@ fun TaskDetailScreen(
     val tags by viewModel.tags.collectAsStateWithLifecycle()
     val subtaskAddFailures by viewModel.subtaskAddFailures.collectAsStateWithLifecycle()
     val focusTotals by viewModel.focusTotals.collectAsStateWithLifecycle()
+    val seriesTotals by viewModel.seriesTotals.collectAsStateWithLifecycle()
     // 操作历史默认收起：整页事件流会把页面撑得很长，先说「有几条」，想看再点开。
     var eventsExpanded by rememberSaveable { mutableStateOf(false) }
     val nowMillis = rememberNowMillis()
@@ -163,8 +165,8 @@ fun TaskDetailScreen(
             }
 
             // 专注小结：这条任务一共专注了多久、几次、其中几个番茄（数据来自另一张表，
-            // 由 view model 单独订阅）。
-            item { FocusSummaryCard(totals = focusTotals) }
+            // 由 view model 单独订阅）。重复任务的规则源还多一行整条系列的合计。
+            item { FocusSummaryCard(totals = focusTotals, series = seriesTotals) }
 
             if (current.parentTaskId == null) {
                 item { SectionTitle(stringResource(R.string.task_subtasks_title)) }
@@ -397,9 +399,12 @@ private fun CollapsibleSectionTitle(
  * 这条任务的「专注小结」：累计时长、专注次数、其中的番茄数。
  *
  * 一次都没专注过时只说一句话，不摆一排 0——那比空着更让人以为统计坏了。
+ *
+ * [series] 只有重复任务的规则源才有（实例页是 null）：那一行说的是**整条系列**，不是眼前
+ * 这一条。系列还没完成过也没专注过时不显示，免得跟上面那句「还没有专注记录」重复。
  */
 @Composable
-private fun FocusSummaryCard(totals: TaskFocusTotals) {
+private fun FocusSummaryCard(totals: TaskFocusTotals, series: TaskSeriesTotals?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -434,6 +439,19 @@ private fun FocusSummaryCard(totals: TaskFocusTotals) {
                     R.string.task_focus_summary_detail,
                     totals.sessionCount,
                     totals.pomodoroCount
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalTodoColors.current.dateMuted
+            )
+        }
+
+        if (series != null && (series.completedCount > 0 || series.focusSeconds > 0)) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(
+                    R.string.task_focus_series,
+                    series.completedCount,
+                    durationText(series.focusSeconds)
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = LocalTodoColors.current.dateMuted

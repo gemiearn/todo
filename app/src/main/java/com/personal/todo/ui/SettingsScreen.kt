@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.personal.todo.R
 import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.ColorStyle
+import com.personal.todo.data.LauncherIcon
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.launch
@@ -40,13 +41,15 @@ import kotlinx.coroutines.launch
 internal const val SettingsScreenTag = "settings-screen"
 
 /**
- * 设置页 (pushed from 更多). It owns exactly one real setting today - 主题三选
- * (跟随系统 / 浅色 / 深色), stored locally and applied to the whole tree at once -
- * and gathers the entries that used to be scattered: 标签管理, 专注统计, 番茄钟 and
- * the data export placeholder.
+ * 设置页 (pushed from 更多). 它管三件外观（主题三选、色系三选、背景五选）与一件真设置
+ * ——桌面图标六选；再往下是把原来散落的入口收拢：标签管理、专注统计、番茄钟与数据导出
+ * 的占位。
  *
  * A row that only gathers information is a way in, not a dead button: every entry
  * here opens something, and 数据导出 says plainly that it is not built yet.
+ *
+ * 图标这一组的写法与前两组一致（选了打勾），落盘之外还要调一次 [applyLauncherIcon]，
+ * 由 MainActivity 那边负责，页面本身不碰 PackageManager。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +60,8 @@ fun SettingsScreen(
     onColorStyleChange: (ColorStyle) -> Unit,
     backgroundStyle: BackgroundStyle,
     onBackgroundStyleChange: (BackgroundStyle) -> Unit,
+    launcherIcon: LauncherIcon,
+    onLauncherIconChange: (LauncherIcon) -> Unit,
     onOpenFocus: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenTags: () -> Unit,
@@ -115,6 +120,21 @@ fun SettingsScreen(
                     onClick = { onBackgroundStyleChange(style) }
                 )
             }
+
+            SectionLabel(stringResource(R.string.settings_section_icon))
+            LauncherIcon.entries.forEach { icon ->
+                ChoiceRow(
+                    label = stringResource(launcherIconLabelRes(icon)),
+                    selected = icon == launcherIcon,
+                    onClick = { onLauncherIconChange(icon) }
+                )
+            }
+            Text(
+                text = stringResource(R.string.settings_icon_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.dateMuted,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
+            )
 
             SectionLabel(stringResource(R.string.settings_section_more))
             SettingsEntry(
@@ -232,4 +252,13 @@ private fun backgroundStyleLabelRes(style: BackgroundStyle): Int = when (style) 
     BackgroundStyle.MINT -> R.string.settings_background_mint
     BackgroundStyle.LILAC -> R.string.settings_background_lilac
     BackgroundStyle.DUSK -> R.string.settings_background_dusk
+}
+
+private fun launcherIconLabelRes(icon: LauncherIcon): Int = when (icon) {
+    LauncherIcon.TOMATO -> R.string.settings_icon_tomato
+    LauncherIcon.RING -> R.string.settings_icon_ring
+    LauncherIcon.CLOCK -> R.string.settings_icon_clock
+    LauncherIcon.QUAD -> R.string.settings_icon_quad
+    LauncherIcon.LIME -> R.string.settings_icon_lime
+    LauncherIcon.SUN -> R.string.settings_icon_sun
 }

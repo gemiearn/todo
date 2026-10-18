@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 图标底色＝应用强调色（原来是 Material 蓝 #1565C0，和应用里的蓝不是一支）。 -->
-    <color name="ic_launcher_background">#3D7BF7</color>
+    <!--
+        应用图标（6 版，App 内可切换，见 settings_section_icon）的纯色底色。
+        两版渐变图标不走这里：它们的背景是 drawable/ic_launcher_lime_background.xml
+        与 ic_launcher_sun_background.xml 那两张带渐变的矢量。
+
+        坐标口径统一：108dp 的自适应图标画布，所有图案都压在以 (54,54) 为心、半径 33
+        的安全圆里，圆形 / squircle / 方形遮罩都不会切到。
+    -->
+    <color name="ic_launcher_tomato_background">#FFF4EC</color>
+    <color name="ic_launcher_ring_background">#16233A</color>
+    <color name="ic_launcher_clock_background">#1C1C1E</color>
+    <color name="ic_launcher_quad_background">#F7F9FC</color>
 </resources>

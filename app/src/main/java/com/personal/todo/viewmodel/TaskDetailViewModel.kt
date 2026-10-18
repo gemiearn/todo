@@ -6,13 +6,19 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
+import com.personal.todo.data.TaskSeriesTotals
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskFocusTotals
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -21,6 +27,7 @@ import kotlinx.coroutines.launch
  * history. Subtasks and events are live queries; the task row is reloaded after
  * every action because those actions change its own state.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class TaskDetailViewModel(
     private val repository: TaskRepository,
     focusRepository: FocusRepository,
@@ -44,6 +51,22 @@ class TaskDetailViewModel(
             SharingStarted.WhileSubscribed(5_000),
             TaskFocusTotals(totalSeconds = 0, sessionCount = 0, pomodoroCount = 0)
         )
+
+    /**
+     * 重复任务**整条系列**的合计（完成几次、共专注多久）：只有规则源那一行有值，实例页与
+     * 普通任务都是 null。依据就是 `repeatRule`——规则只长在源上，源没了整条系列也就没了。
+     */
+    val seriesTotals: StateFlow<TaskSeriesTotals?> = task
+        .map { current -> current?.takeIf { it.repeatRule != null }?.id }
+        .distinctUntilChanged()
+        .flatMapLatest { sourceId ->
+            if (sourceId == null) {
+                flowOf<TaskSeriesTotals?>(null)
+            } else {
+                repository.observeSeriesTotals(sourceId)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val subtasks: StateFlow<List<Task>> = repository.observeSubtasks(taskId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

@@ -158,6 +158,23 @@ interface TaskDao {
     fun observeListProgress(listId: Long): Flow<ListProgress>
 
     /**
+     * 一条重复任务的**整条系列**已经完成过几次：规则源自己 + 它生成的所有实例。
+     *
+     * 任务详情页只在规则源那一行显示它（「本系列完成 k 次 · 共专注 X」），实例页不显示
+     * ——实例只代表那天那一次。口径与清单行相反：这里**要**数实例，因为问的就是系列。
+     * 删掉的实例不算（`deletedAt IS NULL`），重复打勾又取消的也只算当前状态。
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM tasks
+        WHERE deletedAt IS NULL
+          AND completedAt IS NOT NULL
+          AND (id = :sourceId OR recurrenceSourceId = :sourceId)
+        """
+    )
+    fun observeSeriesCompletedCount(sourceId: Long): Flow<Int>
+
+    /**
      * Every not soft deleted task per list, in any state and including
      * subtasks: the number of tasks a list delete would move to the inbox.
      *

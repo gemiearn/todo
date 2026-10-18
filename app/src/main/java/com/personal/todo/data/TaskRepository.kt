@@ -58,6 +58,14 @@ data class ListSummary(val total: Int, val completed: Int, val focusSeconds: Int
     val progress: Float get() = if (total <= 0) 0f else completed.toFloat() / total
 }
 
+/**
+ * 一条**重复任务整条系列**的合计：系列里已经完成过几次、加起来专注了多久。
+ *
+ * 只在任务详情页的规则源那一行显示（`repeatRule != null` 的那条）；某个实例的详情页看到
+ * 的是它自己那一天，不是整条系列。
+ */
+data class TaskSeriesTotals(val completedCount: Int, val focusSeconds: Int)
+
 class TaskRepository(
     private val db: TodoDatabase,
     private val inboxName: String,
@@ -169,6 +177,14 @@ class TaskRepository(
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observeInboxSummary(): Flow<ListSummary> =
         flow { emit(ensureInbox()) }.flatMapLatest { observeListSummary(it) }
+
+    /** 一条重复任务整条系列的合计：完成过几次、一共专注了多久。 */
+    fun observeSeriesTotals(sourceId: Long): Flow<TaskSeriesTotals> = combine(
+        taskDao.observeSeriesCompletedCount(sourceId),
+        focusDao.observeSeriesFocusSeconds(sourceId)
+    ) { completedCount, focusSeconds ->
+        TaskSeriesTotals(completedCount = completedCount, focusSeconds = focusSeconds)
+    }
 
     /** Idempotent: returns the built-in inbox, creating it if it is missing. */
     suspend fun ensureInbox(): Long {

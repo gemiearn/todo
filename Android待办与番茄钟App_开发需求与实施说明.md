@@ -438,9 +438,9 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 
 ### 13.1 基线状态
 
-- 已发布版本 **0.3.8**（数据模型 **v11**，0.3.7→0.3.8 无模型变更）。上一版 0.3.7 与文档（README、本节）均已推送。
-- 已具备：任务/子任务/清单、今天/未来/逾期/日历（年/月/周/三日）、四象限、标签、显示范围筛选、设置（主题+色系）、专注番茄钟（正计时/倒计时/番茄钟+休息+白噪音）、专注统计（按标签筛、自定义区间、最佳专注时间按「真正在跑的小段」算）、**习惯打卡**（单位与单次基数可自定义）、**习惯页视觉**（今日概况 + 每习惯进度条 + 突出今天那一列）、**抽屉按裁剪方案重做**、**日历页按设计稿精修**（今天描边圈、字重分层、日程区标题条、任务卡收口、空状态）、**逾期兜底**（见 N9：没有截止日期时按计划日期判）。
-- v11 迁移一次做完两件事：`habits.unitLabel`/`stepAmount` 与 `focus_sessions.focusSegments`/`active_timer.focusSegments`+`lastResumeAtWallClock`，老数据两列留空、显示与统计一律退回老口径。0.3.7 与 0.3.8 **都不动数据模型**。
+- 已发布版本 **0.4.0**（数据模型 **v12**，0.3.9→0.4.0 无模型变更）。更早的 0.3.6–0.3.9 与本节、README 均已推送。
+- 已具备：任务/子任务/清单、今天/未来/逾期/日历（年/月/周/三日）、四象限、标签、显示范围筛选、外观设置（主题 + 色系 + 背景 + **桌面图标六选**）、专注番茄钟（正计时/倒计时/番茄钟+休息+白噪音）、专注统计（按标签筛、自定义区间、最佳专注时间按「真正在跑的小段」算）+ **单任务与清单两条小结**、**任务卡「开始专注」**、**习惯打卡**（单位与单次基数可自定义）、**习惯页视觉**（今日概况 + 每习惯进度条 + 突出今天那一列）、**抽屉按裁剪方案重做**、**日历页按设计稿精修**（今天描边圈、字重分层、日程区标题条、任务卡收口、空状态）、**逾期兜底**（见 N9：没有截止日期时按计划日期判）、**重复任务系列合计**（规则源那一行「本系列完成 n 次 · 共专注 X」）。应用名＝**专注清单**。
+- v11 迁移一次做完两件事：`habits.unitLabel`/`stepAmount` 与 `focus_sessions.focusSegments`/`active_timer.focusSegments`+`lastResumeAtWallClock`，老数据两列留空、显示与统计一律退回老口径；v12 只加 `focus_sessions.tagIdsSnapshot` 与 `active_timer.tagIdsSnapshot`。0.3.7–0.4.0 **都不动数据模型**。
 
 ### 13.2 新增需求（按优先级排序）
 
@@ -590,10 +590,22 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 4. **不需要 DB 迁移**：三块都是对现有表聚合；schema 仍是 v12，`app/schemas` 未动。
 5. **版本**：`appVersionCode 28→29`、`appVersionName 0.3.8→0.3.9`（末位进位，**不动 README**）。全量单测 242 全过、lint 0 error / 4 warning。
 
+**第六批（= 0.4.0；DB 仍是 v12、无迁移）**
+
+用户先要求「把这个项目的名字改了、应用图标换了，做一个好看的」，看过 6 版候选后定下**做可切换图标**，又要求「**重新创建图标，不是基于现在的**」并逐版给了反馈（A 圆形遮罩不行 / B 还不够精致 / C 差一点 / 再要两版更鲜艳、小清新的）。这一批是**外观批**：
+
+1. **应用改名**：`strings.xml` 的 `app_name` 改成「专注清单」（清单里一律引用 `@string/app_name`，别名也用它）。
+2. **图标重画（不是改旧的）**：旧那版（蓝底白勾 + 琥珀橙点）整套删掉，重做 **6 版纯矢量自适应图标**——A 番茄 / B 计时环 + 勾 / D 时钟面 / E 四色方块 / F 青柠渐变 + 大勾 / G 暖阳渐变 + 大勾。坐标口径统一：108dp 画布，图案全部压在以 (54,54) 为心、半径 33 的安全圆内，圆形 / squircle / 方形遮罩都不会切。每版三件套＝前景 `ic_launcher_<key>_foreground.xml` + `ic_launcher_<key>_monochrome.xml` + 背景（纯色的用 `values/colors.xml` 的 `ic_launcher_<key>_background`，渐变的用 `ic_launcher_<key>_background.xml` 那张带 `aapt:<gradient>` 的矢量）。落地两个坑：**矢量图不支持 `stroke-dasharray`**，B 的红弧直接画成一段 288° 的 `A` 弧；小尺寸圆角矩形（刻度、底部清单条）用「圆头短线段」等价还原。
+3. **App 内可切换图标**：`AndroidManifest.xml` 给 `.MainActivity` 挂 **6 个 `<activity-alias>`**（各自 `android:icon` + MAIN/LAUNCHER intent-filter，**只有 `MainActivityRing` 是 `enabled="true"`，其余 5 个 false**）；`MainActivity` 自己**不再挂 MAIN/LAUNCHER**（否则桌面会出现两个入口）且 `exported="false"`。切换＝`AppearanceSettings.kt` 的 `applyLauncherIcon(context, icon)`：`PackageManager.setComponentEnabledSetting` 启用选中的 alias、禁用其余 5 个，一律 `DONT_KILL_APP`（不杀进程，代价是**系统桌面会把这个入口重建一次**，看上去像刚装了一遍）。`LauncherIcon` 枚举的 `aliasName` 与清单里的 alias 名一一对应，偏好存 `AppearanceSettingsStore`（key `launcher_icon`，默认 `RING`）。设置页新增「**应用图标**」分组（六行 ChoiceRow + 一行灰字提示），一路从 `MainActivity` → `TodoApp` → `SettingsScreen` 传下去。
+4. **重复任务系列合计**（上一批点名要加、本批补上）：`TaskDao.observeSeriesCompletedCount(sourceId)`（`deletedAt IS NULL AND completedAt IS NOT NULL AND (id = :sourceId OR recurrenceSourceId = :sourceId)`）+ `FocusDao.observeSeriesFocusSeconds(sourceId)`（`taskId = :sourceId OR taskId IN (SELECT id FROM tasks WHERE recurrenceSourceId = :sourceId)`）→ `TaskRepository.observeSeriesTotals` → `TaskSeriesTotals(completedCount, focusSeconds)`；`TaskDetailViewModel.seriesTotals` 用 `flatMapLatest` **只在 `repeatRule != null` 时**订阅（普通任务与重复实例都是 null），任务详情页「专注小结」卡多一行「**本系列完成 n 次 · 共专注 X**」（两项都是 0 就不显示，免得和「还没有专注记录」重复）。
+5. **不需要 DB 迁移**：外观与这条聚合都只读现有表；schema 仍是 v12。
+6. **版本**：`appVersionCode 29→30`、`appVersionName 0.3.9→0.4.0`（**中位进位，按约定同步刷 README**：当前进度/功能清单 + versionCode/versionName + schema 版本）。包 `target/0.4.0/app-debug-0.4.0.apk`。
+
 ### 13.6 版本规划
 
 - **0.3.6（已交付）**：N1、N2（四象限）+ N3（专注小段统计）+ N4（被杀后继续跑）+ N5（习惯单位与单次基数）。DB 升 v11，一次迁移同时加习惯两列与专注小段列。
 - **0.3.7（已交付）**：N6（习惯页视觉：今日概况 + 每习惯进度条 + 突出「今天」那一列）+ N7（抽屉按裁剪方案重做）+ N8（日历页 ②③④⑤⑥，① 跳过 + 顶栏图标上色试验）。纯界面，DB 仍是 v11，**不动 README**（只有中位版本号进位才刷 README）。
 - **0.3.8（已交付，另一个 AI 工具实现）**：N9（逾期兜底：显式截止优先，没有截止日期时按计划日期当天结束判，`plannedTime` 不参与）。纯逻辑，DB 仍是 v11，**不动 README**（末位进位）。附带：4 个 Compose 冒烟测试被移到 `src/testDebug`（只有 debug 变体的单测会跑它们；CI 跑的正是 `testDebugUnitTest`，所以没漏跑）。
 - **0.3.9（已交付）**：`方案文档_单任务详情与清单统计.md` 里 A/B/C 三块按文档推荐口径落地——**单任务专注小结 + 操作历史收起**、**清单页顶部小结**、**任务卡「开始专注」**；另含两批修复（日历卡顿回退固定高度、圆点琥珀橙/绿、重复任务只留规则源、背景五选等）。**DB 仍是 v12，无迁移**；末位进位，**不动 README**。包 `target/0.3.9/app-debug-0.3.9.apk`。
+- **0.4.0（本次交付）**：应用改名「专注清单」+ **图标整套重画为 6 版**（番茄 / 计时环 / 时钟面 / 四色方块 / 青柠渐变 / 暖阳渐变）+ **设置页「应用图标」六选**（靠 6 个 `<activity-alias>` 与 `setComponentEnabledSetting` 切换）+ **重复任务系列合计**。**DB 仍是 v12，无迁移**；中位进位，**已同步刷 README**。包 `target/0.4.0/app-debug-0.4.0.apk`。
 - **下一版候选**：§13.3 里那几项，其中第 6 条（只有时间段任务才判结尾、其余按「创建日期」判）用户已经说了「之后做」，动手前要先拍板「创建日期」到底指哪一天。此外还有 §13.5「仍未做」里那一串（逾期按时刻刷新、切日期闪空态、重复任务模型定稿、时区统一、性能与测试盲区）。

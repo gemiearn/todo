@@ -66,6 +66,15 @@
     <string name="settings_background_mint">薄荷</string>
     <string name="settings_background_lilac">雾紫</string>
     <string name="settings_background_dusk">暮蓝</string>
+    <!-- 应用图标六选：切换靠清单里的 6 个 activity-alias，桌面入口会被系统重建一次 -->
+    <string name="settings_section_icon">应用图标</string>
+    <string name="settings_icon_hint">切完桌面入口会重建一次，图标才会变</string>
+    <string name="settings_icon_tomato">番茄</string>
+    <string name="settings_icon_ring">计时环 + 勾</string>
+    <string name="settings_icon_clock">时钟面</string>
+    <string name="settings_icon_quad">四色方块</string>
+    <string name="settings_icon_lime">青柠渐变</string>
+    <string name="settings_icon_sun">暖阳渐变</string>
     <string name="settings_section_more">更多</string>
     <string name="settings_export">数据导出</string>
     <string name="settings_export_soon_short">即将推出</string>
@@ -243,6 +252,8 @@
     <string name="task_focus_summary_empty">还没有专注记录</string>
     <string name="task_focus_summary_total">累计 %1$s</string>
     <string name="task_focus_summary_detail">专注 %1$d 次 · 番茄 %2$d 个</string>
+    <!-- 重复任务的规则源才显示这一行；实例页看到的是它自己那一天 -->
+    <string name="task_focus_series">本系列完成 %1$d 次 · 共专注 %2$s</string>
     <!-- 清单页顶部那条小结 -->
     <string name="list_summary_progress">已完成 %1$d / 共 %2$d</string>
     <string name="list_summary_focus">专注 %1$s</string>

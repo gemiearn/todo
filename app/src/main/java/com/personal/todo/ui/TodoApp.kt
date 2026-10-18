@@ -94,6 +94,7 @@ import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.HabitRepository
+import com.personal.todo.data.LauncherIcon
 import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
@@ -211,7 +212,9 @@ fun TodoApp(
     colorStyle: ColorStyle = ColorStyle.CLASSIC,
     onColorStyleChange: (ColorStyle) -> Unit = {},
     backgroundStyle: BackgroundStyle = BackgroundStyle.PLAIN,
-    onBackgroundStyleChange: (BackgroundStyle) -> Unit = {}
+    onBackgroundStyleChange: (BackgroundStyle) -> Unit = {},
+    launcherIcon: LauncherIcon = LauncherIcon.RING,
+    onLauncherIconChange: (LauncherIcon) -> Unit = {}
 ) {
     // 冷启动先把重复任务后面两周那几次补上。生成器幂等（同一天不会生成两遍），所以
     // 每次进来跑一遍是安全的。跟着「今天」那条流跑：进程活过午夜时要再补一次，否则
@@ -363,6 +366,8 @@ fun TodoApp(
             onColorStyleChange = onColorStyleChange,
             backgroundStyle = backgroundStyle,
             onBackgroundStyleChange = onBackgroundStyleChange,
+            launcherIcon = launcherIcon,
+            onLauncherIconChange = onLauncherIconChange,
             // 番茄钟参数在专注页自己的卡片里，这里只是把它作为页签切过去。
             onOpenFocus = { nav.resetTo(HomeTab.Focus.route) },
             onOpenStats = { nav.push(ROUTE_STATS) },

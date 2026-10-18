@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    默认图标（B·计时环）。应用图标可以在设置页切换，6 个 <activity-alias> 各自挂一套；
+    这一套是安装后默认启用的那个，所以沿用最常规的名字 ic_launcher。
+    其余 5 版见 ic_launcher_tomato / _clock / _quad / _lime / _sun。
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+    <background android:drawable="@color/ic_launcher_ring_background" />
+    <foreground android:drawable="@drawable/ic_launcher_ring_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_ring_monochrome" />
 </adaptive-icon>

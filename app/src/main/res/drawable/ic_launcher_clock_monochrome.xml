@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    图标 D·时钟面的 monochrome 层：白盘换成描边圆（单色层没法「挖空」指针），
+    再加时针、分针与轴心点。秒针与底下的清单条在单色下只是噪点，去掉。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,51 m-20.5,0 a20.5,20.5 0 1,0 41,0 a20.5,20.5 0 1,0 -41,0"
+        android:strokeColor="#000000"
+        android:strokeWidth="4.5" />
+    <path
+        android:pathData="M54,51 L54,39"
+        android:strokeColor="#000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,51 L64.5,55"
+        android:strokeColor="#000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M54,51 m-2.9,0 a2.9,2.9 0 1,0 5.8,0 a2.9,2.9 0 1,0 -5.8,0"
+        android:fillColor="#000000" />
+</vector>
