@@ -79,6 +79,10 @@ data class TodoColors(
     val quadrants: QuadrantColors,
     /** 成功那种绿：已完成的专注时长用它，和象限 Ⅳ 的绿是两回事。 */
     val success: Color,
+    /** 日历里的圆点：**还没完成**用琥珀橙。固定色，不随「色系」设置变。 */
+    val dotOpen: Color,
+    /** 日历里的圆点：**已完成**用绿。固定色，不随「色系」设置变。 */
+    val dotDone: Color,
     /** 专注页的番茄红: the ring, the ± buttons and the focus page's selections. */
     val focusAccent: Color,
     /** The unfilled part of the focus ring. */
@@ -174,6 +178,8 @@ internal val LightTodoColors = TodoColors(
     checkOutline = CheckOutlineLight,
     quadrants = ClassicQuadrants,
     success = Green,
+    dotOpen = Amber,
+    dotDone = Green,
     focusAccent = Tomato,
     focusTrack = TomatoTrackLight,
     focusSurface = TomatoSurfaceLight
