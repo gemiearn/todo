@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">待办与番茄钟</string>
+    <string name="app_name">专注清单</string>
 
     <!-- 清单与视图 -->
     <string name="list_inbox_name">收件箱</string>

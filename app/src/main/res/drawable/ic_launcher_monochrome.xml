@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  图标的 monochrome（单色）层：桌面开「主题图标」时系统按主题配色重画这一层，背景层会被丢掉。
+  形状和前景一模一样（勾 + 尾点），只是统一成单色——系统只看它的轮廓，颜色自己上。
+
+  这也是之前 lint 那两条 MonochromeLauncherIcon 警告的来历：自适应图标缺这一层。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M30,56 L44,70 L64,47"
+        android:strokeColor="#000000"
+        android:strokeWidth="9.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M74,39 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
+        android:fillColor="#000000" />
+</vector>

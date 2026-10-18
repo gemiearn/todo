@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1565C0</color>
+    <!-- 图标底色＝应用强调色（原来是 Material 蓝 #1565C0，和应用里的蓝不是一支）。 -->
+    <color name="ic_launcher_background">#3D7BF7</color>
 </resources>
