@@ -707,6 +707,20 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 8. **测试写法的一个坑（记下来省下一次）**：`compose.waitUntil { }` **只推进组合时钟、不排空主线程消息队列**，用它等 view model 里挂在 `Dispatchers.Main` 上的协程续体，会一路等到超时（这轮因此红了三次）；要等库里的状态出现，得像 `HabitScreenSmokeTest` 那样循环调 `compose.waitForIdle()`（本轮抽了个 `waitForDb(...)` 小助手）。另外**没有 composition 时主线程队列根本不动**，所以这类测试必须先 `setContent`。
 9. **验证**：全量单测 **250 全过**（新增那条回归测试）、lint 0 error / 2 warning、Kotlin 编译警告 0；包覆盖 `target/0.4.0/app-debug-0.4.0-fix.apk`。
 
+**第十三批（同一模型的另一份审查报告 `项目代码审查报告_当前版_2026-10-19.md` 让复核；DB 仍是 v14、无迁移）**
+
+那份报告列了 6 条 finding + 2 条待确定口径。逐条核对源码与现有测试后：**6 条都是真的**（第 5 条「按 id 认人」那半原来就对，问题在后半的改名/删除退化匹配），两条口径我给了一个工程判据并落地。全部已修：
+
+1. **专注可绑定已完成 / 已删除任务（报告 #1，真，已修）**：`FocusViewModel` 只存 `taskId/title`，`start()` 仅判 id 非空，`FocusRepository.startTimer` 的事务也只判「已有计时器」——选中的任务在别处被完成 / 删除后仍能起表（还会触发习惯自动打卡）。现在 `TaskRepository.isStartableForFocus(taskId)`（存在、`deletedAt == null`、`completedAt == null`、`parentTaskId == null`）在 `start()` 起表前复核，不合格就 `clearLink()` 并放弃；`autoCheckInForTask` 在 `if (started)` 之后，天然不会误打卡。界面侧 `FocusScreen` 用 `LaunchedEffect(openTasks, linkedTaskId)` 把已不在可选列表里的选择清掉（**列表为空时不判**——`openTasks` 是 `WhileSubscribed(5s)` 的流，初组合时还没发射，空表只是「没加载」）。⚠️ 别用 `openTasks.value` 直接判（没人订阅时是空表）。回归测试：`TaskRepositoryTest.onlyALiveTopLevelTaskCanStartFocus` + `FocusScreenSmokeTest.aTaskCompletedElsewhereCannotBeStarted`。
+2. **移动父任务未同步子任务清单（报告 #2，真，已修）**：`updateTask` 原来只更新顶层任务自己那一行，子任务 `listId` 不变 ⇒ 破坏「父子同清单」不变式。现在整段包进 `db.withTransaction`，顶层任务换清单时用新的 DAO `moveSubtasksToList(parentTaskId, listId, at)` 把**全部**子任务（含已完成、已删除）一起搬。回归测试 `TaskRepositoryTest.movingAParentTaskMovesItsSubtasksWithIt`。
+3. **重复实例未继承源任务标签（报告 #3，真，已修）**：`materializeRecurrences` 原来只 `source.copy(...)` 插行，标签存在独立的 `task_tags`，没复制 ⇒ 带标签的重复源任务，其实例不被标签筛选命中、专注的标签快照为空。现在插完实例在同一事务里用 `TagDao.tagIdsOf(source.id)` 复制连线（`link` 是 IGNORE 的，重复生成不会撞）。回归测试 `RecurrenceGenerationTest.generatedOccurrencesInheritTheSourceTags`。
+4. **习惯页跨午夜仍按昨天打卡（报告 #4，真，已修）**：`HabitViewModel` 的 `today/week/counts` 原来在构造时定死（VM 由外壳以固定 key 持有）。现在 `HabitRepository.observeToday()`（照 TaskRepository 的 60 秒 ticker + `distinctUntilChanged`，间隔可注入），`HabitViewModel` 的 `today/week/counts` 全部改由它驱动（`flatMapLatest` 换窗口、`stateIn` 留旧值不闪空）；`HabitScreen` 改成 `collectAsStateWithLifecycle`；`TodoApp` 里那把手动带日期的 VM key 撤掉（不再需要）。回归测试 `HabitRepositoryTest.todayFollowsAMidnightRollover`（连续订阅同一条流、拨钟、等它自己翻页）。
+5. **统计标签筛选在改名 / 重名 / 删除后错误（报告 #5，真，已修）**：原来筛选状态存的是**标签名**、再用 `associate{name→id}` 反查 ⇒ 改名后旧选择失效、重名只留一个 id；「历史标签」只从**没有 id 快照**的记录里取名字 ⇒ 标签被删后，那些**有 id 快照**的记录再也无法经该标签筛。现在筛选键改成 `i:<id>`（当前标签，按 id 认人，改名不丢）与 `n:<名字>`（历史标签）；「历史标签」补齐「有 id 快照、但那些 id 都已不在标签表里」的名字，并在按名字筛时要求该记录的 id 快照里**没有活着的标签 id**（避免把某个改名了的当前标签的老记录错归到同名历史标签下）。
+6. **日历倒序日期区间跨月漏查（报告 #6，真，已修）**：`CalendarScreen` 铺日期与 `CalendarRangeTest` 都按较小 / 较大端点归一化，DAO 却只判「计划 <= 末、截止 >= 初」一个方向，**两个端点都落在窗口外时会整条漏掉**。现在三条查询（`observeOpenTasksCoveringDate`、`observeOpenTasksSpanning`、`observeTasksSpanning`）各加一个倒序分支 `dueDate <= :end AND plannedDate >= :start`（对正序结果无影响）。回归测试 `TaskDateViewTest.theCalendarRangeKeepsAReversedIntervalThroughTheMonth`。**口径定在「允许倒序、两边对齐」**：不禁止用户把计划日填得晚于截止日，UI 与 DAO 口径统一在归一化上。
+7. **待确定①：`FocusDao.observeSeriesFocusSeconds` 注释与 SQL 不一致（已定口径：以代码为准，只改注释）**：KDoc 原写「删掉的实例不算」，SQL 却把 `recurrenceSourceId = :sourceId` 的所有行都算进去。设计清单要求「删任务不删专注历史」，那段时间真的花掉了，所以**保留计入**、把注释改成「删掉的实例照旧计入」。这条口径随时可改（改的是 SQL 一行 + 注释）。
+8. **待确定②：统计页 `today` 锚点跨午夜不自动翻（不动，属产品取舍）**：`FocusStatsScreen` 的日期锚点保留首次日期，跨午夜不会重置卡片。用户此刻可能在翻历史，直接全部重置会把位置顶掉，**保持不动**；只在专注页顶部那张「今日」牌子上，`FocusViewModel.stats` 已经跟着 `observeToday()` 翻页。要不要连统计页也翻由用户拍板。
+9. **验证**：全量单测 **256 全过**（较上批 +6）、lint 0 error / 2 warning、Kotlin 编译警告 0；包覆盖 `target/0.4.0/app-debug-0.4.0-fix.apk`。
+
 ### 13.6 版本规划
 
 - **0.3.6（已交付）**：N1、N2（四象限）+ N3（专注小段统计）+ N4（被杀后继续跑）+ N5（习惯单位与单次基数）。DB 升 v11，一次迁移同时加习惯两列与专注小段列。
