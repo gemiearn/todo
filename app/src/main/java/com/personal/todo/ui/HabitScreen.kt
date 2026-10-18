@@ -66,6 +66,7 @@ import com.personal.todo.R
 import com.personal.todo.data.db.Habit
 import com.personal.todo.model.HabitRules
 import com.personal.todo.ui.theme.LocalTodoColors
+import com.personal.todo.ui.theme.TagPalette
 import com.personal.todo.viewmodel.HabitViewModel
 import java.time.LocalDate
 
@@ -107,6 +108,17 @@ private val ProgressBarHeight = 6.dp
 
 /** 「今天」那一整列的淡蓝底带：要浅到还能看清格子里的颜色，又要一眼分得出来。 */
 private const val TodayBandAlpha = 0.12f
+
+/**
+ * 每个习惯一个属于自己的颜色（用户 2026-10-18：「习惯页颜色单调」）。
+ *
+ * 按习惯 id 从 [TagPalette] 里取：同一个习惯永远同一个颜色，不随排序变。取色顺序先用
+ * 蓝 / 紫 / 番茄红这些中性的，红与琥珀垫后，免得第一个习惯就顶着「紧急」的红。
+ */
+private val HabitColorOrder = listOf(3, 4, 5, 6, 2, 0, 1, 7)
+
+private fun habitColorOf(habitId: Long): Color =
+    TagPalette[HabitColorOrder[(habitId % HabitColorOrder.size).toInt()]]
 
 /**
  * 习惯页：一张打勾表——每个习惯一行，加一条「最近 7 天」的格子。
@@ -286,6 +298,8 @@ private fun HabitCard(
     var menuOpen by remember { mutableStateOf(false) }
     val todayCount = countsOfHabit[today] ?: 0
     val done = HabitRules.isComplete(todayCount, habit.dailyTarget, habit.step)
+    // 这个习惯自己的颜色：进度条、今天那一列、以及「打了一部分」的格子都用它。
+    val habitColor = habitColorOf(habit.id)
 
     Column(
         modifier = modifier
@@ -364,7 +378,7 @@ private fun HabitCard(
         HabitProgressBar(
             progress = HabitRules.shownAmount(todayCount, habit.dailyTarget, habit.step).toFloat() /
                 habit.dailyTarget.coerceAtLeast(HabitRules.MinTarget),
-            color = if (done) colors.success else colors.accent,
+            color = habitColor,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         Spacer(Modifier.height(10.dp))
@@ -380,6 +394,7 @@ private fun HabitCard(
                     target = habit.dailyTarget,
                     step = habit.step,
                     isToday = date == today,
+                    color = habitColor,
                     onClick = { onIncrement(habit.id, date) },
                     onLongClick = { onDecrement(habit.id, date) },
                     modifier = Modifier.weight(1f)
@@ -493,6 +508,7 @@ private fun HabitDayCell(
     target: Int,
     step: Int,
     isToday: Boolean,
+    color: Color,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -503,7 +519,7 @@ private fun HabitDayCell(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (isToday) colors.accent.copy(alpha = TodayBandAlpha) else Color.Transparent)
+            .background(if (isToday) color.copy(alpha = TodayBandAlpha) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .testTag(habitDayCellTag(habitId, date))
             .padding(vertical = 6.dp),
@@ -516,7 +532,7 @@ private fun HabitDayCell(
                 stringResource(weekdayNarrowRes(date.dayOfWeek))
             },
             style = MaterialTheme.typography.labelSmall,
-            color = if (isToday) colors.accent else colors.dateMuted,
+            color = if (isToday) color else colors.dateMuted,
             maxLines = 1
         )
         Spacer(Modifier.height(4.dp))
@@ -527,7 +543,7 @@ private fun HabitDayCell(
                 .background(
                     when {
                         done -> colors.success
-                        count > 0 -> colors.accent.copy(alpha = 0.18f)
+                        count > 0 -> color.copy(alpha = 0.18f)
                         // 今天那一列已经有自己的底带了，方块不必再叠一层灰。
                         isToday -> Color.Transparent
                         else -> colors.groupHeader
@@ -540,7 +556,7 @@ private fun HabitDayCell(
                 style = MaterialTheme.typography.labelSmall,
                 color = when {
                     done -> Color.White
-                    count > 0 || isToday -> colors.accent
+                    count > 0 || isToday -> color
                     else -> colors.dateMuted
                 }
             )
