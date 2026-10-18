@@ -157,11 +157,20 @@ fun priorityColor(priority: Priority): Color {
 }
 
 /**
- * 角标上的字用哪个颜色：底色浅就用深色字，深就用白字。
- * 马卡龙那套是浅色，白字会糊在上面，所以必须按亮度挑一次。
+ * 角标上的字用哪个颜色：把白字与近黑字（#1C1C1E）的对比度都算出来，挑高的那个。
+ *
+ * 原来写的是「亮度 > 0.55 就用深色字」——那个阈值离正确的分界点差得太远：
+ * 琥珀 #F5A623 的亮度只有 0.47，会被判成「深底」配上白字，对比度只剩 2.02:1（应为白底
+ * 近黑字的 8:1 级别）。马卡龙那套浅色又必须用深色字，所以这里不能猜，得按对比度算：
+ * 白字与 #1C1C1E 的分界点在亮度 ≈ 0.20，超过它才是「该用深色字」的浅底。
  */
-fun onPriorityColor(background: Color): Color =
-    if (background.luminance() > 0.55f) Color(0xFF1C1C1E) else Color.White
+fun onPriorityColor(background: Color): Color {
+    val ink = Color(0xFF1C1C1E)
+    val luminance = background.luminance()
+    val whiteContrast = 1.05f / (luminance + 0.05f)
+    val inkContrast = (luminance + 0.05f) / (ink.luminance() + 0.05f)
+    return if (inkContrast >= whiteContrast) ink else Color.White
+}
 
 @Composable
 fun eventLabel(type: TaskEventType): String = stringResource(

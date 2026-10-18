@@ -6,8 +6,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -92,6 +95,9 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                // 这一页有 5 个分组标题 + 17 行选项 + 4 条入口，加起来比任何手机屏都长：
+                // 不滚动的话底部那几条**永远够不到**（审查报告：全项目唯一的功能阻断）。
+                .verticalScroll(rememberScrollState())
                 .testTag(SettingsScreenTag)
         ) {
             SectionLabel(stringResource(R.string.settings_section_theme))
@@ -155,7 +161,9 @@ fun SettingsScreen(
                 onClick = { scope.launch { snackbarHostState.showSnackbar(exportMessage) } }
             )
 
-            Spacer(Modifier.weight(1f))
+            // 可滚动列里不能再让子项抢剩余高度（weight 在无界高度下没有意义），
+            // 所以这里用一段固定间距把「关于」推到底部。
+            Spacer(Modifier.height(24.dp))
             Text(
                 text = stringResource(R.string.settings_about_local),
                 style = MaterialTheme.typography.bodySmall,

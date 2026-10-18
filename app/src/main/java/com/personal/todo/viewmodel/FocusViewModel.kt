@@ -226,7 +226,10 @@ class FocusViewModel(
         val tagSnapshot = FocusTagSnapshot.encode(tagNames)
         val tagIdSnapshot = FocusTagSnapshot.encodeIds(tagIds)
         viewModelScope.launch {
-            focusRepository.startTimer(
+            // 只有计时**真的起来了**才给习惯记这次打卡：`startTimer` 里有「已经有一个计时器
+            // 就拒绝」的守卫，连点两下「开始」时第二次会返回 false——不看返回值，就会出现
+            // 「只起了一次表、习惯却记了两次」。
+            val started = focusRepository.startTimer(
                 mode = mode,
                 plannedSeconds = target,
                 taskId = taskId,
@@ -237,7 +240,7 @@ class FocusViewModel(
             )
             // 关联任务自动打卡（习惯 v14）：口径是「只要计时了就打卡」，所以不等它跑完，
             // 中断也算——起一次表记一次，次数照旧夹在习惯的目标以内。
-            habitRepository.autoCheckInForTask(taskId, habitRepository.today())
+            if (started) habitRepository.autoCheckInForTask(taskId, habitRepository.today())
         }
     }
 

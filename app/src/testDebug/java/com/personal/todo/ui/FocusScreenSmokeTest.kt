@@ -57,6 +57,7 @@ class FocusScreenSmokeTest {
     private lateinit var db: TodoDatabase
     private lateinit var tasks: TaskRepository
     private lateinit var focus: FocusRepository
+    private lateinit var habits: HabitRepository
     private lateinit var lists: List<TaskList>
 
     @Before
@@ -67,6 +68,7 @@ class FocusScreenSmokeTest {
                 .build()
             tasks = TaskRepository(db, "收件箱")
             focus = FocusRepository(db)
+            habits = HabitRepository(db)
             tasks.createTask("写季度报告", tasks.ensureInbox())
             val work = tasks.createList("工作")
             tasks.createTask("整理周报", work)
@@ -103,6 +105,21 @@ class FocusScreenSmokeTest {
         compose.onNodeWithTag(FocusStartTag).performClick()
     }
 
+    /**
+     * 等库里的某个状态出现。
+     *
+     * 用 `compose.waitForIdle()` 驱动，而不是 `compose.waitUntil { }`：后者只推进组合时钟，
+     * **不排空主线程的消息队列**，而 view model 里那些挂在 `Dispatchers.Main` 上的协程续体
+     * 就在那个队列里——用 `waitUntil` 等它们会一直等到超时（这一轮踩过两次）。
+     */
+    private fun waitForDb(what: String, condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + TimeoutMillis
+        while (!condition()) {
+            if (System.currentTimeMillis() >= deadline) throw AssertionError("等不到：$what")
+            compose.waitForIdle()
+        }
+    }
+
     /** Picking a task from the picker; it is the only way a session can start. */
     private fun pickTask(title: String) {
         compose.onNodeWithTag(FocusTaskRowTag).performClick()
@@ -128,6 +145,44 @@ class FocusScreenSmokeTest {
         }
 
         compose.onNodeWithText("开始专注").assertExists()
+    }
+
+    /**
+     * 连点两下「开始」只该记一次打卡（审查报告 3.1）。
+     *
+     * `startTimer` 有「已经有一个计时器就拒绝」的守卫，第二下会拿到 false——不看返回值
+     * 就照样打卡，于是只起了一次表、习惯却记了两次。这里按真实顺序走一遍：第一次真的起表
+     * （该记一次），第二次被守卫拒绝（不该再记）。
+     */
+    @Test
+    fun doubleTappingStartChecksTheLinkedHabitInOnlyOnce() = runBlocking {
+        val task = tasks.observeAllOpenTasks().first().first { it.title == "写季度报告" }
+        val habitId = habits.createHabit("写周报", 5, linkedTaskId = task.id, autoCheckInOnFocus = true)
+
+        val viewModel = FocusViewModel(
+            focus,
+            tasks,
+            FocusSettingsStore(RuntimeEnvironment.getApplication()),
+            habits
+        )
+        viewModel.linkTask(task)
+        // 先把页面组合起来，跟真实使用一致。
+        launchFocus(viewModel)
+
+        // 第一下：计时真的起来了，就该记一次。
+        compose.runOnIdle { viewModel.start() }
+        waitForDb("第一次起表后的打卡") {
+            runBlocking { db.habitDao().getCheckIn(habitId, habits.today()) != null }
+        }
+
+        // 第二下：会被「已有计时器」的守卫拒掉。给它足够时间去犯错，再断言没有多记。
+        compose.runOnIdle { viewModel.start() }
+        repeat(20) { compose.waitForIdle() }
+        assertEquals(
+            "只起了一次表，就只能记一次",
+            1,
+            runBlocking { db.habitDao().getCheckIn(habitId, habits.today())?.count }
+        )
     }
 
     /** 计时必须绑任务: the screen asks for one before anything can start. */

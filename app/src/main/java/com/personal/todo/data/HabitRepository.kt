@@ -98,8 +98,11 @@ class HabitRepository(
      *
      * 口径（用户 2026-10-18 拍板）是**只要计时了就打卡**，所以不看时长、也把中断算进来；
      * 次数仍走 [increment]，也就是照旧夹在目标以内、按单次基数折算。
+     *
+     * 整批放在**同一个事务**里：几个习惯关联同一条任务时，中途失败不该留下「前两个打过了、
+     * 第三个没打」的半完成状态（`withTransaction` 可嵌套，里面的 `increment` 会并进来）。
      */
-    suspend fun autoCheckInForTask(taskId: Long, date: LocalDate) {
+    suspend fun autoCheckInForTask(taskId: Long, date: LocalDate) = db.withTransaction {
         habitDao.getAutoCheckInHabitsForTask(taskId).forEach { increment(it.id, date) }
     }
 
