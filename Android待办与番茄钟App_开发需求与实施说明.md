@@ -543,7 +543,7 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 11. **2026-10-18 深夜第三批（用户一次性提的一串）—— 除子任务外都已交付（提交 `6296c17`，未升版本号，包覆盖 `target/0.4.0/app-debug-0.4.0-fix.apk`；DB 由 v13 升到 v14）**：
    - **日历滑动仍有点卡**：已按第九批修（提交 `1a64dc4`）。
    - **清单页顶栏「清单 / 习惯」两格开关（已做）**：位置＝「显示范围」图标**前面**（`ListsHabitsSwitch`，两枚图标合成一个胶囊，选中那格用卡片底 + 强调色）。任务视图（收件箱 / 清单 / 今天 / 未来 / 逾期 / 已完成 / 回收站）都有它；点「习惯」进习惯页并高亮「习惯」，在习惯页点「清单」退回原页。**抽屉那行「习惯打卡」与更多页那行「习惯」都撤掉了**，习惯页入口只留这一处（字符串 `drawer_entry_habits` / `more_entry_habits` 一并删除）。
-   - **左滑面板按路由分（已做）**：任务视图与日历＝清单抽屉；**专注页＝专注统计**（`FocusStatsScreen` 的 `onBack` 改成可空 —— 传 null 就不画自己的顶栏与返回箭头，抽屉顶上给标题 + 「展开」推进整页；面板宽度 84%→94% 让五张图表有宽度）；**四象限与更多页不给抽屉**（`gesturesEnabled = false`、顶栏也不画菜单按钮）。
+   - **左滑面板按路由分（已做，后于第十四批把专注那块改成导航面板）**：任务视图与日历＝清单抽屉；**专注页＝专注统计**（`FocusStatsScreen` 的 `onBack` 改成可空 —— 传 null 就不画自己的顶栏与返回箭头，抽屉顶上给标题 + 「展开」推进整页；面板宽度 84%→94% 让五张图表有宽度）——⚠️ 这套已作废：用户 2026-10-19 说他要的是「能跳过去的入口」，现在专注页面板只有一行「专注记录」（见 §13.5 第十四批）；**四象限与更多页不给抽屉**（`gesturesEnabled = false`、顶栏也不画菜单按钮）。
    - **习惯「关联任务 + 专注自动打卡」（已做，DB v14）**：习惯编辑弹层里新增「关联任务」按钮（复用专注页那个 `TaskPickerDialog`，改成 internal；清单分组、收件箱在前）+ 「专注这条任务时自动打卡」开关（没关联任务时禁用）。口径＝**只要为这条任务起过一次计时就记一次当天打卡**，中断也算、不看时长（用户原话「只要计时了就自动打卡」），次数仍按单次基数折算、夹在目标以内。`tasks.icon` 那类只建列的事不在此列：这批的 `tasks.icon` 仍然没有 UI。
    - **子任务：含义待确认**，见下面「待拍板」那一条 —— 当时只说了「还有就是，子任务这个功能」就断了，**这轮按「先讲现状，用户再定」处理，没动代码**。
 
@@ -720,6 +720,22 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 7. **待确定①：`FocusDao.observeSeriesFocusSeconds` 注释与 SQL 不一致（已定口径：以代码为准，只改注释）**：KDoc 原写「删掉的实例不算」，SQL 却把 `recurrenceSourceId = :sourceId` 的所有行都算进去。设计清单要求「删任务不删专注历史」，那段时间真的花掉了，所以**保留计入**、把注释改成「删掉的实例照旧计入」。这条口径随时可改（改的是 SQL 一行 + 注释）。
 8. **待确定②：统计页 `today` 锚点跨午夜不自动翻（不动，属产品取舍）**：`FocusStatsScreen` 的日期锚点保留首次日期，跨午夜不会重置卡片。用户此刻可能在翻历史，直接全部重置会把位置顶掉，**保持不动**；只在专注页顶部那张「今日」牌子上，`FocusViewModel.stats` 已经跟着 `observeToday()` 翻页。要不要连统计页也翻由用户拍板。
 9. **验证**：全量单测 **256 全过**（较上批 +6）、lint 0 error / 2 warning、Kotlin 编译警告 0；包覆盖 `target/0.4.0/app-debug-0.4.0-fix.apk`。
+
+**第十四批（用户 2026-10-19 真机反馈：侧栏太宽 + 专注页抽屉改导航 + 专注记录可改可删；DB 仍是 v14、无迁移）**
+
+用户原话：「你的侧栏，就是拉出来那个，太宽了，减少到当前60%」「我不是让你在专注页面的侧栏做专注记录，是做一个可以跳转的东西，比如你在清单页面做的收件箱，逾期这样的东西，然后做一个专注的那个我们说的清理后台后要不要计时的开关，以及给专注记录增加修改选项和增加删除专注记录的功能」。开工前用 AskUserQuestion 把三条口径钉死（见下面各条），再动手：
+
+1. **左侧抽屉宽度 84% → 50%**（约当前宽度的六成）：`TodoApp` 的 `DrawerWidthFraction` 0.84 → **0.50**；原来专给统计面板的 `StatsDrawerWidthFraction = 0.94` **删掉**（专注面板不再是内容，不需要更宽）。
+2. **专注页左滑面板从「整页统计内容」改成「导航面板」**：`DrawerMode` 的 `STATS` 改名 `FOCUS`，面板里只放**一行能跳过去的入口**——「专注记录」（与清单抽屉的「收件箱 / 逾期」同一个形态：一行一个目的地）。统计图表仍走顶栏右上角那个图标。原来的 `FocusStatsDrawer`（把统计页塞进抽屉、顶上给「展开」）**整个删掉**，新字符串 `drawer_stats_open_full` 一并删除。
+3. **新增「专注记录」页**（新路由 `records`，`ui/FocusRecordsScreen.kt`）：逐条记录按天分组，最右一个 ⋮ 是「修改 / 删除」。
+   - **修改**（用户选「关联任务 + 时长」）：弹层里可换关联任务或取消关联（选择器复用专注页那个 `TaskPickerDialog`，只列**还没做完**的顶层任务），并可改时长。口径：**时长按整分钟**（1..24h，`MaxRecordMinutes`）；**只改时长时，任务 / 清单名 / 标签那几份快照原样保留**，换了任务才按那条任务**现在**的样子重记快照（与开始一次专注记快照同一个口径）；开始时刻、模式、完成 / 中断状态一律不动。
+   - **删除**：先弹二次确认（`record_delete_title` / `record_delete_message`），确认后才删。
+   - 记录**从统计页底部移出**：统计页现在只画五张图表（`recordsByDay` / `SessionRecordRow` / `sessionRecordSubtitle` 都移出，对应 import 一并清理；`FocusStatsScreen` 的 `onBack` 从可空改成必填）。
+4. **「清理后台后要不要计时」的开关：不做**（用户 2026-10-19 拍板「要么就丢掉开关，只做一种情况」→ 固定**现状**「进程被杀那段不计入」）。所以 `FocusRepository.recoverTimer` 一行都不动，也不再新增设置项。
+5. **新数据层接口**：`FocusDao.updateSession(...)` / `deleteSession(id)`；`FocusRepository.updateSession(sessionId, taskId, taskTitleSnapshot, listNameSnapshot, tagNamesSnapshot, tagIdsSnapshot, actualFocusSeconds)`（时长下限 **1 秒**，`MinRecordedSeconds`）/ `deleteSession(sessionId)`；`FocusViewModel.updateSession(...)` / `deleteSession(sessionId)`（任务 / 清单 / 标签快照由记录页按当前数据解析后传入）。
+6. **验证**：全量单测 **261 全过**（+5：`FocusRepositoryTest` +4、`TodoAppSmokeTest` 的记录用例改写并 +1）、lint 0 error / 2 warning、Kotlin 编译警告 0；包覆盖 `target/0.4.0/app-debug-0.4.0-fix.apk`。
+7. **⚠️ 冒烟测试新踩的坑（记下来省下一次）**：**`ModalDrawerSheet` 里的行、`DropdownMenu` 与 `AlertDialog` 里的按钮，坐标 `performClick` 落不到它们的 `onClick`**——与之前 `ModalBottomSheet` 那个坑同一类。要驱动它们必须用 `performSemanticsAction(SemanticsActions.OnClick)`（本轮这两条测试因此红了两次）。
+8. 同批一起交付的还有用户自己（让 GPT 补的）**图标备选按用途分组**：`ui/Components.kt` 的 `IconPickerRow` 加「清单 / 习惯 / 其他」三档切换（`IconCategory` + `ListIcons` / `HabitIcons` / `OtherIcons`），新增字符串 `icon_category_list` / `icon_category_habit` / `icon_category_other`。
 
 ### 13.6 版本规划
 
