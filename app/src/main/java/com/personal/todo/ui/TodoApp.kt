@@ -501,7 +501,10 @@ internal fun MainScreen(
         nav.resetTo(HomeTab.Focus.route)
     }
     val collectionKey = when (collection) {
-        is TaskCollection.DayView -> "collection-day-${collection.date.toEpochDay()}"
+        // 日历下面那一条**按天变，但不按天重建**：换一天只换订阅，StateFlow 把上一天那份留到
+        // 新数据到达（原来是 `collection-day-<日期>`，每天一个新实例、每次都从空态起步，
+        // 翻月落定那一刻下面整块「先空、再填」——台账 N7 那条，也是滑动落定的重活）。
+        is TaskCollection.DayView -> "collection-day"
         else -> "collection-$route"
     }
     val collectionViewModel: TaskCollectionViewModel =
@@ -509,6 +512,13 @@ internal fun MainScreen(
     val tasks by collectionViewModel.tasks.collectAsStateWithLifecycle()
     val completedTasks by collectionViewModel.completedTasks.collectAsStateWithLifecycle()
     val subtaskCounts by collectionViewModel.subtaskCounts.collectAsStateWithLifecycle()
+
+    // 复用同一个实例时把「今天是哪一天」喂进去；这个 effect 对每条路由都会跑，但只有
+    // DayView 有日期，其它路由 dayOfCollection 是 null，什么都不做。
+    val dayOfCollection = (collection as? TaskCollection.DayView)?.date
+    LaunchedEffect(dayOfCollection) {
+        if (dayOfCollection != null) collectionViewModel.showDate(dayOfCollection)
+    }
 
     // 搜索与排序 (spec section 4.4). Both are pure views over the rows the
     // collection already returned, so the filter of the current view and the

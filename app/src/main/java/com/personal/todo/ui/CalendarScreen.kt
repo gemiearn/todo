@@ -141,6 +141,9 @@ private const val DaysPerWeek = 7
 private const val YearColumns = 3
 private const val YearRows = 4
 
+/** 月视图一页的格子数：六周 × 七天。 */
+private const val MonthCellCount = WeeksPerMonth * DaysPerWeek
+
 /** 邻月那几天的数字再降一档透明度。 */
 private const val OutOfMonthAlpha = 0.55f
 
@@ -633,6 +636,14 @@ private fun MonthView(
         if (YearMonth.from(selectedDate) != month) onSelectDate(month.atDay(1))
     }
 
+    // 月视图的点按「已停稳的那一页 ±1 页」这一个窗口取，下面那三页共用一条查询。
+    val monthDots = rememberMonthDots(
+        startMonth = startMonth,
+        pagerState = pagerState,
+        tasksInRange = tasksInRange,
+        weekStartsMonday = weekStartsMonday
+    )
+
     Column(modifier = modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
             // The week-number column keeps its own width so the day columns line up
@@ -661,11 +672,53 @@ private fun MonthView(
                 month = startMonth.plusMonths(page.toLong()),
                 selectedDate = selectedDate,
                 today = today,
-                tasksInRange = tasksInRange,
+                dotsByDate = monthDots[page].orEmpty(),
                 weekStartsMonday = weekStartsMonday,
                 showWeekNumbers = showWeekNumbers,
                 onSelectDate = onSelectDate
             )
+        }
+    }
+}
+
+/**
+ * 月视图每一页那 42 天的任务点，按**页号**取。
+ *
+ * 只订阅「已停稳的那一页 ±1 页」这一个窗口（3 个月），而不是让每一页各自起一条查询：
+ * 原来每一页都在 `MonthGrid` 里 `remember(month) { tasksInRange(...) }` + `collectAsState`，
+ * 于是翻页时**新进来的那一页先用空数据组合一次**（42 个格子、每个都在画数字与点），
+ * 数据到了再整页组合第二遍——「用不到的行整行不画」撤掉、六行画满之后这一页从 ~30 格涨到
+ * 42 格，那两次组合就是滑动时那一下卡顿。窗口按 *settledPage* 取：滑动过程中页号在动但
+ * 停稳的页号不变，所以窗口不动、进来的那一页数据已经在手，一次组合就画对；
+ * 落定后窗口平移一次，三页一起换成新的那三个月。
+ */
+@Composable
+private fun rememberMonthDots(
+    startMonth: YearMonth,
+    pagerState: PagerState,
+    tasksInRange: (LocalDate, LocalDate) -> Flow<List<Task>>,
+    weekStartsMonday: Boolean
+): Map<Int, Map<LocalDate, List<Task>>> {
+    val pageCount = pagerState.pageCount
+    val settledPage = pagerState.settledPage
+    val pages = remember(settledPage, pageCount) {
+        (settledPage - 1..settledPage + 1).filter { it in 0 until pageCount }
+    }
+    val windowStart = remember(pages, startMonth, weekStartsMonday) {
+        monthGridFirstCell(startMonth.plusMonths(pages.first().toLong()), weekStartsMonday)
+    }
+    val windowEnd = remember(pages, startMonth, weekStartsMonday) {
+        monthGridFirstCell(startMonth.plusMonths(pages.last().toLong()), weekStartsMonday)
+            .plusDays((MonthCellCount - 1).toLong())
+    }
+    val windowTasks by remember(windowStart, windowEnd, tasksInRange) {
+        tasksInRange(windowStart, windowEnd)
+    }.collectAsStateWithLifecycle(emptyList())
+
+    return remember(windowTasks, pages, startMonth, weekStartsMonday) {
+        pages.associateWith { page ->
+            val first = monthGridFirstCell(startMonth.plusMonths(page.toLong()), weekStartsMonday)
+            tasksByDate(windowTasks, first, first.plusDays((MonthCellCount - 1).toLong()))
         }
     }
 }
@@ -676,23 +729,13 @@ private fun MonthGrid(
     month: YearMonth,
     selectedDate: LocalDate,
     today: LocalDate,
-    tasksInRange: (LocalDate, LocalDate) -> Flow<List<Task>>,
+    dotsByDate: Map<LocalDate, List<Task>>,
     weekStartsMonday: Boolean,
     showWeekNumbers: Boolean,
     onSelectDate: (LocalDate) -> Unit
 ) {
-    val firstOfMonth = month.atDay(1)
     // The week the grid starts on: Monday by default, Sunday when the user asks.
-    val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))
-    val lastCell = firstCell.plusDays((WeeksPerMonth * DaysPerWeek - 1).toLong())
-
-    // The grid asks for the weeks it draws, not just its own month: a span that
-    // starts in the previous month has to keep its dots as they cross the edge
-    // instead of stopping dead at the 1st.
-    val monthTasks by remember(month, tasksInRange) {
-        tasksInRange(firstCell, lastCell)
-    }.collectAsStateWithLifecycle(emptyList())
-    val dotsByDate = remember(monthTasks) { tasksByDate(monthTasks, firstCell, lastCell) }
+    val firstCell = monthGridFirstCell(month, weekStartsMonday)
 
     Column(modifier = Modifier.fillMaxSize()) {
         repeat(WeeksPerMonth) { week ->
@@ -723,6 +766,10 @@ private fun MonthGrid(
 /** How many days the first day of [date]'s month is past the start of its week. */
 private fun weekStartOffset(date: LocalDate, weekStartsMonday: Boolean): Long =
     if (weekStartsMonday) (date.dayOfWeek.value - 1).toLong() else (date.dayOfWeek.value % 7).toLong()
+
+/** 月视图某一页的第一格：1 号往前退到它那一周的开头（周起始可能落在上个月）。 */
+private fun monthGridFirstCell(month: YearMonth, weekStartsMonday: Boolean): LocalDate =
+    month.atDay(1).minusDays(weekStartOffset(month.atDay(1), weekStartsMonday))
 
 /** The `W12` label of one row of the grid; numbering follows the ISO week of its Monday. */
 @Composable
