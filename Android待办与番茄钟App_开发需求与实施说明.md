@@ -603,6 +603,7 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 - **跨天 session 的统计口径**（台账 B5）：`focusSpans` 拆天、`focusHourBars` 按开始日筛，**要先定归属规则**。待拍板。
 - **时区上下文统一**（台账 B3）：仓库构造时捕获 `ZoneId.systemDefault()`，界面另处再读一次，运行中改时区会不一致。
 - **性能与资源**（台账 C1–C4）：`tasks` 表缺日期索引且 `OR` 查询全表扫描；冷启动单事务生成 365×N 行；~~日历按天建 ViewModel 无界累积~~（**✅ 第九批已修**：DayView 用固定 key）；`FocusViewModel` 每秒 tick 与 `Eagerly` 流常驻。
+- **UI 侧遗留（2026-10-18 外部审查报告第二轮提出）**：~~**设置页整页不可滚动**（10 条目 + 3 分组标题远超一屏，底部条目永远够不到）~~ **✅ 第十二批已修**；**年视图日期格约 17×14dp**（`YearColumns = 3`，点击判定用同一套格子，选日期靠运气）与**周视图 7 列各自独立滚动**（`verticalScroll` 在 `days.forEach` 里，想滚周三得把手指放进那一列）——两条都要动结构，**单独排期**；**`dateMuted` 对比度 2.46:1**（承载全 App 次级文案与空态正文）——要动就会让全屏观感都变，**等用户拍板**。
 - **`NavStackSaver` 不保存 `visits`**：进程被杀恢复后计数归零，影响未实测。
 - 注：`HabitRepository.decrement` 的删行分支**已有单测覆盖**（台账 §5.3 更正），不再列为盲区。
 
@@ -691,6 +692,20 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
    - **代码卫生**：`app/src/main` 里**没有** `TODO/FIXME`、没有 `!!`、没有 `GlobalScope`、没有 `runBlocking`；唯一的 `catch`（`TaskEditorViewModel` 保存）先 `catch (CancellationException) { throw e }` 再兜底，没有吞取消。
    - **DAO 口径**：今天 / 未来 / 逾期 / 清单行 / 清单进度 / 日历范围 / 已完成 / 回收站这些查询的 `deletedAt`、`parentTaskId`、`recurrenceSourceId` 过滤条件逐个核对，与各视图的既定口径一致（子任务不进列表与徽章、重复实例不上清单行）。
 4. **刻意不动的（要么要用户先拍板，要么是有意为之的取舍）**：重复任务产品模型的 8 条待定行为、跨天 session 的统计归属（都待拍板）；`materializeRecurrences` 每天重算 365 天（改法要先定，属产品取舍）；`tasks` 缺日期索引导致范围查询全表扫描（**数据量大到几万行才会有感**，加索引要再升一次库，先留着）；时区在仓库构造时捕获一次（影响面极小）；`NavStackSaver` 不保存 visits（进程被杀后计数器归零，实测无影响）；日历换日期时下面那一条会保留上一天那份 1–2 帧（**这是刻意换掉原来的空态闪烁**）；专注页抽屉里的统计内容在抽屉关着时也会组合一次（`ModalNavigationDrawer` 的行为，只在进这一页时组合一次，不随每秒计时重组）。
+
+**第十二批（用户拿来一份外部审查报告让复核；提交 `74cbbfa`；DB 仍是 v14、无迁移）**
+
+那份报告的结论我逐条核对过，**四条是真的、两条要打折**：
+
+1. **连点两下「开始」会给关联习惯记两次卡（报告 3.1，真 bug，已修）**：`FocusViewModel.start()` 里 `startTimer(...)` 的返回值原来被丢掉，而这个函数有「已经有一个计时器就拒绝」的守卫（返回 false）——第二次点击虽然没起表，却照样执行了打卡。现在改成 `val started = startTimer(...)`，`if (started) habitRepository.autoCheckInForTask(...)`。**回归测试** `FocusScreenSmokeTest.doubleTappingStartChecksTheLinkedHabitInOnlyOnce`：按真实顺序走一遍（第一下真的起表 ⇒ 记一次；第二下被守卫拒掉 ⇒ 不许再记），断言当天只有 1 次。⚠️ 写这条测试时踩了两个坑，都记在下面第 5 条。
+2. **多习惯关联同一任务时打卡不是原子的（报告 3.2，真缺口，已修）**：`autoCheckInForTask` 原来每个习惯各开一个事务，中途失败会留下「前几个打过了、后面没打」。现在整批包进一个 `db.withTransaction`（Room 的 `withTransaction` 可嵌套，里面的 `increment` 会并进来）。
+3. **设置页整页不可滚动（报告：全项目唯一的功能阻断，属实，已修）**：那一页 5 个分组标题 + 17 行选项 + 4 条入口，比任何手机屏都长，而 `Column` 上没有任何滚动修饰符 → 底部「更多」那几条永远够不到。现在加 `verticalScroll(rememberScrollState())`；顺带把原来的 `Spacer(Modifier.weight(1f))` 换成固定高度（可滚动列没有有界高度，weight 在那里没有意义）。
+4. **右下角标字色阈值算错（报告属实，已修）**：`onPriorityColor` 原来写「亮度 > 0.55 用深色字」，而白字与近黑字的分界点在亮度 ≈ 0.20——琥珀 `#F5A623`（亮度 0.469）被当成深底配白字，对比度只剩 2:1。现在**把两种字的对比度都算出来挑高的那个**，不再猜阈值。
+5. **两处「内容看不见」（报告属实，已修）**：`doneInk`（已完成任务标题）`#B4B9BF` 在白卡片上只有 1.98:1，而完成态没有删除线之类第二信号，全靠这个颜色；`checkOutline`（未勾选的圈）`#D2D6DB` 只有 1.47:1，勾选钮看着像一片空白。分别调到约 4:1（`#7F848A`）与约 3.1:1（`#8E939A`）。**`dateMuted`（2.46:1）我没有动**——它是全 App 的「次级灰」、还兼着 material3 的 `onSurfaceVariant`，改一次整屏观感都变，属于用户的美术决定，留给他拍板（要改就是一行）。
+6. **报告 3.3 的修法不能照做（要打折的那条）**：报告自己已经纠正了「不加 `@ColumnInfo(defaultValue)` 会升级崩溃」这个误判（结论正确：Room 只在实体声明了默认值时才校验它，迁移测试也过了），但它的**修法建议**「顺手补上 `@ColumnInfo(defaultValue = \"0\")`」**不能照做**：`defaultValue` 是 schema bundle 的一部分（`14.json` 里 `phase` 与 `lastResumeAtWallClock` 就带着 `defaultValue`），**加上它会让 v14 的 expected schema 指纹（identityHash）变化**，而 Room 每次打开库都会拿 `room_master_table` 里存的旧指纹比一次 → 已经装了 App 的手机会在下次启动时撞上「Room cannot verify the data integrity. Looks like you've changed schema but forgot to update the version number」。要补只能**连同升一次版本号**（v15）一起做，只为一行风格统一不值得，**保持原样**。
+7. **报告里「年视图格子太小 / 周视图 7 列各自滚动」属实但没动**：`YearColumns = 3` 未变（点击判定用同一套格子），`verticalScroll` 确实写在 `days.forEach` 里面。这两条要动布局结构，按报告自己的建议**单独排期**（已记进 §13.5 未做清单）。
+8. **测试写法的一个坑（记下来省下一次）**：`compose.waitUntil { }` **只推进组合时钟、不排空主线程消息队列**，用它等 view model 里挂在 `Dispatchers.Main` 上的协程续体，会一路等到超时（这轮因此红了三次）；要等库里的状态出现，得像 `HabitScreenSmokeTest` 那样循环调 `compose.waitForIdle()`（本轮抽了个 `waitForDb(...)` 小助手）。另外**没有 composition 时主线程队列根本不动**，所以这类测试必须先 `setContent`。
+9. **验证**：全量单测 **250 全过**（新增那条回归测试）、lint 0 error / 2 warning、Kotlin 编译警告 0；包覆盖 `target/0.4.0/app-debug-0.4.0-fix.apk`。
 
 ### 13.6 版本规划
 
