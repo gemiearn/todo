@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.personal.todo.R
+import com.personal.todo.data.ListSummary
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.ui.theme.LocalTodoColors
@@ -64,7 +67,11 @@ fun TaskCollectionContent(
     onReopen: (Task) -> Unit,
     onDelete: (Task) -> Unit,
     onRestore: (Task) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 清单小结（收件箱与用户清单各一条）；其它视图给 null，就不画那条。 */
+    summary: ListSummary? = null,
+    /** 任务卡上的「开始专注」；给 null 就不显示那个按钮。 */
+    onQuickFocus: ((Task) -> Unit)? = null
 ) {
     val foldsCompleted = when (collection) {
         TaskCollection.Inbox,
@@ -103,6 +110,11 @@ fun TaskCollectionContent(
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // 清单小结排在任务行之前：先说这个清单整体什么情况，再看具体任务。
+        if (summary != null) {
+            item(key = "list-summary") { ListSummaryCard(summary) }
+        }
+
         items(tasks, key = { it.id }) { task ->
             val subtaskCount = subtaskCounts[task.id] ?: 0
             val tags = tagsByTask[task.id].orEmpty()
@@ -145,7 +157,10 @@ fun TaskCollectionContent(
                     zone = zone,
                     onSwipeComplete = { onComplete(task) },
                     onSwipeDelete = { onDelete(task) },
-                    tags = tags
+                    tags = tags,
+                    // 「开始专注」只在还能干这件事的清单里给（回收站 / 已完成那两个分支
+                    // 走的是另一条路，没有它）。
+                    onQuickFocus = onQuickFocus?.let { focus -> { focus(task) } }
                 )
             }
         }
@@ -174,6 +189,60 @@ fun TaskCollectionContent(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 清单页顶部那条小结：一条完成率进度条 + 「已完成 n / 共 m」+ 该清单累计专注时长。
+ *
+ * 数字全部来自 `TaskRepository.observeListSummary`，与下面那份列表同一口径（未删除顶层任务、
+ * 不含重复实例），所以两处永远对得上。
+ */
+@Composable
+private fun ListSummaryCard(summary: ListSummary) {
+    val colors = LocalTodoColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.card)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(
+                    R.string.list_summary_progress,
+                    summary.completed,
+                    summary.total
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = stringResource(
+                    R.string.list_summary_focus,
+                    durationText(summary.focusSeconds)
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.dateMuted
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        // 自己画那条进度条：比拉 Material3 的进度条少一层依赖，也更好跟卡片圆角对齐。
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(colors.groupHeader)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(summary.progress.coerceIn(0f, 1f))
+                    .height(6.dp)
+                    .background(colors.accent)
+            )
         }
     }
 }

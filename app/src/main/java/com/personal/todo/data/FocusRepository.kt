@@ -4,6 +4,7 @@ import android.os.SystemClock
 import androidx.room.withTransaction
 import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
+import com.personal.todo.data.db.TaskFocusTotals
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusPhase
@@ -51,6 +52,9 @@ class FocusRepository(
 
     /** Every finished session, newest first. */
     fun observeSessions(): Flow<List<FocusSession>> = focusDao.observeSessions()
+
+    /** 一条任务的专注合计（累计时长 / 次数 / 番茄数），任务详情页的「专注小结」读它。 */
+    fun observeTaskTotals(taskId: Long): Flow<TaskFocusTotals> = focusDao.observeTaskTotals(taskId)
 
     /** The monotonic reading the timer arithmetic is based on. */
     fun elapsedMillis(): Long = elapsed()

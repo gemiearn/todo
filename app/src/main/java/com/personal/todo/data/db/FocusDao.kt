@@ -37,4 +37,46 @@ interface FocusDao {
 
     @Query("SELECT * FROM focus_sessions ORDER BY startedAt DESC, id DESC")
     suspend fun getSessions(): List<FocusSession>
+
+    /**
+     * 一条任务上的专注合计：累计秒数、session 条数、以及其中「跑完的番茄钟」个数。
+     *
+     * 口径与统计页一致：只有 `status = COMPLETED` 的番茄才算番茄，中断的不算；休息是计时器
+     * 的另一个阶段、根本不写 session，所以天然不在里面。没有记录时三列都是 0（不是 null）。
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(actualFocusSeconds), 0) AS totalSeconds,
+               COUNT(*) AS sessionCount,
+               COALESCE(
+                   SUM(CASE WHEN mode = 'POMODORO' AND status = 'COMPLETED' THEN 1 ELSE 0 END), 0
+               ) AS pomodoroCount
+        FROM focus_sessions
+        WHERE taskId = :taskId
+        """
+    )
+    fun observeTaskTotals(taskId: Long): Flow<TaskFocusTotals>
+
+    /**
+     * 一个清单的累计专注秒数：`focus_sessions` 按**任务当前所在清单**汇总。
+     *
+     * 用 join 而不是 `listNameSnapshot`——清单小结说的是「这个清单现在」，快照只说明当时
+     * 在哪；任务搬走后，时间该跟着任务走。
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(s.actualFocusSeconds), 0) AS totalSeconds
+        FROM focus_sessions s
+        JOIN tasks t ON t.id = s.taskId
+        WHERE t.listId = :listId
+        """
+    )
+    fun observeListFocusSeconds(listId: Long): Flow<Int>
 }
+
+/** 一条任务上的专注合计；见 [FocusDao.observeTaskTotals]。 */
+data class TaskFocusTotals(
+    val totalSeconds: Int,
+    val sessionCount: Int,
+    val pomodoroCount: Int
+)

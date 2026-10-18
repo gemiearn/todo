@@ -94,6 +94,7 @@ import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.HabitRepository
+import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
@@ -115,7 +116,9 @@ import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 // ---------------------------------------------------------------- routes
@@ -312,7 +315,7 @@ fun TodoApp(
             val taskId = requireNotNull(argument) { "任务路由缺少任务 id: $route" }
             val detailViewModel: TaskDetailViewModel = viewModel(
                 key = "detail-$taskId",
-                factory = TaskDetailViewModel.factory(repository, taskId)
+                factory = TaskDetailViewModel.factory(repository, focusRepository, taskId)
             )
             TaskDetailScreen(
                 viewModel = detailViewModel,
@@ -469,6 +472,24 @@ internal fun MainScreen(
     // another call - which is the crash the phone reported:
     // "LifecycleRegistry cannot be cast to SaveableHolder" in rememberSaveable.
     val collection = collectionFor(kind, argument, selectedDate) ?: TaskCollection.None
+
+    // 清单小结：只有收件箱与用户清单各一条（其它视图给 null，那一行就不画）。这条 remember
+    // 对每条路由都会执行，不会让组合槽位错位；key 是 collection，换清单时换一条流。
+    val listSummaryFlow: Flow<ListSummary?> = remember(collection) {
+        when (collection) {
+            TaskCollection.Inbox -> repository.observeInboxSummary()
+            is TaskCollection.ListDetail -> repository.observeListSummary(collection.listId)
+            else -> flowOf(null)
+        }
+    }
+    val listSummary by listSummaryFlow.collectAsStateWithLifecycle(initialValue = null)
+
+    // 任务卡上的「开始专注」：把这条任务挂到专注页、再切过去；到那里按「开始专注」才真的
+    // 起表，所以不会点一下就产生半截会话。
+    val quickFocus: (Task) -> Unit = { task ->
+        focusViewModel.linkTask(task)
+        nav.resetTo(HomeTab.Focus.route)
+    }
     val collectionKey = when (collection) {
         is TaskCollection.DayView -> "collection-day-${collection.date.toEpochDay()}"
         else -> "collection-$route"
@@ -860,7 +881,8 @@ internal fun MainScreen(
                                 onReopen = onReopen,
                                 onDelete = requestDelete,
                                 onRestore = onRestore,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                onQuickFocus = quickFocus
                             )
                         }
                     }
@@ -922,7 +944,10 @@ internal fun MainScreen(
                     onReopen = onReopen,
                     onDelete = requestDelete,
                     onRestore = onRestore,
-                    modifier = Modifier.padding(innerPadding)
+                    modifier = Modifier.padding(innerPadding),
+                    // 收件箱与用户清单在列表最上面给一条小结，其它视图这里是 null。
+                    summary = listSummary,
+                    onQuickFocus = quickFocus
                 )
             }
         }

@@ -49,6 +49,15 @@ private const val RecurrenceHorizonDays = 365
 /** 「今天」那条流多久重新读一次日期：60 秒足够，跨过午夜后最多晚一分钟翻页。 */
 private const val TodayRefreshMillis = 60_000L
 
+/**
+ * 清单页顶部那条小结：未删除顶层任务的**总数**、其中**已完成**的条数，以及该清单累计的
+ * **专注秒数**。任务页的「已完成 n / 共 m」与完成率都从这三个数算，不另存一份。
+ */
+data class ListSummary(val total: Int, val completed: Int, val focusSeconds: Int) {
+    /** 完成率，0..1；一条任务都没有时算 0，不除零。 */
+    val progress: Float get() = if (total <= 0) 0f else completed.toFloat() / total
+}
+
 class TaskRepository(
     private val db: TodoDatabase,
     private val inboxName: String,
@@ -62,6 +71,7 @@ class TaskRepository(
     private val taskDao = db.taskDao()
     private val eventDao = db.taskEventDao()
     private val tagDao = db.tagDao()
+    private val focusDao = db.focusDao()
 
     // ---------------------------------------------------------------- 标签
     //
@@ -136,6 +146,29 @@ class TaskRepository(
         taskDao.observeTaskCountsByList().map { rows ->
             rows.associate { it.listId to it.taskCount }
         }
+
+    /**
+     * 清单页顶部那条小结的数据：该清单「已完成 / 共」与累计专注秒数。
+     *
+     * 条数口径与清单行一致（未删除顶层任务、不含重复实例）；专注时长按**任务当前所在清单**
+     * 汇总（`focus_sessions` join `tasks`），不用会话里的清单名快照——小结说的是「这个清单
+     * 现在」，任务搬走后时间该跟着任务走。
+     */
+    fun observeListSummary(listId: Long): Flow<ListSummary> = combine(
+        taskDao.observeListProgress(listId),
+        focusDao.observeListFocusSeconds(listId)
+    ) { progress, focusSeconds ->
+        ListSummary(
+            total = progress.total,
+            completed = progress.completed,
+            focusSeconds = focusSeconds
+        )
+    }
+
+    /** 收件箱的小结；收件箱是内建清单，先把它的 id 确保出来再读。 */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeInboxSummary(): Flow<ListSummary> =
+        flow { emit(ensureInbox()) }.flatMapLatest { observeListSummary(it) }
 
     /** Idempotent: returns the built-in inbox, creating it if it is missing. */
     suspend fun ensureInbox(): Long {

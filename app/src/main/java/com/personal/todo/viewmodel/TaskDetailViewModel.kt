@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
+import com.personal.todo.data.db.TaskFocusTotals
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +23,7 @@ import kotlinx.coroutines.launch
  */
 class TaskDetailViewModel(
     private val repository: TaskRepository,
+    focusRepository: FocusRepository,
     private val taskId: Long
 ) : ViewModel() {
 
@@ -30,6 +33,17 @@ class TaskDetailViewModel(
      */
     val task: StateFlow<Task?> = repository.observeTask(taskId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * 这条任务的专注合计（累计时长 / 次数 / 番茄数），页面上的「专注小结」卡读它。
+     * 专注记录在另一张表，所以这里单独订阅一条；做完一次专注，这张卡自己会更新。
+     */
+    val focusTotals: StateFlow<TaskFocusTotals> = focusRepository.observeTaskTotals(taskId)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            TaskFocusTotals(totalSeconds = 0, sessionCount = 0, pomodoroCount = 0)
+        )
 
     val subtasks: StateFlow<List<Task>> = repository.observeSubtasks(taskId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -106,8 +120,9 @@ class TaskDetailViewModel(
     }
 
     companion object {
-        fun factory(repository: TaskRepository, taskId: Long) = viewModelFactory {
-            initializer { TaskDetailViewModel(repository, taskId) }
-        }
+        fun factory(repository: TaskRepository, focusRepository: FocusRepository, taskId: Long) =
+            viewModelFactory {
+                initializer { TaskDetailViewModel(repository, focusRepository, taskId) }
+            }
     }
 }

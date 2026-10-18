@@ -22,10 +22,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -379,7 +382,11 @@ fun TaskCard(
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    tags: List<Tag> = emptyList()
+    tags: List<Tag> = emptyList(),
+    /**
+     * 卡片最右侧那个 ▶：「开始专注」。给了才画——回收站、已完成这类列表没有它。
+     */
+    onQuickFocus: (() -> Unit)? = null
 ) {
     val colors = LocalTodoColors.current
     val completed = task.completedAt != null
@@ -479,6 +486,22 @@ fun TaskCard(
                 Text(actionLabel)
             }
         }
+
+        // 「开始专注」：点一下把这条任务带进专注页。做成卡片上的一个小按钮、而不是再占一个
+        // 滑动手势——卡片两个方向已经给了「完成」（右滑）和「删除」（左滑）。
+        if (onQuickFocus != null) {
+            Spacer(Modifier.width(4.dp))
+            IconButton(
+                onClick = onQuickFocus,
+                modifier = Modifier.testTag(quickFocusTag(task.id))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = stringResource(R.string.task_action_quick_focus),
+                    tint = colors.accent
+                )
+            }
+        }
     }
 }
 
@@ -543,7 +566,9 @@ fun SwipeableTaskCard(
     onSwipeComplete: () -> Unit,
     onSwipeDelete: () -> Unit,
     modifier: Modifier = Modifier,
-    tags: List<Tag> = emptyList()
+    tags: List<Tag> = emptyList(),
+    /** 卡片上的「开始专注」；给 null 就不画。 */
+    onQuickFocus: (() -> Unit)? = null
 ) {
     val colors = LocalTodoColors.current
     val dismissState = rememberSwipeToDismissBoxState(
@@ -603,10 +628,14 @@ fun SwipeableTaskCard(
             onClick = onClick,
             nowMillis = nowMillis,
             zone = zone,
-            tags = tags
+            tags = tags,
+            onQuickFocus = onQuickFocus
         )
     }
 }
+
+/** 任务卡上「开始专注」那个按钮的测试钩子。 */
+internal fun quickFocusTag(taskId: Long): String = "quick-focus-$taskId"
 
 /** The date a task was finished on, for a task that never had a date of its own. */
 @Composable

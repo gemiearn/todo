@@ -1,5 +1,7 @@
 package com.personal.todo.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,10 +11,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -38,14 +44,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
+import com.personal.todo.data.db.TaskFocusTotals
 import com.personal.todo.data.db.TaskList
+import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import java.time.Instant
 import java.time.LocalTime
@@ -73,6 +83,9 @@ fun TaskDetailScreen(
     val events by viewModel.events.collectAsStateWithLifecycle()
     val tags by viewModel.tags.collectAsStateWithLifecycle()
     val subtaskAddFailures by viewModel.subtaskAddFailures.collectAsStateWithLifecycle()
+    val focusTotals by viewModel.focusTotals.collectAsStateWithLifecycle()
+    // 操作历史默认收起：整页事件流会把页面撑得很长，先说「有几条」，想看再点开。
+    var eventsExpanded by rememberSaveable { mutableStateOf(false) }
     val nowMillis = rememberNowMillis()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -149,6 +162,10 @@ fun TaskDetailScreen(
                 )
             }
 
+            // 专注小结：这条任务一共专注了多久、几次、其中几个番茄（数据来自另一张表，
+            // 由 view model 单独订阅）。
+            item { FocusSummaryCard(totals = focusTotals) }
+
             if (current.parentTaskId == null) {
                 item { SectionTitle(stringResource(R.string.task_subtasks_title)) }
                 if (subtasks.isEmpty()) {
@@ -181,13 +198,26 @@ fun TaskDetailScreen(
                 }
             }
 
-            item { SectionTitle(stringResource(R.string.task_events_title)) }
-            if (events.isEmpty()) {
-                item { InfoText(stringResource(R.string.empty_events)) }
+            // 操作历史：默认只留一行「操作历史（N 条）」，点一下才展开事件流。展开状态存在
+            // rememberSaveable 里，转屏回来还在。
+            item {
+                if (events.isEmpty()) {
+                    SectionTitle(stringResource(R.string.task_events_title))
+                    InfoText(stringResource(R.string.empty_events))
+                } else {
+                    CollapsibleSectionTitle(
+                        title = stringResource(R.string.task_events_title),
+                        count = events.size,
+                        expanded = eventsExpanded,
+                        onToggle = { eventsExpanded = !eventsExpanded }
+                    )
+                }
             }
-            items(events, key = { it.id }) { event ->
-                EventRow(event)
-                HorizontalDivider()
+            if (eventsExpanded) {
+                items(events, key = { it.id }) { event ->
+                    EventRow(event)
+                    HorizontalDivider()
+                }
             }
         }
     }
@@ -319,6 +349,97 @@ private fun InfoText(text: String) {
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     )
+}
+
+/**
+ * 可折叠的分节标题：左边标题、右边「（N 条）」加一个上下箭头，整行可点。
+ * 操作历史用它——默认收起，想看再点开。
+ */
+@Composable
+private fun CollapsibleSectionTitle(
+    title: String,
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = stringResource(R.string.task_events_count, count),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.dateMuted
+        )
+        Icon(
+            imageVector = if (expanded) {
+                Icons.Default.KeyboardArrowUp
+            } else {
+                Icons.Default.KeyboardArrowDown
+            },
+            contentDescription = null,
+            tint = colors.dateMuted,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+/**
+ * 这条任务的「专注小结」：累计时长、专注次数、其中的番茄数。
+ *
+ * 一次都没专注过时只说一句话，不摆一排 0——那比空着更让人以为统计坏了。
+ */
+@Composable
+private fun FocusSummaryCard(totals: TaskFocusTotals) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(LocalTodoColors.current.groupHeader)
+            .padding(14.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.task_focus_summary_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(Modifier.height(6.dp))
+        if (totals.sessionCount == 0) {
+            Text(
+                text = stringResource(R.string.task_focus_summary_empty),
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalTodoColors.current.dateMuted
+            )
+        } else {
+            Text(
+                text = stringResource(
+                    R.string.task_focus_summary_total,
+                    durationText(totals.totalSeconds)
+                ),
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = stringResource(
+                    R.string.task_focus_summary_detail,
+                    totals.sessionCount,
+                    totals.pomodoroCount
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalTodoColors.current.dateMuted
+            )
+        }
+    }
 }
 
 @Composable

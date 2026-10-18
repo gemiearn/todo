@@ -13,6 +13,9 @@ data class TaskSubtaskCount(val taskId: Long, val subtaskCount: Int)
 /** Number of live (not soft deleted) tasks per list. */
 data class ListTaskCount(val listId: Long, val taskCount: Int)
 
+/** 一个清单的进度：顶层任务总数与其中已完成数；见 [TaskDao.observeListProgress]。 */
+data class ListProgress(val total: Int, val completed: Int)
+
 @Dao
 interface TaskDao {
 
@@ -134,6 +137,25 @@ interface TaskDao {
         """
     )
     fun observeOpenTaskCountsByList(): Flow<List<ListTaskCount>>
+
+    /**
+     * 一个清单的进度：未删除顶层任务总数、以及其中已完成的条数。
+     *
+     * 与清单行同一口径（不含子任务、不含重复任务的实例），所以清单页顶部那条小结的
+     * 「已完成 n / 共 m」和下面列表、折叠分组对得上。没有任务时两列都是 0。
+     */
+    @Query(
+        """
+        SELECT COUNT(*) AS total,
+               COALESCE(SUM(CASE WHEN completedAt IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed
+        FROM tasks
+        WHERE listId = :listId
+          AND parentTaskId IS NULL
+          AND deletedAt IS NULL
+          AND recurrenceSourceId IS NULL
+        """
+    )
+    fun observeListProgress(listId: Long): Flow<ListProgress>
 
     /**
      * Every not soft deleted task per list, in any state and including
