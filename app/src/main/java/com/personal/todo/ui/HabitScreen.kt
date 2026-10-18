@@ -290,9 +290,9 @@ private fun HabitCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(colors.card)
-            .padding(vertical = 10.dp)
+            .padding(vertical = 12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
@@ -315,7 +315,7 @@ private fun HabitCard(
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = habit.name,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -359,7 +359,7 @@ private fun HabitCard(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         // 这个习惯今天的进度：一条细进度条，比只写「今天 45/60 分钟」更一眼看得出还差多少。
         HabitProgressBar(
             progress = HabitRules.shownAmount(todayCount, habit.dailyTarget, habit.step).toFloat() /
@@ -367,7 +367,7 @@ private fun HabitCard(
             color = if (done) colors.success else colors.accent,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -522,8 +522,8 @@ private fun HabitDayCell(
         Spacer(Modifier.height(4.dp))
         Box(
             modifier = Modifier
-                .size(20.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .size(24.dp)
+                .clip(RoundedCornerShape(8.dp))
                 .background(
                     when {
                         done -> colors.success

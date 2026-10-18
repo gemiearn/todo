@@ -667,6 +667,12 @@ internal fun MainScreen(
                         nav.resetTo(target)
                         scope.launch { drawerState.close() }
                     },
+                    // 习惯是个独立页面，得走 push 而不是 resetTo：resetTo 会让它变成栈底，
+                    // 页面左上角的返回箭头就没得可退。
+                    onOpenHabits = {
+                        nav.push(ROUTE_HABITS)
+                        scope.launch { drawerState.close() }
+                    },
                     onNewList = { showNewListDialog = true }
                 )
             }
@@ -847,6 +853,12 @@ internal fun MainScreen(
                         modifier = if (calendarView == CalendarView.MONTH) Modifier else Modifier.weight(1f)
                     )
                     if (calendarView == CalendarView.MONTH) {
+                        // 分界线（用户 2026-10-18 要求）：网格和下面日程区之间来一条细线。
+                        // 没有它，上面那块日历和下面的任务糊成一片，看不出这是两个区。
+                        HorizontalDivider(
+                            color = LocalTodoColors.current.dateMuted.copy(alpha = 0.2f),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
                         // 稿子④：日程区顶部先给一条「哪一天 · 几条」的标题，下面那些卡片
                         // 就不再是凭空出现的了。
                         CalendarDayHeader(date = selectedDate, count = visibleTasks.size)
@@ -1244,6 +1256,7 @@ private fun ListsDrawer(
     overdueCount: Int,
     currentRoute: String,
     onSelect: (String) -> Unit,
+    onOpenHabits: () -> Unit,
     onNewList: () -> Unit
 ) {
     val colors = LocalTodoColors.current
@@ -1305,15 +1318,21 @@ private fun ListsDrawer(
             }
         }
 
-        // 分隔线以下的三样不随清单滚动：清单再长，「已完成 / 新建清单」也一直在手边。
-        // 回收站 deliberately has no entry here: it lives in 更多, so the drawer
-        // stays a plain list of lists (spec section 4.2 still requires the trash
-        // itself, and nothing about it is removed).
+        // 分隔线以下这几样不随清单滚动：清单再长，「已完成 / 习惯 / 新建清单」也一直在手边。
+        // 回收站 deliberately has no entry here: it lives in 更多，抽屉里不放它。
         HorizontalDivider(color = colors.dateMuted.copy(alpha = 0.2f))
         DrawerRow(
             label = stringResource(R.string.nav_completed),
             selected = currentRoute == ROUTE_COMPLETED,
             onClick = { onSelect(ROUTE_COMPLETED) }
+        )
+        // 习惯：用户 2026-10-18 要求它也从这个左滑面板进；更多页里那个入口**保留**，
+        // 两个入口并存（他问「设置可以保留？」→ 保留）。这一行在抽屉里叫「习惯打卡」，
+        // 跟更多页那行「习惯」错开——同屏两个同名节点会让读屏和测试都分不清谁是谁。
+        DrawerRow(
+            label = stringResource(R.string.drawer_entry_habits),
+            selected = currentRoute == ROUTE_HABITS,
+            onClick = onOpenHabits
         )
         TextButton(onClick = onNewList, modifier = Modifier.padding(horizontal = 12.dp)) {
             Text(stringResource(R.string.action_new_list))

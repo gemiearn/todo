@@ -137,6 +137,8 @@
     <string name="habit_delete_message">「%1$s」的打卡记录会一起删掉，删了拿不回来。</string>
     <string name="habit_delete_confirm">删除</string>
     <string name="more_entry_habits">习惯</string>
+    <!-- 抽屉里那一行：与「更多」页的「习惯」区分开，免得同屏两个同名节点（读屏也友好） -->
+    <string name="drawer_entry_habits">习惯打卡</string>
 
     <!-- 日期、星期与倒计时 -->
     <string name="date_today">今天</string>
