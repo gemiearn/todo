@@ -139,6 +139,46 @@ class HabitRepositoryTest {
         assertEquals(2, habit.stepAmount)
     }
 
+    /**
+     * 关联任务自动打卡（v14，用户口径「只要计时了就打卡」）：只有**关联到这条任务**并且
+     * **开关是开的**那些习惯才记，次数与手点一下同一个口径（夹在目标以内）。
+     */
+    @Test
+    fun focusingTheLinkedTaskChecksInOnlyTheHabitsWithTheSwitchOn() = runBlocking {
+        val taskId = 7L
+        val on = habits.createHabit("写周报", 3, linkedTaskId = taskId, autoCheckInOnFocus = true)
+        val off = habits.createHabit("喝水", 3, linkedTaskId = taskId)
+        val other = habits.createHabit("读书", 3, linkedTaskId = 9L, autoCheckInOnFocus = true)
+
+        habits.autoCheckInForTask(taskId, today)
+        assertEquals(1, count(on, today))
+        assertEquals("开关没开的习惯不动", 0, count(off, today))
+        assertEquals("关联的是别的任务，不动", 0, count(other, today))
+
+        // 起三次计时就记三次——但到目标为止，和手点一样。
+        repeat(5) { habits.autoCheckInForTask(taskId, today) }
+        assertEquals(3, count(on, today))
+    }
+
+    @Test
+    fun turningTheSwitchOffOrClearingTheLinkStopsTheAutoCheckIn() = runBlocking {
+        val habitId = habits.createHabit("写周报", 3, linkedTaskId = 7L, autoCheckInOnFocus = true)
+
+        habits.updateHabit(habitId, "写周报", 3, linkedTaskId = 7L, autoCheckInOnFocus = false)
+        habits.autoCheckInForTask(7L, today)
+        assertEquals("开关关了就不再自动打卡", 0, count(habitId, today))
+
+        habits.updateHabit(habitId, "写周报", 3, linkedTaskId = null, autoCheckInOnFocus = true)
+        assertNull("没有关联任务，链接就是空的", db.habitDao().getById(habitId)?.linkedTaskId)
+        assertEquals(
+            "链接没了，「开关」也不会留着一个开着的值",
+            false,
+            db.habitDao().getById(habitId)?.autoCheckInOnFocus
+        )
+        habits.autoCheckInForTask(7L, today)
+        assertEquals(0, count(habitId, today))
+    }
+
     private suspend fun count(habitId: Long, date: LocalDate): Int =
         db.habitDao().getCheckIn(habitId, date)?.count ?: 0
 }

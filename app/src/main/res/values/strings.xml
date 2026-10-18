@@ -136,9 +136,6 @@
     <string name="habit_delete_title">删除这个习惯？</string>
     <string name="habit_delete_message">「%1$s」的打卡记录会一起删掉，删了拿不回来。</string>
     <string name="habit_delete_confirm">删除</string>
-    <string name="more_entry_habits">习惯</string>
-    <!-- 抽屉里那一行：与「更多」页的「习惯」区分开，免得同屏两个同名节点（读屏也友好） -->
-    <string name="drawer_entry_habits">习惯打卡</string>
 
     <!-- 日期、星期与倒计时 -->
     <string name="date_today">今天</string>
@@ -323,6 +320,18 @@
     <string name="icon_label">图标</string>
     <string name="icon_none">无</string>
 
+    <!-- 顶栏「清单 / 习惯」两格开关 -->
+    <string name="switch_lists">清单</string>
+    <string name="switch_habits">习惯</string>
+
+    <!-- 习惯的「关联任务 + 专注自动打卡」 -->
+    <string name="habit_link_task_label">关联任务</string>
+    <string name="habit_link_task_none">未关联</string>
+    <string name="habit_link_task_clear">取消关联</string>
+    <string name="habit_link_task_gone">已不在待办里</string>
+    <string name="habit_auto_check_in">专注这条任务时自动打卡</string>
+    <string name="habit_auto_check_in_hint">起一次计时就算一次，按单次基数折算、到目标为止</string>
+
     <!-- 对话框与提示 -->
     <string name="dialog_new_list_title">新建清单</string>
     <string name="dialog_rename_list_title">重命名清单</string>
@@ -343,6 +352,7 @@
     <!-- 「更多」页里的入口名，带上「番茄钟」才找得到 -->
     <string name="more_entry_focus">专注（番茄钟）</string>
     <string name="more_entry_stats">专注统计</string>
+    <string name="drawer_stats_open_full">展开</string>
     <!-- 统计页（照滴答清单/番茄ToDo那一页） -->
     <string name="focus_stats_open">统计</string>
     <string name="stats_detail_title">专注详情</string>

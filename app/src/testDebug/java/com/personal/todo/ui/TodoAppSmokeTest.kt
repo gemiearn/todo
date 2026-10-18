@@ -405,26 +405,27 @@ class TodoAppSmokeTest {
     }
 
     /**
-     * 习惯的入口在「更多」页，点进去是一页独立的习惯页（推入页）。
+     * 习惯页的入口在任务列表顶栏那个「清单 / 习惯」开关上（用户 2026-10-18 把入口从
+     * 抽屉和更多页搬到了这里），点「习惯」那一格就切过去。
      *
      * 页面自己怎么打卡、怎么新建，都在 HabitScreenSmokeTest 里钉；这里只管「入口通不通」。
-     * 收尾时按返回键离开这一页：页面的查询订阅随之下线，别把活着的订阅留给下一条测试
+     * 收尾时点「清单」退回去：习惯页的查询订阅随之下线，别把活着的订阅留给下一条测试
      * （实测会把后面那条四象限的冒烟断言带崩）。
      */
     @Test
-    fun theHabitPageOpensFromTheMoreTab() {
+    fun theHabitPageOpensFromTheListsSwitch() {
         launchApp()
 
-        compose.onNodeWithTag(tabTag(HomeTab.More)).performClick()
-        compose.waitForIdle()
-        compose.onNodeWithText("习惯").performClick()
+        compose.onNodeWithTag("$ListsHabitsSwitchTag-habits").performClick()
         compose.waitForIdle()
 
         // 一个习惯都还没有时，页面直接说实话；右上角就是新建入口。
         compose.onNodeWithText("还没有习惯", substring = true).assertExists()
         compose.onNodeWithTag(HabitNewTag).assertExists()
 
-        compose.onNodeWithContentDescription("返回").performClick()
-        compose.waitUntilNodeCount(hasText("标签管理"), 1, TimeoutMillis)
+        // 同一枚开关点「清单」就回到任务列表：那一页的顶栏上又是这个开关。
+        compose.onNodeWithTag("$ListsHabitsSwitchTag-lists").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("$ListsHabitsSwitchTag-habits").assertExists()
     }
 }

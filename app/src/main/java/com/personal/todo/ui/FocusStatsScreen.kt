@@ -141,6 +141,9 @@ private fun hourText(hour: Int) = (if (hour < 10) "0" else "") + hour + ":00"
  * recomputed from the sessions, so the numbers can never drift. A break - which
  * is a phase of the timer, never a session - therefore cannot show up, and the
  * 达成率 ring has two arcs instead of the reference's three.
+ *
+ * [onBack] 传 null ＝ 这一份嵌在专注页的左滑面板里：抽屉里没有「上一页」可退，返回箭头
+ * 与顶栏都不画，标题与「展开」由抽屉自己给。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,7 +152,7 @@ fun FocusStatsScreen(
     zone: ZoneId,
     today: LocalDate,
     tags: List<Tag>,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     val all by sessions.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -221,17 +224,19 @@ fun FocusStatsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.more_entry_stats)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back)
-                        )
+            if (onBack != null) {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.more_entry_stats)) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back)
+                            )
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         modifier = modifier
     ) { innerPadding ->

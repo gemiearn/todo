@@ -929,6 +929,98 @@ class TodoDatabaseMigrationTest {
     }
 
     /**
+     * v13 -> v14: 习惯加「关联任务」与「专注自动打卡」开关（外加一个 linkedTaskId 索引）。
+     * 关联为空、开关为 0 ⇒ 升级前就有的习惯既没有关联、也不会自动打卡，这正是它们的情况。
+     */
+    @Test
+    fun migratingFromVersion13AddsTheHabitLinkAndTheAutoCheckInSwitch() = runBlocking {
+        val name = "migration-13-to-14.db"
+        context.deleteDatabase(name)
+        createVersion13Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val habit = db.habitDao().observeHabits().first().single()
+            assertEquals("喝水", habit.name)
+            assertEquals("💧", habit.icon)
+            assertNull("老习惯没有关联任务", habit.linkedTaskId)
+            assertEquals("老习惯的自动打卡开关是关的", false, habit.autoCheckInOnFocus)
+
+            // 列升完就能写：关联与开关都落得住，也能按任务反查出来（触发自动打卡就走这条）。
+            db.habitDao().update(habit.copy(linkedTaskId = 7L, autoCheckInOnFocus = true))
+            assertEquals(
+                listOf(habit.id),
+                db.habitDao().getAutoCheckInHabitsForTask(7L).map { it.id }
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * Builds a file backed database exactly as version 13 would have left it: the
+     * v12 DDL plus 清单 / 习惯 / 任务三张表上的 emoji 图标列。
+     */
+    private fun createVersion13Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V13_TASK_LISTS)
+            sqlite.execSQL(V13_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V12_FOCUS_SESSIONS)
+            sqlite.execSQL(V12_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL(V13_HABITS)
+            sqlite.execSQL(V10_HABIT_CHECK_INS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_tasks_recurrenceSourceId` ON `tasks` (`recurrenceSourceId`)"
+            )
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habit_check_ins_habitId` ON `habit_check_ins` (`habitId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habit_check_ins_date` ON `habit_check_ins` (`date`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V13_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, icon, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', NULL, 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, icon, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime, " +
+                    "repeatRule, recurrenceSourceId) " +
+                    "VALUES ('迁移前的任务', NULL, NULL, 1, NULL, 'IMPORTANT_NOT_URGENT', NULL, NULL, 0, " +
+                    "1000, 1000, NULL, NULL, NULL, NULL, NULL, NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO task_events (taskId, eventAt, eventType, titleSnapshot, detailsJson) " +
+                    "VALUES (1, 1000, 'CREATED', '迁移前的任务', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO habits (id, name, icon, dailyTarget, unitLabel, stepAmount, sortOrder, createdAt, updatedAt) " +
+                    "VALUES (1, '喝水', '💧', 60, '分钟', 15, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO habit_check_ins (habitId, date, count, updatedAt) " +
+                    "VALUES (1, '2026-10-16', 3, 1000)"
+            )
+            sqlite.version = 13
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
+    /**
      * Builds a file backed database exactly as version 12 would have left it: the
      * v11 DDL plus 专注记录与计时器上的标签 id 快照，一条带标签名的专注记录和一只计时器。
      */
@@ -1392,6 +1484,33 @@ class TodoDatabaseMigrationTest {
                 "`lastResumeAtElapsed` INTEGER NOT NULL, `lastResumeAtWallClock` INTEGER NOT NULL DEFAULT 0, " +
                 "`focusSegments` TEXT, `accumulatedFocusSeconds` INTEGER NOT NULL, `running` INTEGER NOT NULL, " +
                 "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+
+        /** The identity hash `schemas/.../13.json` records for version 13. */
+        const val V13_IDENTITY_HASH = "63dd2f6f6adb9654c93ca413f1167769"
+
+        /** 清单表到版本 13：v5 的那张再加上图标列。 */
+        const val V13_TASK_LISTS =
+            "CREATE TABLE IF NOT EXISTS `task_lists` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `icon` TEXT, `isInbox` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)"
+
+        /** 任务表到版本 13：v8 的那张再加上图标列。 */
+        const val V13_TASKS =
+            "CREATE TABLE IF NOT EXISTS `tasks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`title` TEXT NOT NULL, `notes` TEXT, `icon` TEXT, `listId` INTEGER NOT NULL, " +
+                "`parentTaskId` INTEGER, `priority` TEXT NOT NULL, `completedAt` INTEGER, " +
+                "`deletedAt` INTEGER, `sortOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, `plannedDate` TEXT, `plannedTime` TEXT, `dueDate` TEXT, " +
+                "`dueTime` TEXT, `repeatRule` TEXT, `recurrenceSourceId` INTEGER, " +
+                "FOREIGN KEY(`listId`) REFERENCES `task_lists`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , " +
+                "FOREIGN KEY(`parentTaskId`) REFERENCES `tasks`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+
+        /** 习惯表到版本 13：v11 的那张再加上图标列。 */
+        const val V13_HABITS =
+            "CREATE TABLE IF NOT EXISTS `habits` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `icon` TEXT, `dailyTarget` INTEGER NOT NULL, `unitLabel` TEXT, " +
+                "`stepAmount` INTEGER, `sortOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL)"
 
         const val V5_TAGS =
             "CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +

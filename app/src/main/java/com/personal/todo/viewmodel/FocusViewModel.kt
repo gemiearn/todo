@@ -12,6 +12,7 @@ import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettings
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.FocusSound
+import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
@@ -75,7 +76,9 @@ object FocusDurations {
 class FocusViewModel(
     private val focusRepository: FocusRepository,
     taskRepository: TaskRepository,
-    private val settingsStore: FocusSettingsStore
+    private val settingsStore: FocusSettingsStore,
+    /** 习惯：起一次计时就给「关联到这条任务、且开着自动打卡」的习惯记一次（v14）。 */
+    private val habitRepository: HabitRepository
 ) : ViewModel() {
 
     val zone: ZoneId = focusRepository.zone
@@ -232,6 +235,9 @@ class FocusViewModel(
                 tagNamesSnapshot = tagSnapshot,
                 tagIdsSnapshot = tagIdSnapshot
             )
+            // 关联任务自动打卡（习惯 v14）：口径是「只要计时了就打卡」，所以不等它跑完，
+            // 中断也算——起一次表记一次，次数照旧夹在习惯的目标以内。
+            habitRepository.autoCheckInForTask(taskId, habitRepository.today())
         }
     }
 
@@ -318,9 +324,10 @@ class FocusViewModel(
         fun factory(
             focusRepository: FocusRepository,
             taskRepository: TaskRepository,
-            settingsStore: FocusSettingsStore
+            settingsStore: FocusSettingsStore,
+            habitRepository: HabitRepository
         ) = viewModelFactory {
-            initializer { FocusViewModel(focusRepository, taskRepository, settingsStore) }
+            initializer { FocusViewModel(focusRepository, taskRepository, settingsStore, habitRepository) }
         }
     }
 }

@@ -40,7 +40,9 @@ class HabitRepository(
         dailyTarget: Int,
         unitLabel: String? = null,
         stepAmount: Int? = null,
-        icon: String? = null
+        icon: String? = null,
+        linkedTaskId: Long? = null,
+        autoCheckInOnFocus: Boolean = false
     ): Long {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "习惯名不能为空" }
@@ -49,6 +51,8 @@ class HabitRepository(
             Habit(
                 name = trimmed,
                 icon = cleanIcon(icon),
+                linkedTaskId = cleanLinkedTask(linkedTaskId),
+                autoCheckInOnFocus = autoCheckInOnFocus && linkedTaskId != null,
                 dailyTarget = dailyTarget.coerceAtLeast(HabitRules.MinTarget),
                 unitLabel = cleanUnit(unitLabel),
                 stepAmount = cleanStep(stepAmount),
@@ -60,14 +64,16 @@ class HabitRepository(
         )
     }
 
-    /** 名字、单位、目标量、单次基数与图标走同一个入口：习惯就这几样可编辑的东西。 */
+    /** 名字、单位、目标量、单次基数、图标与关联任务走同一个入口：习惯就这几样可编辑的东西。 */
     suspend fun updateHabit(
         habitId: Long,
         name: String,
         dailyTarget: Int,
         unitLabel: String? = null,
         stepAmount: Int? = null,
-        icon: String? = null
+        icon: String? = null,
+        linkedTaskId: Long? = null,
+        autoCheckInOnFocus: Boolean = false
     ) {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "习惯名不能为空" }
@@ -76,12 +82,25 @@ class HabitRepository(
             habit.copy(
                 name = trimmed,
                 icon = cleanIcon(icon),
+                linkedTaskId = cleanLinkedTask(linkedTaskId),
+                // 没有关联任务就没有自动打卡可言：开关跟着关联一起消失。
+                autoCheckInOnFocus = autoCheckInOnFocus && linkedTaskId != null,
                 dailyTarget = dailyTarget.coerceAtLeast(HabitRules.MinTarget),
                 unitLabel = cleanUnit(unitLabel),
                 stepAmount = cleanStep(stepAmount),
                 updatedAt = now()
             )
         )
+    }
+
+    /**
+     * 为一条任务起了一次专注计时：给所有「关联到它、且开着自动打卡」的习惯记一次当天打卡。
+     *
+     * 口径（用户 2026-10-18 拍板）是**只要计时了就打卡**，所以不看时长、也把中断算进来；
+     * 次数仍走 [increment]，也就是照旧夹在目标以内、按单次基数折算。
+     */
+    suspend fun autoCheckInForTask(taskId: Long, date: LocalDate) {
+        habitDao.getAutoCheckInHabitsForTask(taskId).forEach { increment(it.id, date) }
     }
 
     /** 删习惯时连它的打卡记录一起清掉（同一事务），不留悬空行。 */
@@ -118,4 +137,7 @@ class HabitRepository(
 
     /** 空图标存成 null：这样「没有图标」只有一种表示，选「无」就是把这一列清空。 */
     private fun cleanIcon(icon: String?): String? = icon?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** 关联任务只接受一个真实的 id；没选就是 null（「不关联」也只有这一种表示）。 */
+    private fun cleanLinkedTask(taskId: Long?): Long? = taskId?.takeIf { it > 0 }
 }

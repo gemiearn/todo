@@ -14,6 +14,7 @@ import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.FocusSound
+import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.data.db.TodoDatabase
@@ -81,7 +82,12 @@ class FocusScreenSmokeTest {
     /** The view model lives outside the composition, as the app creates it. */
     private fun launchFocus(
         viewModel: FocusViewModel =
-            FocusViewModel(focus, tasks, FocusSettingsStore(RuntimeEnvironment.getApplication()))
+            FocusViewModel(
+                focus,
+                tasks,
+                FocusSettingsStore(RuntimeEnvironment.getApplication()),
+                HabitRepository(db)
+            )
     ) {
         compose.setContent {
             TodoPomodoroTheme {
@@ -241,7 +247,8 @@ class FocusScreenSmokeTest {
         val viewModel = FocusViewModel(
             focus,
             tasks,
-            FocusSettingsStore(RuntimeEnvironment.getApplication())
+            FocusSettingsStore(RuntimeEnvironment.getApplication()),
+            HabitRepository(db)
         )
         val task = runBlocking {
             tasks.observeAllOpenTasks().first().first { it.title == "写季度报告" }
@@ -281,7 +288,7 @@ class FocusScreenSmokeTest {
     @Test
     fun thePomodoroParametersAreAdjustableAndSaved() {
         val store = FocusSettingsStore(RuntimeEnvironment.getApplication())
-        launchFocus(FocusViewModel(focus, tasks, store))
+        launchFocus(FocusViewModel(focus, tasks, store, HabitRepository(db)))
 
         compose.onNodeWithText("专注时长").performClick()
         compose.waitForIdle()
@@ -297,7 +304,7 @@ class FocusScreenSmokeTest {
     @Test
     fun theAmbienceChoiceIsSaved() {
         val store = FocusSettingsStore(RuntimeEnvironment.getApplication())
-        launchFocus(FocusViewModel(focus, tasks, store))
+        launchFocus(FocusViewModel(focus, tasks, store, HabitRepository(db)))
 
         compose.onNodeWithText("雨声").performClick()
         compose.waitForIdle()

@@ -100,6 +100,8 @@ import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
+import com.personal.todo.data.db.FocusSession
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.TaskFilter
@@ -118,6 +120,7 @@ import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -303,7 +306,7 @@ fun TodoApp(
     val focusSettings = remember(context) { FocusSettingsStore(context) }
     val focusViewModel: FocusViewModel = viewModel(
         key = HomeTab.Focus.route,
-        factory = FocusViewModel.factory(focusRepository, repository, focusSettings)
+        factory = FocusViewModel.factory(focusRepository, repository, focusSettings, habitRepository)
     )
 
     // 计时器是 App 级状态，落盘（checkpoint）不能挂在专注页上：切到别的页签后专注页就不在
@@ -362,7 +365,19 @@ fun TodoApp(
 
         ROUTE_TAGS -> TagScreen(viewModel = tagViewModel, onBack = { nav.pop() })
 
-        ROUTE_HABITS -> HabitScreen(viewModel = habitViewModel, onBack = { nav.pop() })
+        ROUTE_HABITS -> {
+            // 弹层里那个「关联任务」用的就是专注页那份「还没做完的任务」清单（一串重复
+            // 任务只露最近那条），所以这里借它的流，不再另开一条查询。
+            val habitOpenTasks by focusViewModel.openTasks.collectAsStateWithLifecycle()
+            HabitScreen(
+                viewModel = habitViewModel,
+                lists = lists,
+                openTasks = habitOpenTasks,
+                // 顶栏那个「清单 / 习惯」开关点「清单」＝退回进来之前那一页。
+                onSwitchToLists = { nav.pop() },
+                onBack = { nav.pop() }
+            )
+        }
 
         ROUTE_SETTINGS -> SettingsScreen(
             themeChoice = themeChoice,
@@ -663,33 +678,65 @@ internal fun MainScreen(
     // sort / list actions that belong to the task screens.
     val showsFocusChrome = kind == HomeTab.Focus.route
 
+    // 左滑面板按路由分三种（用户 2026-10-18 拍板）：任务视图与日历＝清单抽屉；专注页＝
+    // 专注统计（原来那只是右上角推进去的一页，现在也成了这块面板）；四象限与更多页
+    // **不给**抽屉——那里没有「清单」这回事，左滑不出来才是对的。
+    val drawerMode = when (kind) {
+        HomeTab.Focus.route -> DrawerMode.STATS
+        HomeTab.Quadrant.route, HomeTab.More.route -> DrawerMode.NONE
+        else -> DrawerMode.LISTS
+    }
+    val drawerWidthFraction =
+        if (drawerMode == DrawerMode.STATS) StatsDrawerWidthFraction else DrawerWidthFraction
+
+    // 「清单 / 习惯」两格开关：有任务列表的那些视图（收件箱 / 清单 / 今天 / 未来 / 逾期 /
+    // 已完成 / 回收站）顶栏都有它，点「习惯」就进习惯页；日历自己有一套，不放这个。
+    val showsListSwitch = collection != TaskCollection.None && kind != HomeTab.Calendar.route
+
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = drawerMode != DrawerMode.NONE,
         drawerContent = {
-            // 抽屉不铺满全屏：只占屏幕约六成，拉出来时原来的界面还露在外面一点，
-            // 一眼看得出「这是一层盖上去的面板」，也留了半边随时能点回去。
-            ModalDrawerSheet(
-                modifier = Modifier.width(
-                    LocalConfiguration.current.screenWidthDp.dp * DrawerWidthFraction
-                )
-            ) {
-                ListsDrawer(
-                    lists = lists,
-                    openTaskCounts = openTaskCounts,
-                    overdueCount = overdueCount,
-                    currentRoute = route,
-                    onSelect = { target ->
-                        nav.resetTo(target)
-                        scope.launch { drawerState.close() }
-                    },
-                    // 习惯是个独立页面，得走 push 而不是 resetTo：resetTo 会让它变成栈底，
-                    // 页面左上角的返回箭头就没得可退。
-                    onOpenHabits = {
-                        nav.push(ROUTE_HABITS)
-                        scope.launch { drawerState.close() }
-                    },
-                    onNewList = { showNewListDialog = true }
-                )
+            if (drawerMode != DrawerMode.NONE) {
+                // 抽屉不铺满全屏：只占屏幕约六成，拉出来时原来的界面还露在外面一点，
+                // 一眼看得出「这是一层盖上去的面板」，也留了半边随时能点回去。
+                ModalDrawerSheet(
+                    modifier = Modifier.width(
+                        LocalConfiguration.current.screenWidthDp.dp * drawerWidthFraction
+                    )
+                ) {
+                    when (drawerMode) {
+                        DrawerMode.LISTS -> ListsDrawer(
+                            lists = lists,
+                            openTaskCounts = openTaskCounts,
+                            overdueCount = overdueCount,
+                            currentRoute = route,
+                            onSelect = { target ->
+                                nav.resetTo(target)
+                                scope.launch { drawerState.close() }
+                            },
+                            onNewList = { showNewListDialog = true }
+                        )
+
+                        // 专注页的面板就是专注统计本身：不画它自己的返回箭头（onBack = null），
+                        // 顶上那行标题由这里给，右边留一个「展开」推进整页。
+                        DrawerMode.STATS -> FocusStatsDrawer(
+                            sessions = focusViewModel.sessions,
+                            // 专注页自己的 view model 就带着时区，不另外传一个仓库进来。
+                            zone = focusViewModel.zone,
+                            today = repository.today(),
+                            // 按标签筛那一行用的就是外壳这份标签表。
+                            tags = allTags,
+                            onOpenFullPage = {
+                                nav.push(ROUTE_STATS)
+                                scope.launch { drawerState.close() }
+                            }
+                        )
+
+                        // 空面板：手势已关、顶栏也没有菜单按钮，拉不出来。
+                        DrawerMode.NONE -> Unit
+                    }
+                }
             }
         }
     ) {
@@ -723,7 +770,7 @@ internal fun MainScreen(
                                         contentDescription = stringResource(R.string.action_close_search)
                                     )
                                 }
-                            } else {
+                            } else if (drawerMode != DrawerMode.NONE) {
                                 IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                     Icon(
                                         imageVector = Icons.Default.Menu,
@@ -747,6 +794,15 @@ internal fun MainScreen(
                             }
                             // While the search field is open it owns the whole bar.
                             if (!searchActive && !showsFocusChrome) {
+                                // 清单 / 习惯 两格开关：就在「显示范围」前面（用户指定的位置）。
+                                if (showsListSwitch) {
+                                    ListsHabitsSwitch(
+                                        onLists = true,
+                                        // 已经在清单这一侧了，点它不需要做任何事。
+                                        onSelectLists = {},
+                                        onSelectHabits = { nav.push(ROUTE_HABITS) }
+                                    )
+                                }
                                 // 显示范围筛选：只在有任务列表的路由上出现；日历用自己的
                                 // ⋮，更多 / 四象限没有列表可筛。
                                 if (!showsCalendarHeader && collection != TaskCollection.None) {
@@ -1169,10 +1225,8 @@ internal fun MoreScreen(
             label = stringResource(R.string.more_entry_tags),
             onClick = { onOpen(ROUTE_TAGS) }
         )
-        MoreEntry(
-            label = stringResource(R.string.more_entry_habits),
-            onClick = { onOpen(ROUTE_HABITS) }
-        )
+        // 习惯的入口不在这儿了（用户 2026-10-18）：它在任务页顶栏那个「清单 / 习惯」
+        // 开关上，点一下就切过去。
         MoreEntry(
             label = stringResource(R.string.nav_completed),
             onClick = { onOpen(ROUTE_COMPLETED) }
@@ -1252,6 +1306,12 @@ private fun MoreEntry(label: String, trailing: Int? = null, onClick: () -> Unit)
  */
 private const val DrawerWidthFraction = 0.84f
 
+/** 专注统计那块面板比清单抽屉更宽：五张图表要宽度才看得清。 */
+private const val StatsDrawerWidthFraction = 0.94f
+
+/** 左滑面板按路由分三种：清单抽屉 / 专注统计 / 不给面板。 */
+private enum class DrawerMode { LISTS, STATS, NONE }
+
 /**
  * 抽屉里清单色点的取色顺序（值是 [TagPalette] 的下标）：先用蓝 / 紫 / 番茄红这些比较中性
  * 的，红和琥珀垫后，免得第一条清单就顶着「紧急」的红点。按清单 id 取，稳定、不随排序变。
@@ -1272,7 +1332,6 @@ private fun ListsDrawer(
     overdueCount: Int,
     currentRoute: String,
     onSelect: (String) -> Unit,
-    onOpenHabits: () -> Unit,
     onNewList: () -> Unit
 ) {
     val colors = LocalTodoColors.current
@@ -1337,25 +1396,61 @@ private fun ListsDrawer(
             }
         }
 
-        // 分隔线以下这几样不随清单滚动：清单再长，「已完成 / 习惯 / 新建清单」也一直在手边。
+        // 分隔线以下这几样不随清单滚动：清单再长，「已完成 / 新建清单」也一直在手边。
         // 回收站 deliberately has no entry here: it lives in 更多，抽屉里不放它。
+        // 习惯也不在这里了（用户 2026-10-18：入口搬到任务页顶栏那个「清单 / 习惯」开关上）。
         HorizontalDivider(color = colors.dateMuted.copy(alpha = 0.2f))
         DrawerRow(
             label = stringResource(R.string.nav_completed),
             selected = currentRoute == ROUTE_COMPLETED,
             onClick = { onSelect(ROUTE_COMPLETED) }
         )
-        // 习惯：用户 2026-10-18 要求它也从这个左滑面板进；更多页里那个入口**保留**，
-        // 两个入口并存（他问「设置可以保留？」→ 保留）。这一行在抽屉里叫「习惯打卡」，
-        // 跟更多页那行「习惯」错开——同屏两个同名节点会让读屏和测试都分不清谁是谁。
-        DrawerRow(
-            label = stringResource(R.string.drawer_entry_habits),
-            selected = currentRoute == ROUTE_HABITS,
-            onClick = onOpenHabits
-        )
         TextButton(onClick = onNewList, modifier = Modifier.padding(horizontal = 12.dp)) {
             Text(stringResource(R.string.action_new_list))
         }
+    }
+}
+
+/**
+ * 专注页左滑出来的那块面板：把专注统计整页塞进抽屉里。
+ *
+ * 顶部那行是自己给的（标题 + 「展开」），下面直接复用统计页本身——统计页的 onBack 传
+ * null 时它不画自己的返回箭头，因为抽屉里没有「上一页」可退。点「展开」才是推入整页，
+ * 那才是能横着看完整图表的形态。
+ */
+@Composable
+private fun FocusStatsDrawer(
+    sessions: Flow<List<FocusSession>>,
+    zone: ZoneId,
+    today: LocalDate,
+    tags: List<Tag>,
+    onOpenFullPage: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.more_entry_stats),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onOpenFullPage) {
+                Text(stringResource(R.string.drawer_stats_open_full))
+            }
+        }
+        FocusStatsScreen(
+            sessions = sessions,
+            zone = zone,
+            today = today,
+            tags = tags,
+            onBack = null,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 

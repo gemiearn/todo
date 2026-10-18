@@ -16,6 +16,7 @@ import androidx.room.Room
 import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
+import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TodoDatabase
@@ -83,7 +84,7 @@ class MainScreenSmokeTest {
                 var selectedDate by remember { mutableStateOf(tasks.today()) }
                 MainScreen(
                     repository = tasks,
-                    focusViewModel = FocusViewModel(focus, tasks, focusSettings),
+                    focusViewModel = FocusViewModel(focus, tasks, focusSettings, HabitRepository(db)),
                     nav = nav,
                     route = route,
                     kind = kind,

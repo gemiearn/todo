@@ -70,6 +70,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 那个小图标。三列都可空，所以升级前就有的清单、习惯与任务读出来都是「没有图标」——
  * 这正是它们的情况，不猜任何值。`tasks.icon` 这批**只建列、编辑器还没有入口**（用户说
  * 任务图标暂时不做），先把列留下，做那个功能时就不必再迁一次库。
+ *
+ * Version 14 给 `habits` 加 `linkedTaskId`（关联的那条任务，可空、**不加外键**）与
+ * `autoCheckInOnFocus`（开关：为那条任务起一次专注计时就给这个习惯当天 +1）。开关是
+ * `NOT NULL DEFAULT 0`：升级前就有的习惯都是关的，这正是那个默认值；关联任务为空则是
+ * 它们本来就没有关联。另加一个 `linkedTaskId` 索引供触发时按任务查习惯。
  */
 @Database(
     entities = [
@@ -83,7 +88,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Habit::class,
         HabitCheckIn::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -352,6 +357,23 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v13 -> v14: 习惯加「关联任务」与「专注自动打卡」开关（外加一个 linkedTaskId
+         * 索引）。开关是 `NOT NULL DEFAULT 0`——升级前就有的习惯都是关的，这正是它。
+         */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `habits` ADD COLUMN `linkedTaskId` INTEGER")
+                db.execSQL(
+                    "ALTER TABLE `habits` ADD COLUMN `autoCheckInOnFocus` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_habits_linkedTaskId` " +
+                        "ON `habits` (`linkedTaskId`)"
+                )
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -365,7 +387,8 @@ abstract class TodoDatabase : RoomDatabase() {
             MIGRATION_9_10,
             MIGRATION_10_11,
             MIGRATION_11_12,
-            MIGRATION_12_13
+            MIGRATION_12_13,
+            MIGRATION_13_14
         )
     }
 }

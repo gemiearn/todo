@@ -39,8 +39,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -64,6 +66,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.Habit
+import com.personal.todo.data.db.Task
+import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.HabitRules
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.ui.theme.TagPalette
@@ -84,6 +88,12 @@ internal const val HabitUnitFieldTag = "habit-unit"
 
 /** 弹层里的「每天目标」输入框。 */
 internal const val HabitTargetFieldTag = "habit-target"
+
+/** 弹层里选「关联任务」的那个按钮。 */
+internal const val HabitLinkTaskButtonTag = "habit-link-task"
+
+/** 弹层里「专注时自动打卡」那个开关。 */
+internal const val HabitAutoCheckInSwitchTag = "habit-auto-check-in"
 
 /** 一个习惯「今天」那一次打卡的区域：点一下 +1、长按 −1。 */
 internal fun habitRowTag(habitId: Long): String = "habit-row-$habitId"
@@ -134,6 +144,12 @@ private fun habitColorOf(habitId: Long): Color =
 @Composable
 fun HabitScreen(
     viewModel: HabitViewModel,
+    /** 清单表：关联任务选择器按清单分组，收件箱排在最前。 */
+    lists: List<TaskList> = emptyList(),
+    /** 可以关联的、还没做完的顶层任务。 */
+    openTasks: List<Task> = emptyList(),
+    /** 顶栏那个「清单 / 习惯」开关：给了才会画（点「清单」＝退回去）。 */
+    onSwitchToLists: (() -> Unit)? = null,
     onBack: () -> Unit
 ) {
     val habits by viewModel.habits.collectAsStateWithLifecycle()
@@ -157,6 +173,15 @@ fun HabitScreen(
                     }
                 },
                 actions = {
+                    // 清单 / 习惯 两格开关：在这一页高亮的是「习惯」，点「清单」退回去。
+                    if (onSwitchToLists != null) {
+                        ListsHabitsSwitch(
+                            onLists = false,
+                            onSelectLists = onSwitchToLists,
+                            onSelectHabits = {}
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
                     IconButton(
                         onClick = { creating = true },
                         modifier = Modifier.testTag(HabitNewTag)
@@ -229,8 +254,20 @@ fun HabitScreen(
             initialUnit = "",
             initialStep = 1,
             initialIcon = NoIcon,
-            onConfirm = { name, target, unit, step, icon ->
-                viewModel.create(name, target, unit, step, icon)
+            initialLinkedTaskId = null,
+            initialAutoCheckIn = false,
+            lists = lists,
+            openTasks = openTasks,
+            onConfirm = { draft ->
+                viewModel.create(
+                    name = draft.name,
+                    dailyTarget = draft.dailyTarget,
+                    unitLabel = draft.unitLabel,
+                    stepAmount = draft.stepAmount,
+                    icon = draft.icon,
+                    linkedTaskId = draft.linkedTaskId,
+                    autoCheckInOnFocus = draft.autoCheckInOnFocus
+                )
                 creating = false
             },
             onDismiss = { creating = false }
@@ -245,8 +282,21 @@ fun HabitScreen(
             initialUnit = habit.unitLabel.orEmpty(),
             initialStep = habit.step,
             initialIcon = habit.icon.orEmpty(),
-            onConfirm = { name, target, unit, step, icon ->
-                viewModel.update(habit.id, name, target, unit, step, icon)
+            initialLinkedTaskId = habit.linkedTaskId,
+            initialAutoCheckIn = habit.autoCheckInOnFocus,
+            lists = lists,
+            openTasks = openTasks,
+            onConfirm = { draft ->
+                viewModel.update(
+                    habitId = habit.id,
+                    name = draft.name,
+                    dailyTarget = draft.dailyTarget,
+                    unitLabel = draft.unitLabel,
+                    stepAmount = draft.stepAmount,
+                    icon = draft.icon,
+                    linkedTaskId = draft.linkedTaskId,
+                    autoCheckInOnFocus = draft.autoCheckInOnFocus
+                )
                 editing = null
             },
             onDismiss = { editing = null }
@@ -567,8 +617,19 @@ private fun HabitDayCell(
     }
 }
 
+/** 弹层里那一份草稿：习惯可编辑的字段都在这里，点保存时整份交回。 */
+private data class HabitDraft(
+    val name: String,
+    val dailyTarget: Int,
+    val unitLabel: String?,
+    val stepAmount: Int?,
+    val icon: String,
+    val linkedTaskId: Long?,
+    val autoCheckInOnFocus: Boolean
+)
+
 /**
- * 新建 / 编辑习惯：一个名字格子加一个「每天次数」的步进器。
+ * 新建 / 编辑习惯：名字、图标、单位、每天目标、单次基数，外加「关联任务 + 专注自动打卡」。
  *
  * 用底部弹层而不是 AlertDialog，和「新建任务」那个弹层保持一致（它也是唯一在测试里被
  * 跑过的带输入框弹层）。保存按钮在弹层底部整行铺满，和参考里的新建任务一个样子。
@@ -582,7 +643,11 @@ private fun HabitEditSheet(
     initialUnit: String,
     initialStep: Int,
     initialIcon: String = NoIcon,
-    onConfirm: (String, Int, String?, Int?, String) -> Unit,
+    initialLinkedTaskId: Long? = null,
+    initialAutoCheckIn: Boolean = false,
+    lists: List<TaskList> = emptyList(),
+    openTasks: List<Task> = emptyList(),
+    onConfirm: (HabitDraft) -> Unit,
     onDismiss: () -> Unit
 ) {
     val colors = LocalTodoColors.current
@@ -591,9 +656,16 @@ private fun HabitEditSheet(
     var icon by remember { mutableStateOf(initialIcon) }
     var targetText by remember { mutableStateOf(initialTarget.toString()) }
     var step by remember { mutableIntStateOf(initialStep) }
+    var linkedTaskId by remember { mutableStateOf(initialLinkedTaskId) }
+    var autoCheckIn by remember { mutableStateOf(initialAutoCheckIn) }
+    var taskPickerOpen by remember { mutableStateOf(false) }
     val target = targetText.toIntOrNull() ?: 0
     val unitShown = unit.ifBlank { Habit.DefaultUnit }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // 关联任务已经不在「未完成」列表里（做完了 / 删了）也要能显示出来：库里那条链接
+    // 还在，就不能让选择器看起来像「没选」。
+    val linkedTaskTitle = openTasks.firstOrNull { it.id == linkedTaskId }?.title
+        ?: linkedTaskId?.let { stringResource(R.string.habit_link_task_gone) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -702,15 +774,94 @@ private fun HabitEditSheet(
                 )
             }
 
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = stringResource(R.string.habit_link_task_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.dateMuted
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(
+                    onClick = { taskPickerOpen = true },
+                    modifier = Modifier.weight(1f).testTag(HabitLinkTaskButtonTag)
+                ) {
+                    Text(
+                        text = linkedTaskTitle ?: stringResource(R.string.habit_link_task_none),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (linkedTaskId != null) {
+                    TextButton(
+                        onClick = {
+                            linkedTaskId = null
+                            // 断开关联就没有自动打卡可言，开关一起收起来。
+                            autoCheckIn = false
+                        }
+                    ) {
+                        Text(stringResource(R.string.habit_link_task_clear))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.habit_auto_check_in),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (linkedTaskId == null) colors.dateMuted else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.habit_auto_check_in_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.dateMuted
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(
+                    checked = autoCheckIn,
+                    onCheckedChange = { autoCheckIn = it },
+                    // 没关联任务时这个开关无处可落，直接禁掉而不是让它假装能开。
+                    enabled = linkedTaskId != null,
+                    modifier = Modifier.testTag(HabitAutoCheckInSwitchTag)
+                )
+            }
+
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = { onConfirm(name, target, unit, step, icon) },
+                onClick = {
+                    onConfirm(
+                        HabitDraft(
+                            name = name,
+                            dailyTarget = target,
+                            unitLabel = unit,
+                            stepAmount = step,
+                            icon = icon,
+                            linkedTaskId = linkedTaskId,
+                            autoCheckInOnFocus = autoCheckIn && linkedTaskId != null
+                        )
+                    )
+                },
                 enabled = name.isNotBlank() && target >= HabitRules.MinTarget,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.action_save))
             }
         }
+    }
+
+    if (taskPickerOpen) {
+        TaskPickerDialog(
+            tasks = openTasks,
+            lists = lists,
+            onPick = {
+                linkedTaskId = it.id
+                taskPickerOpen = false
+            },
+            onDismiss = { taskPickerOpen = false }
+        )
     }
 }
 

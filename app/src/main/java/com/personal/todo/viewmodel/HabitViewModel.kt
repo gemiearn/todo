@@ -53,9 +53,13 @@ class HabitViewModel(
         dailyTarget: Int,
         unitLabel: String? = null,
         stepAmount: Int? = null,
-        icon: String? = null
+        icon: String? = null,
+        linkedTaskId: Long? = null,
+        autoCheckInOnFocus: Boolean = false
     ) {
-        viewModelScope.launch { repository.createHabit(name, dailyTarget, unitLabel, stepAmount, icon) }
+        viewModelScope.launch {
+            repository.createHabit(name, dailyTarget, unitLabel, stepAmount, icon, linkedTaskId, autoCheckInOnFocus)
+        }
     }
 
     fun update(
@@ -64,10 +68,14 @@ class HabitViewModel(
         dailyTarget: Int,
         unitLabel: String? = null,
         stepAmount: Int? = null,
-        icon: String? = null
+        icon: String? = null,
+        linkedTaskId: Long? = null,
+        autoCheckInOnFocus: Boolean = false
     ) {
         viewModelScope.launch {
-            repository.updateHabit(habitId, name, dailyTarget, unitLabel, stepAmount, icon)
+            repository.updateHabit(
+                habitId, name, dailyTarget, unitLabel, stepAmount, icon, linkedTaskId, autoCheckInOnFocus
+            )
         }
     }
 

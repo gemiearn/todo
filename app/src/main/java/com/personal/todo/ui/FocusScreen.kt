@@ -1059,9 +1059,12 @@ private fun modeLabelRes(mode: FocusMode): Int = when (mode) {
  *
  * There is deliberately no "no task" choice: a session always runs on a real task,
  * so nothing here can produce an unattached one.
+ *
+ * `internal` 而不是 private：习惯弹层的「关联任务」也用这同一个选择器，两处口径一致
+ * （一串重复任务只露最近那条未完成的、按清单分组、收件箱在最前）。
  */
 @Composable
-private fun TaskPickerDialog(
+internal fun TaskPickerDialog(
     tasks: List<Task>,
     lists: List<TaskList>,
     onPick: (Task) -> Unit,

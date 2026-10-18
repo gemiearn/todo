@@ -28,6 +28,12 @@ interface HabitDao {
     @Query("SELECT * FROM habits WHERE id = :id")
     suspend fun getById(id: Long): Habit?
 
+    /**
+     * 关联到这条任务、并且开着「专注自动打卡」的习惯：为它起一次专注计时就给它们记一次。
+     */
+    @Query("SELECT * FROM habits WHERE linkedTaskId = :taskId AND autoCheckInOnFocus = 1")
+    suspend fun getAutoCheckInHabitsForTask(taskId: Long): List<Habit>
+
     @Query("SELECT * FROM habit_check_ins WHERE habitId = :habitId AND date = :date")
     suspend fun getCheckIn(habitId: Long, date: LocalDate): HabitCheckIn?
 

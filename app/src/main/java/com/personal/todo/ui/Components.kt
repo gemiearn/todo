@@ -22,7 +22,9 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -56,8 +58,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -774,6 +779,77 @@ private fun IconChoiceChip(
         )
     }
 }
+
+/** 「清单 / 习惯」两格分段开关：测试钩子。 */
+internal const val ListsHabitsSwitchTag = "lists-habits-switch"
+
+/**
+ * 顶栏上那个「清单 / 习惯」两格分段开关（用户 2026-10-18 要的）。
+ *
+ * 两枚图标合成一个胶囊，选中的那一格用强调色底；点「习惯」进习惯页、点「清单」回到
+ * 任务列表。习惯入口因此从左侧面板里搬到了这里（抽屉里那行与更多页那行都撤掉了）。
+ */
+@Composable
+fun ListsHabitsSwitch(
+    onLists: Boolean,
+    onSelectLists: () -> Unit,
+    onSelectHabits: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(colors.groupHeader)
+            .padding(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SwitchCell(
+            icon = Icons.AutoMirrored.Filled.List,
+            description = stringResource(R.string.switch_lists),
+            selected = onLists,
+            tag = "$ListsHabitsSwitchTag-lists",
+            onClick = onSelectLists
+        )
+        SwitchCell(
+            icon = Icons.Default.CheckCircle,
+            description = stringResource(R.string.switch_habits),
+            selected = !onLists,
+            tag = "$ListsHabitsSwitchTag-habits",
+            onClick = onSelectHabits
+        )
+    }
+}
+
+@Composable
+private fun SwitchCell(
+    icon: ImageVector,
+    description: String,
+    selected: Boolean,
+    tag: String,
+    onClick: () -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Box(
+        modifier = Modifier
+            .size(SwitchCellSize)
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (selected) colors.card else Color.Transparent)
+            .clickable(onClick = onClick)
+            .testTag(tag)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (selected) colors.accent else colors.dateMuted,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
+private val SwitchCellSize = 28.dp
 
 /**
  * Confirmation shown before deleting a parent task that still has subtasks:

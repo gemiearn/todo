@@ -17,7 +17,7 @@ import java.time.LocalDate
  * 单次 15（点 4 下够数）。单位与单次都可以由用户改，[unitLabel] 为空就是「次」、
  * [stepAmount] 为空就是 1，于是 v11 之前的老习惯显示与原来一模一样。
  */
-@Entity(tableName = "habits")
+@Entity(tableName = "habits", indices = [Index("linkedTaskId")])
 data class Habit(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
     val name: String,
@@ -28,6 +28,20 @@ data class Habit(
      * 迁移时那一列留空即可。
      */
     val icon: String? = null,
+    /**
+     * 关联的那条任务（可空）。
+     *
+     * **不加外键**：任务被软删除或移进回收站都不该拦住「改习惯」这件事，链接留着只是
+     * 再也不会有新的打卡从它触发罢了（见 [autoCheckInOnFocus]）。
+     */
+    val linkedTaskId: Long? = null,
+    /**
+     * 开着它：为 [linkedTaskId] 那条任务起一次专注计时，就给这个习惯当天 +1。
+     *
+     * 默认关（v14 之前的老习惯全是关的，迁移的默认值 0 正是它们的情况）。打卡次数仍受
+     * [dailyTarget] 与 [stepAmount] 约束，不会因为多计几次而超过目标。
+     */
+    val autoCheckInOnFocus: Boolean = false,
     /** 每天想完成的量，**以 [unit] 为单位**（如 单位=分钟、目标=60 分钟）。 */
     val dailyTarget: Int = 1,
     /**
