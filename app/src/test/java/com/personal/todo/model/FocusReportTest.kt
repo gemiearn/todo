@@ -286,6 +286,30 @@ class FocusReportTest {
     }
 
     @Test
+    fun theTimelineOnlyDrawsTheRunsThatCount() {
+        // 被杀 / 离开 App 那一段不计入专注，时间线上也不该被画成一段专注——否则就是
+        // 「记录只有 10 分钟，横条却从 13 点横到 16 点」这种自相矛盾。
+        val dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val start = dayStart + 13 * 60 * 60_000L
+        val tenMinutes = 10 * 60_000L
+        val session = session(
+            seconds = 600,
+            startMinuteOfDay = 13 * 60,
+            endMinuteOfDay = 16 * 60
+        ).copy(focusSegments = FocusSegments.append(null, start, start + tenMinutes))
+
+        val spans = focusSpans(
+            sessions = listOf(session),
+            period = focusPeriodOf(FocusPeriodUnit.DAY, today),
+            zone = zone
+        )
+
+        assertEquals(1, spans.size)
+        assertEquals(13 * 60, spans.single().startMinute)
+        assertEquals(13 * 60 + 10, spans.single().endMinute)
+    }
+
+    @Test
     fun theHoursGetTheShareOfTheSpanTheyCover() {
         val bars = focusHourBars(
             sessions = listOf(

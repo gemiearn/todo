@@ -1082,7 +1082,10 @@ private fun HoursCard(
                 bars = bars,
                 axisMinutes = axisMinutes,
                 axisLabels = (0..4).map { level ->
-                    compactDuration(level * axisMinutes * 60)
+                    // 轴被四等分，每格是 axisMinutes/4 分钟；刻度文字必须跟柱子同一把尺子
+                    // （原来写成 level * axisMinutes * 60，等于把每一格放大 4 倍——12 分钟的
+                    // 满量程被标成「48m」，10 分钟的柱子看着像 40 分钟）。
+                    compactDuration(level * axisMinutes * 60 / 4)
                 }
             )
         }

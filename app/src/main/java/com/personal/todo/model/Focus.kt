@@ -369,7 +369,14 @@ data class FocusSpan(
     val interrupted: Boolean
 )
 
-/** [period] 里每一段专注的时钟跨度，按开始时间排。 */
+/**
+ * [period] 里每一段专注的时钟跨度，按开始时间排。
+ *
+ * 只画**真正在跑的那几小段**（[FocusSegments]）：被系统杀掉、或者你在别处待着那一段
+ * 不计入专注，就不该在时间线上被画成一段专注——否则会出现「记录 10 分钟、横条却横跨
+ * 三个钟头」这种自相矛盾。老记录没有小段信息，才退回按 `startedAt..endedAt` 整段画，
+ * 历史统计不因为这个改动变样。
+ */
 fun focusSpans(
     sessions: List<FocusSession>,
     period: FocusPeriod,
@@ -378,27 +385,32 @@ fun focusSpans(
     val spans = mutableListOf<FocusSpan>()
 
     sessions.forEach { session ->
-        if (session.endedAt <= session.startedAt) return@forEach
+        val runs = FocusSegments.decode(session.focusSegments)
+            .ifEmpty { listOf(session.startedAt..session.endedAt) }
 
-        var day = localDateOf(session.startedAt, zone)
-        val lastDay = localDateOf(session.endedAt, zone)
-        while (!day.isAfter(lastDay)) {
-            val dayStart = day.atStartOfDay(zone).toInstant().toEpochMilli()
-            val dayEnd = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-            val from = maxOf(session.startedAt, dayStart)
-            val to = minOf(session.endedAt, dayEnd)
-            if (to > from && period.contains(day)) {
-                val startMinute = ((from - dayStart) / MillisPerMinute).toInt().coerceIn(0, MinutesPerDay - 1)
-                val endMinute = ((to - dayStart + MillisPerMinute - 1) / MillisPerMinute).toInt()
-                    .coerceIn(startMinute + 1, MinutesPerDay)
-                spans += FocusSpan(
-                    date = day,
-                    startMinute = startMinute,
-                    endMinute = endMinute,
-                    interrupted = session.status == FocusStatus.INTERRUPTED
-                )
+        runs.forEach { run ->
+            if (run.last <= run.first) return@forEach
+
+            var day = localDateOf(run.first, zone)
+            val lastDay = localDateOf(run.last, zone)
+            while (!day.isAfter(lastDay)) {
+                val dayStart = day.atStartOfDay(zone).toInstant().toEpochMilli()
+                val dayEnd = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+                val from = maxOf(run.first, dayStart)
+                val to = minOf(run.last, dayEnd)
+                if (to > from && period.contains(day)) {
+                    val startMinute = ((from - dayStart) / MillisPerMinute).toInt().coerceIn(0, MinutesPerDay - 1)
+                    val endMinute = ((to - dayStart + MillisPerMinute - 1) / MillisPerMinute).toInt()
+                        .coerceIn(startMinute + 1, MinutesPerDay)
+                    spans += FocusSpan(
+                        date = day,
+                        startMinute = startMinute,
+                        endMinute = endMinute,
+                        interrupted = session.status == FocusStatus.INTERRUPTED
+                    )
+                }
+                day = day.plusDays(1)
             }
-            day = day.plusDays(1)
         }
     }
 
