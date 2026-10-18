@@ -55,12 +55,12 @@ class AppShellViewModel(private val repository: TaskRepository) : ViewModel() {
         }
     }
 
-    fun createList(name: String) {
-        viewModelScope.launch { repository.createList(name) }
+    fun createList(name: String, icon: String? = null) {
+        viewModelScope.launch { repository.createList(name, icon) }
     }
 
-    fun renameList(listId: Long, name: String) {
-        viewModelScope.launch { repository.renameList(listId, name) }
+    fun renameList(listId: Long, name: String, icon: String?) {
+        viewModelScope.launch { repository.renameList(listId, name, icon) }
     }
 
     /** Moves a user list up (-1) or down (+1) in the drawer order. */

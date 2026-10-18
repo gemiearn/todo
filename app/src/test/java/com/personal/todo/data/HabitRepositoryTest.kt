@@ -122,6 +122,23 @@ class HabitRepositoryTest {
         assertEquals("次数至少 1", 1, list.last().dailyTarget)
     }
 
+    @Test
+    fun aHabitKeepsItsIconAndClearingItStoresNull() = runBlocking {
+        val habitId = habits.createHabit("喝水", 5, icon = "💧")
+        assertEquals("💧", db.habitDao().getById(habitId)?.icon)
+
+        habits.updateHabit(habitId, "喝水", 5, icon = "")
+        assertNull("选「无」就是把这一列清掉", db.habitDao().getById(habitId)?.icon)
+
+        // 改名 / 改目标量时把图标一起带上，图标不会被顺手抹掉。
+        habits.updateHabit(habitId, "喝水", 8, "杯", 2, "💧")
+        val habit = requireNotNull(db.habitDao().getById(habitId))
+        assertEquals("💧", habit.icon)
+        assertEquals(8, habit.dailyTarget)
+        assertEquals("杯", habit.unitLabel)
+        assertEquals(2, habit.stepAmount)
+    }
+
     private suspend fun count(habitId: Long, date: LocalDate): Int =
         db.habitDao().getCheckIn(habitId, date)?.count ?: 0
 }

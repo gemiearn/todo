@@ -90,19 +90,25 @@ class TaskRepositoryTest {
 
     @Test
     fun creatingAListTrimsTheNameAndRejectsBlank() = runBlocking {
-        val listId = repository.createList("  工作  ")
+        val listId = repository.createList("  工作  ", "📋")
 
         assertEquals("工作", db.taskListDao().getById(listId)?.name)
+        assertEquals("📋", db.taskListDao().getById(listId)?.icon)
+        // 空图标与没写一样，都存成 null（选「无」就是把这一列清掉）。
+        assertEquals(null, db.taskListDao().getById(repository.createList("生活", " "))?.icon)
         assertFailsWithIllegalArgument { repository.createList("   ") }
     }
 
     @Test
     fun renamingAListTrimsTheNameAndRejectsBlank() = runBlocking {
-        val listId = repository.createList("工作")
-        repository.renameList(listId, "  个人事务 ")
+        val listId = repository.createList("工作", "📋")
+        repository.renameList(listId, "  个人事务 ", "🏠")
 
         assertEquals("个人事务", db.taskListDao().getById(listId)?.name)
-        assertFailsWithIllegalArgument { repository.renameList(listId, " ") }
+        assertEquals("换图标与换名字走同一个入口", "🏠", db.taskListDao().getById(listId)?.icon)
+        repository.renameList(listId, "个人事务", "")
+        assertEquals("选「无」就把图标清空", null, db.taskListDao().getById(listId)?.icon)
+        assertFailsWithIllegalArgument { repository.renameList(listId, " ", "🏠") }
     }
 
     @Test

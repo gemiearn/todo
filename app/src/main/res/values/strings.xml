@@ -319,6 +319,10 @@
     <string name="empty_subtasks">还没有子任务</string>
     <string name="empty_events">还没有记录</string>
 
+    <!-- 名字前面那个小图标（清单 / 习惯共用一行备选） -->
+    <string name="icon_label">图标</string>
+    <string name="icon_none">无</string>
+
     <!-- 对话框与提示 -->
     <string name="dialog_new_list_title">新建清单</string>
     <string name="dialog_rename_list_title">重命名清单</string>

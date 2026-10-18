@@ -54,6 +54,13 @@ data class Task(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
     val title: String,
     val notes: String? = null,
+    /**
+     * 任务名字前面那个小图标（一个 emoji 字符）。
+     *
+     * v13 只建了这一列，编辑器还没有选图标的入口（用户说任务图标「暂时不做」）；
+     * 先把列留下，做那个功能时就不必再迁一次库。空＝没有图标。
+     */
+    val icon: String? = null,
     val listId: Long,
     val parentTaskId: Long? = null,
     val priority: Priority = Priority.DEFAULT,

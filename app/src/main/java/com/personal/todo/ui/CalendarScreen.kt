@@ -123,11 +123,12 @@ private const val RowHeightDp = 48
 private const val WeeksPerMonth = 6
 
 /**
- * 月视图网格的高度：**永远按六行留位**。行数不足的月份，下面那几行整行留空（不画下个月的
- * 日期、也不画点），网格高度一动不动，翻月时下面那块（日期与当天任务）自然不会上下跳。
+ * 月视图网格的高度：**永远按六行留位**，六行也都画满——装不下本月的那些格子填下个月的
+ * 日期（数字与圆点都按邻月那一档变淡）。
  *
  * 一开始的做法是让高度跟着月份收（画几行就多高），结果翻月落定那一刻整页要重排一次，
- * 日历立刻卡了起来——所以高度固定，只让「画不画」变。
+ * 日历立刻卡了起来——所以高度固定。后来还试过「用不到的整行留空」，用户对照竞品后要的
+ * 是**回到原来那样**：最后一行照画、把下个月的日子填回去（2026-10-18 晚）。
  */
 private const val GridHeightDp = RowHeightDp * WeeksPerMonth
 
@@ -683,8 +684,6 @@ private fun MonthGrid(
     val firstOfMonth = month.atDay(1)
     // The week the grid starts on: Monday by default, Sunday when the user asks.
     val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))
-    // 这个月真正用得上几行；用不到的整行留空（见 [GridHeightDp]）。
-    val rows = monthRowCount(month, weekStartsMonday)
     val lastCell = firstCell.plusDays((WeeksPerMonth * DaysPerWeek - 1).toLong())
 
     // The grid asks for the weeks it draws, not just its own month: a span that
@@ -698,27 +697,23 @@ private fun MonthGrid(
     Column(modifier = Modifier.fillMaxSize()) {
         repeat(WeeksPerMonth) { week ->
             Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                // 这个月用不到的行整行留空：不画下个月的日期，也不画点。高度固定，所以
-                // 翻月时下面那块不会跟着上下跳（那正是之前卡顿的来源）。
-                if (week < rows) {
-                    if (showWeekNumbers) {
-                        WeekNumberCell(
-                            weekStart = firstCell.plusDays((week * DaysPerWeek).toLong()),
-                            weekStartsMonday = weekStartsMonday
-                        )
-                    }
-                    repeat(DaysPerWeek) { dayOfWeek ->
-                        val date = firstCell.plusDays((week * DaysPerWeek + dayOfWeek).toLong())
-                        DayCell(
-                            date = date,
-                            inMonth = YearMonth.from(date) == month,
-                            selected = date == selectedDate,
-                            today = date == today,
-                            dots = dotsByDate[date].orEmpty(),
-                            onClick = { onSelectDate(date) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                if (showWeekNumbers) {
+                    WeekNumberCell(
+                        weekStart = firstCell.plusDays((week * DaysPerWeek).toLong()),
+                        weekStartsMonday = weekStartsMonday
+                    )
+                }
+                repeat(DaysPerWeek) { dayOfWeek ->
+                    val date = firstCell.plusDays((week * DaysPerWeek + dayOfWeek).toLong())
+                    DayCell(
+                        date = date,
+                        inMonth = YearMonth.from(date) == month,
+                        selected = date == selectedDate,
+                        today = date == today,
+                        dots = dotsByDate[date].orEmpty(),
+                        onClick = { onSelectDate(date) },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -728,15 +723,6 @@ private fun MonthGrid(
 /** How many days the first day of [date]'s month is past the start of its week. */
 private fun weekStartOffset(date: LocalDate, weekStartsMonday: Boolean): Long =
     if (weekStartsMonday) (date.dayOfWeek.value - 1).toLong() else (date.dayOfWeek.value % 7).toLong()
-
-/**
- * 这个月需要画几行日历格（4–6）。第一格前面的占位加上本月天数，向上取整就是行数；那一周
- * 里属于下个月的几天照画（它们和本月同处一周），但**整周都在下个月**的尾巴不再补。
- */
-private fun monthRowCount(month: YearMonth, weekStartsMonday: Boolean): Int {
-    val leading = weekStartOffset(month.atDay(1), weekStartsMonday)
-    return ((leading + month.lengthOfMonth() + DaysPerWeek - 1) / DaysPerWeek).toInt()
-}
 
 /** The `W12` label of one row of the grid; numbering follows the ISO week of its Monday. */
 @Composable

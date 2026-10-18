@@ -195,22 +195,33 @@ class TaskRepository(
         )
     }
 
-    suspend fun createList(name: String): Long {
+    suspend fun createList(name: String, icon: String? = null): Long {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "清单名不能为空" }
         val time = now()
         val nextOrder = (listDao.maxUserSortOrder() ?: 0) + 1
         return listDao.insert(
-            TaskList(name = trimmed, isInbox = false, sortOrder = nextOrder, createdAt = time, updatedAt = time)
+            TaskList(
+                name = trimmed,
+                icon = cleanIcon(icon),
+                isInbox = false,
+                sortOrder = nextOrder,
+                createdAt = time,
+                updatedAt = time
+            )
         )
     }
 
-    suspend fun renameList(listId: Long, name: String) {
+    /** 换名字与换图标走同一个入口；[icon] 传空就是把图标去掉。 */
+    suspend fun renameList(listId: Long, name: String, icon: String?) {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "清单名不能为空" }
         val list = listDao.getById(listId) ?: return
-        listDao.update(list.copy(name = trimmed, updatedAt = now()))
+        listDao.update(list.copy(name = trimmed, icon = cleanIcon(icon), updatedAt = now()))
     }
+
+    /** 空图标存成 null：这样「没有图标」只有一种表示，选「无」就是把这一列清空。 */
+    private fun cleanIcon(icon: String?): String? = icon?.trim()?.takeIf { it.isNotEmpty() }
 
     /**
      * Moves a user list one step up (-1) or down (+1) in the drawer order

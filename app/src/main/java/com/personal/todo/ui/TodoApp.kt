@@ -82,6 +82,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -146,6 +147,10 @@ private const val ROUTE_TASK = "task"
 private const val ROUTE_EDIT = "edit"
 
 private fun listRoute(listId: Long) = "$ROUTE_LIST/$listId"
+
+/** 清单页标题：清单有图标就把图标放在名字前面。 */
+private fun listTitleWithIcon(list: TaskList): String =
+    list.icon?.takeIf { it.isNotBlank() }?.let { "$it ${list.name}" } ?: list.name
 
 private fun taskRoute(taskId: Long) = "$ROUTE_TASK/$taskId"
 
@@ -607,7 +612,7 @@ internal fun MainScreen(
 
     val title = when (kind) {
         ROUTE_INBOX -> stringResource(R.string.list_inbox_name)
-        ROUTE_LIST -> currentList?.name.orEmpty()
+        ROUTE_LIST -> currentList?.let(::listTitleWithIcon).orEmpty()
         ROUTE_COMPLETED -> stringResource(R.string.nav_completed)
         ROUTE_TRASH -> stringResource(R.string.nav_trash)
         ROUTE_FUTURE -> stringResource(R.string.nav_future)
@@ -999,8 +1004,8 @@ internal fun MainScreen(
             label = stringResource(R.string.dialog_list_name_label),
             initialValue = "",
             confirmLabel = stringResource(R.string.action_new_list),
-            onConfirm = { name ->
-                shellViewModel.createList(name)
+            onConfirm = { name, icon ->
+                shellViewModel.createList(name, icon)
                 showNewListDialog = false
             },
             onDismiss = { showNewListDialog = false }
@@ -1012,9 +1017,10 @@ internal fun MainScreen(
             title = stringResource(R.string.dialog_rename_list_title),
             label = stringResource(R.string.dialog_list_name_label),
             initialValue = list.name,
+            initialIcon = list.icon.orEmpty(),
             confirmLabel = stringResource(R.string.action_save),
-            onConfirm = { name ->
-                shellViewModel.renameList(list.id, name)
+            onConfirm = { name, icon ->
+                shellViewModel.renameList(list.id, name, icon)
                 renameTarget = null
             },
             onDismiss = { renameTarget = null }
@@ -1312,6 +1318,9 @@ private fun ListsDrawer(
                     label = list.name,
                     selected = currentRoute == listRoute(list.id),
                     badge = openTaskCounts[list.id] ?: 0,
+                    // 有图标就把那个颜色点换成图标：它俩都是「这是哪条清单」的记号，
+                    // 一起画在 36dp 的行里太挤。
+                    icon = list.icon,
                     dot = listDotColor(list.id),
                     onClick = { onSelect(listRoute(list.id)) }
                 )
@@ -1353,6 +1362,7 @@ private fun DrawerRow(
     selected: Boolean,
     onClick: () -> Unit,
     badge: Int = 0,
+    icon: String? = null,
     dot: Color? = null,
     danger: Boolean = false
 ) {
@@ -1367,7 +1377,10 @@ private fun DrawerRow(
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (dot != null) {
+        if (!icon.isNullOrBlank()) {
+            Text(text = icon, fontSize = 16.sp, maxLines = 1)
+            Spacer(Modifier.width(10.dp))
+        } else if (dot != null) {
             Box(
                 modifier = Modifier
                     .size(DrawerDotSize)

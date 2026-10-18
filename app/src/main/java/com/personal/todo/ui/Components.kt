@@ -3,6 +3,7 @@ package com.personal.todo.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +30,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -57,6 +60,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.personal.todo.R
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
@@ -651,24 +655,37 @@ fun TextInputDialog(
     label: String,
     initialValue: String,
     confirmLabel: String,
-    onConfirm: (String) -> Unit,
+    initialIcon: String = NoIcon,
+    onConfirm: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var value by remember { mutableStateOf(initialValue) }
+    var icon by remember { mutableStateOf(initialIcon) }
+    val colors = LocalTodoColors.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                label = { Text(label) },
-                singleLine = true
-            )
+            Column {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text(label) },
+                    singleLine = true
+                )
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = stringResource(R.string.icon_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.dateMuted
+                )
+                Spacer(Modifier.height(6.dp))
+                IconPickerRow(selected = icon, onPick = { icon = it })
+            }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(value) }, enabled = value.isNotBlank()) {
+            TextButton(onClick = { onConfirm(value, icon) }, enabled = value.isNotBlank()) {
                 Text(confirmLabel)
             }
         },
@@ -676,6 +693,86 @@ fun TextInputDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
+}
+
+/** 图标备选里「没有图标」那一项：点它就清掉。 */
+internal const val NoIcon = ""
+
+/**
+ * 清单与习惯名字前面那个小图标的备选（一行，可横滑）。
+ *
+ * 用 emoji 文本而不是 Material 图标集：用户参照的是嘀嗒清单那种**彩色**小图标，而本项目
+ * 只依赖 `material-icons-core`（能选的图标少、还是单色的）。库里存的就是这个字符串，
+ * 空＝没有图标——若以后换成图标集，换的只是这一行与存值格式，列不用改。
+ */
+internal val IconChoices = listOf(
+    "📋", "📌", "⭐", "❤️", "🔥", "🎯", "📚", "💼", "🛒", "💰",
+    "🏠", "🍎", "💧", "☕", "💊", "🏃", "💪", "😴", "🎵", "✈️",
+    "🎨", "🌱", "🐱", "🎮", "🎓", "🧹"
+)
+
+private val IconChipSize = 40.dp
+
+/**
+ * 一行可横滑的图标备选：第一个是「无」（清空），点某个图标即选中它。
+ *
+ * 只负责「选中了哪个」，落库时机由上层决定（清单弹层是点 ✓ 才写，习惯弹层同理）。
+ */
+@Composable
+fun IconPickerRow(
+    selected: String,
+    onPick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconChoiceChip(
+            text = stringResource(R.string.icon_none),
+            emoji = false,
+            selected = selected.isEmpty(),
+            onPick = { onPick(NoIcon) }
+        )
+        IconChoices.forEach { icon ->
+            IconChoiceChip(
+                text = icon,
+                emoji = true,
+                selected = selected == icon,
+                onPick = { onPick(icon) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun IconChoiceChip(
+    text: String,
+    emoji: Boolean,
+    selected: Boolean,
+    onPick: () -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Box(
+        modifier = Modifier
+            .size(IconChipSize)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) colors.accent.copy(alpha = 0.16f) else colors.groupHeader)
+            .clickable(onClick = onPick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            // emoji 走默认字形（自带颜色），「无」按小标签写。
+            fontSize = if (emoji) 20.sp else 12.sp,
+            style = if (emoji) LocalTextStyle.current else MaterialTheme.typography.labelSmall,
+            color = if (emoji) Color.Unspecified else if (selected) colors.accent else colors.dateMuted,
+            maxLines = 1
+        )
+    }
 }
 
 /**

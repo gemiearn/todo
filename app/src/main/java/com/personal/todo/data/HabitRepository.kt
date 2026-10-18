@@ -39,7 +39,8 @@ class HabitRepository(
         name: String,
         dailyTarget: Int,
         unitLabel: String? = null,
-        stepAmount: Int? = null
+        stepAmount: Int? = null,
+        icon: String? = null
     ): Long {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "习惯名不能为空" }
@@ -47,6 +48,7 @@ class HabitRepository(
         return habitDao.insert(
             Habit(
                 name = trimmed,
+                icon = cleanIcon(icon),
                 dailyTarget = dailyTarget.coerceAtLeast(HabitRules.MinTarget),
                 unitLabel = cleanUnit(unitLabel),
                 stepAmount = cleanStep(stepAmount),
@@ -58,13 +60,14 @@ class HabitRepository(
         )
     }
 
-    /** 名字、单位、目标量与单次基数走同一个入口：习惯就这几样可编辑的东西。 */
+    /** 名字、单位、目标量、单次基数与图标走同一个入口：习惯就这几样可编辑的东西。 */
     suspend fun updateHabit(
         habitId: Long,
         name: String,
         dailyTarget: Int,
         unitLabel: String? = null,
-        stepAmount: Int? = null
+        stepAmount: Int? = null,
+        icon: String? = null
     ) {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "习惯名不能为空" }
@@ -72,6 +75,7 @@ class HabitRepository(
         habitDao.update(
             habit.copy(
                 name = trimmed,
+                icon = cleanIcon(icon),
                 dailyTarget = dailyTarget.coerceAtLeast(HabitRules.MinTarget),
                 unitLabel = cleanUnit(unitLabel),
                 stepAmount = cleanStep(stepAmount),
@@ -111,4 +115,7 @@ class HabitRepository(
 
     private fun cleanStep(stepAmount: Int?): Int? =
         stepAmount?.takeIf { it > 1 }
+
+    /** 空图标存成 null：这样「没有图标」只有一种表示，选「无」就是把这一列清空。 */
+    private fun cleanIcon(icon: String?): String? = icon?.trim()?.takeIf { it.isNotEmpty() }
 }

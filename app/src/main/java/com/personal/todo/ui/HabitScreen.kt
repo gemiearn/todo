@@ -228,8 +228,9 @@ fun HabitScreen(
             initialTarget = HabitRules.MinTarget,
             initialUnit = "",
             initialStep = 1,
-            onConfirm = { name, target, unit, step ->
-                viewModel.create(name, target, unit, step)
+            initialIcon = NoIcon,
+            onConfirm = { name, target, unit, step, icon ->
+                viewModel.create(name, target, unit, step, icon)
                 creating = false
             },
             onDismiss = { creating = false }
@@ -243,8 +244,9 @@ fun HabitScreen(
             initialTarget = habit.dailyTarget,
             initialUnit = habit.unitLabel.orEmpty(),
             initialStep = habit.step,
-            onConfirm = { name, target, unit, step ->
-                viewModel.update(habit.id, name, target, unit, step)
+            initialIcon = habit.icon.orEmpty(),
+            onConfirm = { name, target, unit, step, icon ->
+                viewModel.update(habit.id, name, target, unit, step, icon)
                 editing = null
             },
             onDismiss = { editing = null }
@@ -328,7 +330,8 @@ private fun HabitCard(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        text = habit.name,
+                        // 习惯自己的图标（选填）就放在名字前面。
+                        text = habit.icon?.takeIf { it.isNotBlank() }?.let { "$it ${habit.name}" } ?: habit.name,
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -578,12 +581,14 @@ private fun HabitEditSheet(
     initialTarget: Int,
     initialUnit: String,
     initialStep: Int,
-    onConfirm: (String, Int, String?, Int?) -> Unit,
+    initialIcon: String = NoIcon,
+    onConfirm: (String, Int, String?, Int?, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val colors = LocalTodoColors.current
     var name by remember { mutableStateOf(initialName) }
     var unit by remember { mutableStateOf(initialUnit) }
+    var icon by remember { mutableStateOf(initialIcon) }
     var targetText by remember { mutableStateOf(initialTarget.toString()) }
     var step by remember { mutableIntStateOf(initialStep) }
     val target = targetText.toIntOrNull() ?: 0
@@ -614,6 +619,14 @@ private fun HabitEditSheet(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag(HabitNameFieldTag)
             )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = stringResource(R.string.icon_label),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.dateMuted
+            )
+            Spacer(Modifier.height(6.dp))
+            IconPickerRow(selected = icon, onPick = { icon = it })
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(
                 value = unit,
@@ -691,7 +704,7 @@ private fun HabitEditSheet(
 
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = { onConfirm(name, target, unit, step) },
+                onClick = { onConfirm(name, target, unit, step, icon) },
                 enabled = name.isNotBlank() && target >= HabitRules.MinTarget,
                 modifier = Modifier.fillMaxWidth()
             ) {

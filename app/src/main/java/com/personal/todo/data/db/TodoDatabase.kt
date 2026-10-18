@@ -65,6 +65,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * 开始时它绑定任务身上那些标签的 **id**。名字会改、标签会删，id 不会，统计页按标签筛整页
  * 时看 id 才认得住「改名之后的同一个标签」。两列可空，升级前记下的记录没有 id，退回按
  * 名字筛（页面把这种老名字作为「历史标签」列出来）。
+ *
+ * Version 13 给 `task_lists`、`habits`、`tasks` 各加一列可空 `icon`：清单与习惯名字前面
+ * 那个小图标。三列都可空，所以升级前就有的清单、习惯与任务读出来都是「没有图标」——
+ * 这正是它们的情况，不猜任何值。`tasks.icon` 这批**只建列、编辑器还没有入口**（用户说
+ * 任务图标暂时不做），先把列留下，做那个功能时就不必再迁一次库。
  */
 @Database(
     entities = [
@@ -78,7 +83,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Habit::class,
         HabitCheckIn::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -335,6 +340,18 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v12 -> v13: 清单、习惯与任务各加一列可空的 `icon`（名字前面那个小图标）。
+         * 三列都可空，升级前就有的行读出来都是「没有图标」，这正是它们的情况。
+         */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `task_lists` ADD COLUMN `icon` TEXT")
+                db.execSQL("ALTER TABLE `habits` ADD COLUMN `icon` TEXT")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `icon` TEXT")
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -347,7 +364,8 @@ abstract class TodoDatabase : RoomDatabase() {
             MIGRATION_8_9,
             MIGRATION_9_10,
             MIGRATION_10_11,
-            MIGRATION_11_12
+            MIGRATION_11_12,
+            MIGRATION_12_13
         )
     }
 }

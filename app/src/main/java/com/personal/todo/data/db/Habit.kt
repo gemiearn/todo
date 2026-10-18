@@ -21,6 +21,13 @@ import java.time.LocalDate
 data class Habit(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
     val name: String,
+    /**
+     * 习惯名字前面那个小图标（一个 emoji 字符）。
+     *
+     * null 表示没有图标——这是 v13 之前就有的习惯，也是一个新习惯的默认值，读出来再兜底，
+     * 迁移时那一列留空即可。
+     */
+    val icon: String? = null,
     /** 每天想完成的量，**以 [unit] 为单位**（如 单位=分钟、目标=60 分钟）。 */
     val dailyTarget: Int = 1,
     /**

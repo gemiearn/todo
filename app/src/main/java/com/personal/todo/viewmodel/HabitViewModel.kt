@@ -48,8 +48,14 @@ class HabitViewModel(
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyMap())
 
-    fun create(name: String, dailyTarget: Int, unitLabel: String? = null, stepAmount: Int? = null) {
-        viewModelScope.launch { repository.createHabit(name, dailyTarget, unitLabel, stepAmount) }
+    fun create(
+        name: String,
+        dailyTarget: Int,
+        unitLabel: String? = null,
+        stepAmount: Int? = null,
+        icon: String? = null
+    ) {
+        viewModelScope.launch { repository.createHabit(name, dailyTarget, unitLabel, stepAmount, icon) }
     }
 
     fun update(
@@ -57,10 +63,11 @@ class HabitViewModel(
         name: String,
         dailyTarget: Int,
         unitLabel: String? = null,
-        stepAmount: Int? = null
+        stepAmount: Int? = null,
+        icon: String? = null
     ) {
         viewModelScope.launch {
-            repository.updateHabit(habitId, name, dailyTarget, unitLabel, stepAmount)
+            repository.updateHabit(habitId, name, dailyTarget, unitLabel, stepAmount, icon)
         }
     }
 
