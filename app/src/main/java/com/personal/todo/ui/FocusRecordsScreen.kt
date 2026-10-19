@@ -297,11 +297,23 @@ private fun RecordRow(
     }
 }
 
-/** 开始那一刻的 `HH:mm` 与结果；不带计时模式。 */
+/**
+ * 开始到结束那一刻（`09:00–09:10`）与结果；不带计时模式。
+ *
+ * 结束时刻用 `endedAt`；跨过午夜的那种（22:30–次日 01:00）在结束那头写「次日 HH:mm」，
+ * 免得两组数字看起来像同一天的。
+ */
 @Composable
 private fun sessionSubtitle(session: FocusSession, zone: ZoneId): String {
     val start = Instant.ofEpochMilli(session.startedAt).atZone(zone)
-    val clock = "%02d:%02d".format(start.hour, start.minute)
+    val end = Instant.ofEpochMilli(session.endedAt).atZone(zone)
+    val startClock = "%02d:%02d".format(start.hour, start.minute)
+    val endClock = "%02d:%02d".format(end.hour, end.minute)
+    val span = if (localDateOf(session.endedAt, zone) == localDateOf(session.startedAt, zone)) {
+        "$startClock–$endClock"
+    } else {
+        "$startClock–次日 $endClock"
+    }
     val status = stringResource(
         if (session.status == FocusStatus.COMPLETED) {
             R.string.focus_status_completed
@@ -309,7 +321,7 @@ private fun sessionSubtitle(session: FocusSession, zone: ZoneId): String {
             R.string.focus_status_interrupted
         }
     )
-    return stringResource(R.string.focus_session_subtitle, clock, status)
+    return stringResource(R.string.focus_session_subtitle, span, status)
 }
 
 /** 「后面那条记录」的时刻：同一天只写 `HH:mm`，跨天就带上月日。 */

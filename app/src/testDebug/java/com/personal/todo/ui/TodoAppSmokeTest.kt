@@ -28,6 +28,7 @@ import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.ui.theme.TodoPomodoroTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -90,6 +91,12 @@ class TodoAppSmokeTest {
                 TodoApp(repository = tasks, focusRepository = focus, habitRepository = habits)
             }
         }
+    }
+
+    /** 逐帧盯切页那一瞬间：看多少帧、每帧多少毫秒。 */
+    private companion object {
+        const val FramesToWatch = 30
+        const val FrameMillis = 16L
     }
 
     /**
@@ -380,10 +387,11 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("专注记录").performSemanticsAction(SemanticsActions.OnClick)
         repeat(20) { compose.waitForIdle() }
 
-        // 记录页：那条记录整行都在，只有「时刻 · 结果」，没有计时模式。
-        compose.onNodeWithTag(FocusRecordsTag).assertExists()
+        // 记录页：那条记录整行都在，写的是「开始–结束 · 结果」，没有计时模式。
         compose.waitUntilNodeCount(hasText("写季度报告"), 1, TimeoutMillis)
+        compose.onNodeWithTag(FocusRecordsTag).assertExists()
         compose.onNodeWithText("已完成", substring = true).assertExists()
+        compose.onNodeWithText("–", substring = true).assertExists()
         compose.onNodeWithText("番茄钟", substring = true).assertDoesNotExist()
     }
 
@@ -510,6 +518,64 @@ class TodoAppSmokeTest {
         // 抽屉本身没被弄坏：还能照常拉开。
         openDrawer()
         compose.onNodeWithText("收件箱").assertIsDisplayed()
+    }
+
+    /**
+     * 切页那一瞬间**不允许出现任何一帧「抽屉还开着」**（用户 2026-10-19 报的「切到专注页
+     * 会闪一下」）。
+     *
+     * 关掉自动推进时钟、逐帧检查：`waitForIdle` 只看「稳没稳」，不推进时钟，所以平时那些
+     * 断言只能看到「最终」状态——闪一下正是被这一步吃掉的。
+     */
+    @Test
+    fun noFrameShowsAnOpenDrawerAfterSwitchingTabs() {
+        launchApp()
+        openDrawer()
+        compose.onNodeWithText("收件箱").assertIsDisplayed()
+
+        assertNoDrawerFrameDuring("专注记录") {
+            compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        }
+    }
+
+    /**
+     * 从推入页返回、再切页，同样不许闪出开着的面板。
+     *
+     * 这一路是上一版的漏网之鱼：抽屉里点「习惯」会 `push` 一页，MainScreen 整个离开组合，
+     * 那一句 `scope.launch { close() }` 被取消——抽屉就停在半开、甚至整个开着回来。
+     */
+    @Test
+    fun noFrameShowsAnOpenDrawerAfterARoundTripThroughAPushedPage() {
+        launchApp()
+        openDrawer()
+        compose.onNodeWithText("习惯").performSemanticsAction(SemanticsActions.OnClick)
+        repeat(20) { compose.waitForIdle() }
+        compose.onNodeWithText("还没有习惯", substring = true).assertExists()
+
+        assertNoDrawerFrameDuring("收件箱") {
+            compose.onNodeWithContentDescription("返回").performClick()
+        }
+        assertNoDrawerFrameDuring("专注记录") {
+            compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        }
+    }
+
+    /** [action] 之后的每一帧都不许看得见 [drawerRowText]（那是面板里的一行）。 */
+    private fun assertNoDrawerFrameDuring(drawerRowText: String, action: () -> Unit) {
+        compose.mainClock.autoAdvance = false
+        try {
+            action()
+            repeat(FramesToWatch) { frame ->
+                compose.mainClock.advanceTimeBy(FrameMillis)
+                compose.waitForIdle()
+                assertFalse(
+                    "第 $frame 帧里看到了开着的面板（$drawerRowText）",
+                    runCatching { compose.onNodeWithText(drawerRowText).assertIsDisplayed() }.isSuccess
+                )
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
     }
 
     /** 点顶栏那个菜单按钮把抽屉拉出来，并等它滑到位。 */

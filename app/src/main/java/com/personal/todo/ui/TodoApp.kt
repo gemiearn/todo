@@ -60,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -465,11 +466,12 @@ internal fun MainScreen(
     val context = LocalContext.current
 
     // 换页必须把左滑面板收回去，而且**不能只是「开始收」**：
-    //  - 壳层是同一条组合，抽屉状态会跨页留着（用户在某一页拉开它，切到四象限 / 更多
-    //    看不出来，切回有抽屉的页就「自己开着」——用户 2026-10-19 反复报的就是这个）；
-    //  - `close()` 是 `animateTo`，一旦这次换页把 MainScreen 整个换掉（去标签管理 / 习惯 /
-    //    统计 / 记录这些推入页），那个协程会被取消，抽屉就停在半开、甚至整个开着回来。
-    // 所以用 `snapTo`：一步到位，不播动画，任何路由变化都不会留下一个看得见的开着状态。
+    //  - 抽屉状态跨页留着（用户在某一页拉开它，切到四象限 / 更多看不出来，切回有抽屉的页
+    //    就「自己开着」）；
+    //  - `close()` 是 `animateTo`，而 MainScreen 里那个 scope 在换页时会被取消（去标签管理 /
+    //    习惯 / 统计 / 记录这些推入页），动画收一半就没了，抽屉停在半开甚至整个开着回来。
+    // 所以这里一步到位：`snapTo`（不播动画）+ 在**壳层的 scope** 上跑（壳层对每条路由都在
+    // 组合里，绝不会被这次换页取消）。换个页不会有任何一帧看得见「上一页那个开着的面板」。
     LaunchedEffect(route) { drawerState.snapTo(DrawerValue.Closed) }
 
     // 显示范围筛选与日历显示设置存 SharedPreferences：勾过的范围、日历的看法下次进来
@@ -724,47 +726,49 @@ internal fun MainScreen(
         drawerState = drawerState,
         gesturesEnabled = drawerMode != DrawerMode.NONE,
         drawerContent = {
-            if (drawerMode != DrawerMode.NONE) {
-                // 抽屉不铺满全屏：只占屏幕约六成，拉出来时原来的界面还露在外面一点，
-                // 一眼看得出「这是一层盖上去的面板」，也留了半边随时能点回去。
-                ModalDrawerSheet(
-                    modifier = Modifier.width(
-                        LocalConfiguration.current.screenWidthDp.dp * drawerWidthFraction
+            // 抽屉不铺满全屏：只占屏幕约六成，拉出来时原来的界面还露在外面一点，
+            // 一眼看得出「这是一层盖上去的面板」，也留了半边随时能点回去。
+            //
+            // ⚠️ 这张面板**一直组合着**，只在里面按路由决定放什么内容：以前是「不给抽屉的页
+            // （四象限 / 更多）连 ModalDrawerSheet 都不组合」，于是从那儿切到专注页时这张面板
+            // 是**第一次被组合**——第一帧还没量出宽度，M3 就先把它画在偏移 0（也就是「开着」
+            // 的样子），下一帧才收回去。用户 2026-10-19 报的「切到专注页会闪一下，似乎是抽屉」
+            // 就是这一帧。面板常驻之后它只在同一个组合节点上换内容，不会再重新量一次。
+            ModalDrawerSheet(
+                modifier = Modifier.width(
+                    LocalConfiguration.current.screenWidthDp.dp * drawerWidthFraction
+                )
+            ) {
+                when (drawerMode) {
+                    DrawerMode.NONE -> Unit // 空面板：手势已关、顶栏也没有菜单按钮，拉不出来
+                    DrawerMode.LISTS -> ListsDrawer(
+                        lists = lists,
+                        openTaskCounts = openTaskCounts,
+                        overdueCount = overdueCount,
+                        pendingHabitCount = pendingHabitCount,
+                        currentRoute = route,
+                        onSelect = { target ->
+                            // 习惯是推入页（带返回箭头、退得回来），别的都是根视图——
+                            // 像底部页签那样整栈切换。
+                            if (target == ROUTE_HABITS) nav.push(target) else nav.resetTo(target)
+                            scope.launch { drawerState.close() }
+                        },
+                        onOpenHabits = {
+                            nav.push(ROUTE_HABITS)
+                            scope.launch { drawerState.close() }
+                        },
+                        onNewList = { showNewListDialog = true }
                     )
-                ) {
-                    when (drawerMode) {
-                        DrawerMode.LISTS -> ListsDrawer(
-                            lists = lists,
-                            openTaskCounts = openTaskCounts,
-                            overdueCount = overdueCount,
-                            pendingHabitCount = pendingHabitCount,
-                            currentRoute = route,
-                            onSelect = { target ->
-                                // 习惯是推入页（带返回箭头、退得回来），别的都是根视图——
-                                // 像底部页签那样整栈切换。
-                                if (target == ROUTE_HABITS) nav.push(target) else nav.resetTo(target)
-                                scope.launch { drawerState.close() }
-                            },
-                            onOpenHabits = {
-                                nav.push(ROUTE_HABITS)
-                                scope.launch { drawerState.close() }
-                            },
-                            onNewList = { showNewListDialog = true }
-                        )
 
-                        // 专注页的面板只放**入口**：一行「专注记录」，点它推进记录页（逐条
-                        // 记录可以在那里改关联任务与时长、也能删）。原来把整页统计塞进来，
-                        // 拉出来就顶掉半屏、也看不出能跳到哪，用户 2026-10-19 让改掉。
-                        DrawerMode.FOCUS -> FocusDrawer(
-                            onOpenRecords = {
-                                nav.push(ROUTE_RECORDS)
-                                scope.launch { drawerState.close() }
-                            }
-                        )
-
-                        // 空面板：手势已关、顶栏也没有菜单按钮，拉不出来。
-                        DrawerMode.NONE -> Unit
-                    }
+                    // 专注页的面板只放**入口**：一行「专注记录」，点它推进记录页（逐条
+                    // 记录可以在那里改关联任务与时长、也能删）。原来把整页统计塞进来，
+                    // 拉出来就顶掉半屏、也看不出能跳到哪，用户 2026-10-19 让改掉。
+                    DrawerMode.FOCUS -> FocusDrawer(
+                        onOpenRecords = {
+                            nav.push(ROUTE_RECORDS)
+                            scope.launch { drawerState.close() }
+                        }
+                    )
                 }
             }
         }
