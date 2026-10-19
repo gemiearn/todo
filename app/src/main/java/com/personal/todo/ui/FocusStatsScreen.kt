@@ -82,6 +82,7 @@ import com.personal.todo.model.FocusTrendBar
 import com.personal.todo.model.FocusTrendUnit
 import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.model.focusDailyAverage
+import com.personal.todo.model.focusHourAxisMinutes
 import com.personal.todo.model.focusHourBars
 import com.personal.todo.model.focusPeriodOf
 import com.personal.todo.model.focusPeriodTotals
@@ -996,9 +997,10 @@ private fun HoursCard(
     val colors = LocalTodoColors.current
     val period = focusPeriodOf(FocusPeriodUnit.MONTH, anchor)
     val bars = remember(sessions, period, zone) { focusHourBars(sessions, period, zone) }
+    // 轴跟着当月峰值走，但封顶一小时（`focusHourAxisMinutes`）：一个钟点最多只有 60 分钟，
+    // 用户 2026-10-19 要求「最多 60 分钟」，这样也不会再出现 1h20m 那种刻度。
     val axisMinutes = remember(bars) {
-        val maxMinutes = (bars.maxOfOrNull { it.seconds }?.plus(59) ?: 0) / 60
-        if (maxMinutes <= 0) 0 else ((maxMinutes + 3) / 4) * 4
+        focusHourAxisMinutes(bars.maxOfOrNull { it.seconds } ?: 0)
     }
 
     StatsCard(
@@ -1087,11 +1089,14 @@ private fun HourChart(bars: List<FocusHourBar>, axisMinutes: Int, axisLabels: Li
                 cornerRadius = CornerRadius(barWidth / 2f)
             )
             if (bar.seconds > 0) {
-                val height = plotHeight * bar.seconds / axisMaxSeconds.toFloat()
+                // 轴封顶一小时，所以正常情况下柱子都画得下；万一有一条越过上限的老数据，
+                // 这里也把它夹在画布内，绝不让它画到图外去。
+                val height = (plotHeight * bar.seconds / axisMaxSeconds.toFloat())
+                    .coerceIn(2.dp.toPx(), plotHeight)
                 drawRoundRect(
                     color = accent,
                     topLeft = Offset(x, plotBottom - height),
-                    size = Size(barWidth, height.coerceAtLeast(2.dp.toPx())),
+                    size = Size(barWidth, height),
                     cornerRadius = CornerRadius(barWidth / 2f)
                 )
             }

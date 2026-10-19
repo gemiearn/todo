@@ -327,6 +327,42 @@ class FocusReportTest {
         assertEquals(0, bars[11].seconds)
     }
 
+    /**
+     * 一个小时最多就是 60 分钟：一段专注再长，它摊到某一个钟点上的秒数都不会超过 3600。
+     *
+     * 这是「柱状图不会超过一小时」的算术根据——**前提是记录里的小段与时长一致**（改时长时
+     * 两者一起改，见 `FocusRepository.updateSession`）。旧毛病是：小段只有 10 分钟、时长却
+     * 改成 90 分钟，摊下来某一小时就成了 90 分钟，柱子就冲破一小时（用户 2026-10-19 报的）。
+     */
+    @Test
+    fun anHourNeverGetsMoreThanOneHourOfFocus() {
+        val bars = focusHourBars(
+            sessions = listOf(
+                // 09:00–10:30 真的专注了 90 分钟：小时 9 拿满 60 分钟，小时 10 拿 30 分钟。
+                session(seconds = 5_400, startMinuteOfDay = 9 * 60, endMinuteOfDay = 10 * 60 + 30)
+            ),
+            period = focusPeriodOf(FocusPeriodUnit.MONTH, today),
+            zone = zone
+        )
+
+        assertEquals("小时 9 拿满一小时", 3_600, bars[9].seconds)
+        assertEquals("小时 10 拿剩下的 30 分钟", 1_800, bars[10].seconds)
+        assertTrue("任何一个钟点都不会超过一小时", bars.all { it.seconds <= 3_600 })
+    }
+
+    /**
+     * 小时图的纵轴跟着峰值走，但**封顶一小时**：一个钟点最多只有 60 分钟，轴长过 1h 只会
+     * 把「这一小时做满了没有」弄模糊（用户 2026-10-19 要求「最多 60 分钟」）。
+     */
+    @Test
+    fun theHourAxisFollowsThePeakButNeverPassesAnHour() {
+        assertEquals("没有数据时不画轴", 0, focusHourAxisMinutes(0))
+        assertEquals("10 分钟峰值 → 轴到 12 分钟", 12, focusHourAxisMinutes(600))
+        assertEquals("59 分钟峰值 → 轴到 60 分钟", 60, focusHourAxisMinutes(3_540))
+        assertEquals("做满一小时 → 满格", 60, focusHourAxisMinutes(3_600))
+        assertEquals("就算有超过一小时的旧数据，轴也只到 60", 60, focusHourAxisMinutes(4_800))
+    }
+
     @Test
     fun theYearHeatmapIsWholeWeeksOfThatYear() {
         val weeks = focusYearWeeks(listOf(session(seconds = 900)), 2026, zone)

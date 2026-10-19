@@ -458,6 +458,23 @@ fun focusHourBars(
 }
 
 /**
+ * 「最佳专注时间」那张图纵轴的上限（分钟）：跟着当月最高那一小时走，但**封顶 60 分钟**。
+ *
+ * 轴向上取整到 4 分钟的整数倍，这样被 4 等分的刻度正好落在整分钟上（60 / 4 = 15 分钟一格）。
+ *
+ * 封顶的理由（用户 2026-10-19）：一个钟点物理上最多只有 60 分钟，轴再往上长只会把
+ * 「这一小时做满了没有」这个问句弄模糊——旧版就长出过 1h20m 这种刻度（起因是改时长时
+ * 没连小段一起改，见 `FocusRepository.updateSession`）。
+ *
+ * @return 0 表示整月没有数据，那时不画轴。
+ */
+fun focusHourAxisMinutes(peakSeconds: Int): Int {
+    if (peakSeconds <= 0) return 0
+    val maxMinutes = (peakSeconds + 59) / 60
+    return minOf((maxMinutes + 3) / 4 * 4, MaxHourAxisMinutes)
+}
+
+/**
  * 整年的打卡格子：53 个周列（周一开始）× 7 天。
  *
  * 年初 / 年末不满一周的那几天也各占一个格子，只是不属于这一年，页面上画成空的，
@@ -526,6 +543,9 @@ private const val MonthsPerYear = 12
 private const val HoursPerDay = 24
 private const val MinutesPerDay = 24 * 60
 private const val MillisPerMinute = 60_000L
+
+/** 一个钟点最多只有 60 分钟：小时柱状图的轴到这儿封顶（见 [focusHourAxisMinutes]）。 */
+private const val MaxHourAxisMinutes = 60
 
 /** 排行只留前几条，够看出时间花在哪了。 */
 private const val ReportTopEntries = 5
