@@ -464,11 +464,13 @@ internal fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    // 换页时左滑面板必须收回去。壳层是同一个组合，抽屉状态会一直留着：用户在某一页把它
-    // 拉出来、再切到别的页签，它就**一直开着**（四象限 / 更多页手势是关的，看不出来），
-    // 等切到又有抽屉的页（比如专注页或回收站）时就「自己展开了」——用户 2026-10-19 报的
-    // 「从四象限点到专注，侧栏是拉出的状态」。
-    LaunchedEffect(kind) { drawerState.close() }
+    // 换页必须把左滑面板收回去，而且**不能只是「开始收」**：
+    //  - 壳层是同一条组合，抽屉状态会跨页留着（用户在某一页拉开它，切到四象限 / 更多
+    //    看不出来，切回有抽屉的页就「自己开着」——用户 2026-10-19 反复报的就是这个）；
+    //  - `close()` 是 `animateTo`，一旦这次换页把 MainScreen 整个换掉（去标签管理 / 习惯 /
+    //    统计 / 记录这些推入页），那个协程会被取消，抽屉就停在半开、甚至整个开着回来。
+    // 所以用 `snapTo`：一步到位，不播动画，任何路由变化都不会留下一个看得见的开着状态。
+    LaunchedEffect(route) { drawerState.snapTo(DrawerValue.Closed) }
 
     // 显示范围筛选与日历显示设置存 SharedPreferences：勾过的范围、日历的看法下次进来
     // 还在。列表顶栏和日历 ⋮ 各用一份独立的筛子，互不影响。

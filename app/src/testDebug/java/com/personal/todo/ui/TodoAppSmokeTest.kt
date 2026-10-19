@@ -3,6 +3,8 @@ package com.personal.todo.ui
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
@@ -471,6 +473,64 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("专注小结").assertExists()
         compose.onNodeWithText("专注 1 次", substring = true).assertExists()
         compose.onNodeWithText("还没有专注记录").assertDoesNotExist()
+    }
+
+    /**
+     * 拉开左滑面板之后切页签，面板必须收回去（用户 2026-10-19 反复报的一条）。
+     *
+     * 壳层是同一条组合，`drawerState` 会跨页留着：用户在某页把它拉出来、切到别的页，
+     * 再切回有抽屉的页时就「自己开着」。这里把三条路都钉住：今天→专注、再回今天、
+     * 以及绕一圈「今天→四象限→今天」（四象限那页连抽屉都不给），最后再确认抽屉没被弄坏。
+     */
+    @Test
+    fun theDrawerIsClosedAgainAfterSwitchingTabs() {
+        launchApp()
+
+        // 今天：拉开面板，它是打开的（里面的「收件箱」看得见）。
+        openDrawer()
+        compose.onNodeWithText("收件箱").assertIsDisplayed()
+
+        // 切到专注：面板必须收回去（那张面板上是「专注记录」那一行）。
+        compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        settleDrawer()
+        compose.onNodeWithText("专注记录").assertIsNotDisplayed()
+
+        // 再回今天：同样不能是开着的。
+        compose.onNodeWithTag(tabTag(HomeTab.Today)).performClick()
+        settleDrawer()
+        compose.onNodeWithText("收件箱").assertIsNotDisplayed()
+
+        // 今天 → 四象限 → 今天：绕一圈（四象限那页连抽屉都不给）也不许把它带回来。
+        compose.onNodeWithTag(tabTag(HomeTab.Quadrant)).performClick()
+        settleDrawer()
+        compose.onNodeWithTag(tabTag(HomeTab.Today)).performClick()
+        settleDrawer()
+        compose.onNodeWithText("收件箱").assertIsNotDisplayed()
+
+        // 抽屉本身没被弄坏：还能照常拉开。
+        openDrawer()
+        compose.onNodeWithText("收件箱").assertIsDisplayed()
+    }
+
+    /** 点顶栏那个菜单按钮把抽屉拉出来，并等它滑到位。 */
+    private fun openDrawer() {
+        compose.onNodeWithContentDescription("打开清单列表")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        settleDrawer()
+    }
+
+    /**
+     * 让抽屉滑入 / 滑出的动画真正走完。
+     *
+     * ⚠️ 只反复 `waitForIdle()` **不推进组合时钟**——抽屉是 `animateTo` 出来的，停在半路
+     * 既不是「显示」也不是「不显示」，断言会假失败/假通过。
+     */
+    private fun settleDrawer() {
+        repeat(10) {
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(500)
+        }
+        compose.waitForIdle()
     }
 
     /**

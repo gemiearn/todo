@@ -751,6 +751,7 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 8. **回收站 / 已完成（第 8 条，按用户「抽屉可以有，但是不要展开啊」处理）**：把「回收站」也加进左侧抽屉底部固定区（「已完成」本来就在），点它照旧像「逾期」那样整栈切到根视图；「自己展开」由第 1 条修掉。「更多」页那两条入口照旧保留。
 9. **⚠️ 冒烟测试新踩的坑（务必记住）**：**界面直接 `collectAsStateWithLifecycle` 收仓库的「冷」Room 流，会让冒烟测试在 `db.close()` 时炸 `Cannot perform this operation because the connection pool has been closed`**——裸订阅在界面销毁后还吊着（本轮因此红了 3 条）。本项目安全的写法是让它经过 view model 的 `stateIn`（如 `AppShellViewModel` 的 `lists` / `tagsByTask`）。`observeTodayPendingCount` 因此改成 `HabitViewModel.pendingTodayCount`（`stateIn`）后全过。
 10. **验证**：全量单测 **265 全过**（+4：`FocusRepositoryTest` +2、`HabitRepositoryTest` 换掉 2 条并 +2、`TodoAppSmokeTest` +2 且改写 1 条、`FocusScreenSmokeTest` 改写 2 条）、lint 0 error / 2 warning、Kotlin 编译警告 0；包覆盖 `target/0.4.0/app-debug-0.4.0-fix.apk`。
+11. **左滑面板「切页后还开着」的追修（用户 2026-10-19 二次反馈：「你切换菜单，左边的抽屉在切换过去就是打开的，很多页面都是，不只是一个」）**：上一版只加了 `LaunchedEffect(kind) { drawerState.close() }`，**不够**。两条原因：① `close()` 是 `animateTo`，换页时若把 MainScreen 整个换掉（去标签管理 / 习惯 / 统计 / 记录这些推入页），那个协程会被取消，抽屉就停在半开、甚至整个开着回来；② 只按 `kind` 触发，同一类路由之间（清单 → 清单、逾期 → 已完成 之类）不会重跑。现在改成 `LaunchedEffect(route) { drawerState.snapTo(DrawerValue.Closed) }`：**任何路由变化**都一步到位收回去、不播动画，不可能留下一个看得见的开着状态。新增冒烟 `TodoAppSmokeTest.theDrawerIsClosedAgainAfterSwitchingTabs`（今天 → 专注、再回今天、绕一圈「今天 → 四象限 → 今天」，最后再确认抽屉还能照常拉开）。⚠️ 写这类测试有两个坑：驱动抽屉必须用 `performSemanticsAction(SemanticsActions.OnClick)`（坐标点不动），并且要用 `compose.mainClock.advanceTimeBy(...)` **推进组合时钟**等滑入 / 滑出动画走完——只反复 `waitForIdle()` 会停在半路，断言会假失败。
 
 ### 13.6 版本规划
 
