@@ -351,6 +351,46 @@ class FocusRepositoryTest {
         assertEquals(session.startedAt + 1_800_000L, updated.endedAt)
     }
 
+    /**
+     * 延长不许越过后面那条记录的开始（防重叠，用户 2026-10-19 拍板）：09:00 那条后面 09:12
+     * 就有一条，于是最多只能改成 12 分钟——时间段也只拖到那儿，正好贴住、不重叠。
+     */
+    @Test
+    fun extendingASessionStopsAtTheNextRecordsStart() = runBlocking {
+        focus.startTimer(FocusMode.STOPWATCH, 0)
+        advance(600)
+        assertTrue(focus.finishTimer())
+        val first = onlySession()
+
+        // 中间空 2 分钟，再跑一条从 09:12 开始的记录。
+        advance(120)
+        focus.startTimer(FocusMode.STOPWATCH, 0)
+        advance(600)
+        assertTrue(focus.finishTimer())
+        val second = requireNotNull(db.focusDao().getSessions().firstOrNull { it.id != first.id })
+        assertEquals("第二条确实在第一条开始 12 分钟之后", 720_000L, second.startedAt - first.startedAt)
+
+        assertTrue(
+            focus.updateSession(
+                sessionId = first.id,
+                taskId = null,
+                taskTitleSnapshot = null,
+                listNameSnapshot = null,
+                tagNamesSnapshot = null,
+                tagIdsSnapshot = null,
+                actualFocusSeconds = 80 * 60
+            )
+        )
+
+        val capped = requireNotNull(db.focusDao().getSessionById(first.id))
+        assertEquals("想改成 80 分钟，最多也只能到 12 分钟", 720, capped.actualFocusSeconds)
+        assertEquals(
+            "时间段只拖到下一条的起点为止",
+            listOf(first.startedAt..second.startedAt),
+            FocusSegments.decode(capped.focusSegments)
+        )
+    }
+
     /** 只换关联任务、不动时长时，原来那几小段（含暂停的空档）必须原样保留。 */
     @Test
     fun editingOnlyTheTaskKeepsTheOriginalTimeSegments() = runBlocking {

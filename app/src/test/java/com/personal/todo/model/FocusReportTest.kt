@@ -363,6 +363,25 @@ class FocusReportTest {
         assertEquals("就算有超过一小时的旧数据，轴也只到 60", 60, focusHourAxisMinutes(4_800))
     }
 
+    /**
+     * 改时长的上限＝到「紧随其后那条记录」开始的间距（防重叠，用户 2026-10-19 拍板）：
+     * 拖过头会盖住后面那条，时间线上两段压在一起、那一小时还会被两条记录各摊一次。
+     */
+    @Test
+    fun theLengthCapStopsAtTheNextRecordsStart() {
+        val start = 1_000_000L
+        val aDay = 24 * 60 * 60
+
+        assertEquals("没有下一条 → 24 小时", aDay, focusRecordLengthCapSeconds(start, null, 600))
+        assertEquals("下一条在 12 分钟后 → 最多 12 分钟", 720, focusRecordLengthCapSeconds(start, start + 720_000L, 600))
+        assertEquals(
+            "已经越过间距的老数据不强逼缩短，保住现值",
+            5_400,
+            focusRecordLengthCapSeconds(start, start + 720_000L, 5_400)
+        )
+        assertEquals("再远也还是 24 小时封顶", aDay, focusRecordLengthCapSeconds(start, start + 40L * 3_600_000L, 600))
+    }
+
     @Test
     fun theYearHeatmapIsWholeWeeksOfThatYear() {
         val weeks = focusYearWeeks(listOf(session(seconds = 900)), 2026, zone)

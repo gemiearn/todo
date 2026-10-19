@@ -475,6 +475,20 @@ fun focusHourAxisMinutes(peakSeconds: Int): Int {
 }
 
 /**
+ * 一条专注记录改时长时允许的上限（秒）＝到「紧随其后那条记录」开始的间距。
+ *
+ * 手动延长是把时间段从开始时刻往后拖（见 `FocusRepository.updateSession`），拖过头就会撞上
+ * 后面那条：时间线上两段压在同一列、那一小时还会被两条记录各摊一次而超过 60 分钟。所以
+ * **不许越过下一条记录的起点**（用户 2026-10-19 拍板的防重叠口径）。
+ *
+ * 已经越过间距的老数据不强逼用户缩短——上限不低于它自己的现值。没有下一条时就是 24 小时。
+ */
+fun focusRecordLengthCapSeconds(startedAt: Long, nextStartedAt: Long?, currentSeconds: Int): Int {
+    val gap = nextStartedAt?.let { ((it - startedAt) / 1_000L).toInt() } ?: Int.MAX_VALUE
+    return minOf(maxOf(gap, currentSeconds), MaxRecordSeconds)
+}
+
+/**
  * 整年的打卡格子：53 个周列（周一开始）× 7 天。
  *
  * 年初 / 年末不满一周的那几天也各占一个格子，只是不属于这一年，页面上画成空的，
@@ -546,6 +560,9 @@ private const val MillisPerMinute = 60_000L
 
 /** 一个钟点最多只有 60 分钟：小时柱状图的轴到这儿封顶（见 [focusHourAxisMinutes]）。 */
 private const val MaxHourAxisMinutes = 60
+
+/** 手改一条记录的时长时允许的上限：24 小时（见 [focusRecordLengthCapSeconds]）。 */
+private const val MaxRecordSeconds = 24 * 60 * 60
 
 /** 排行只留前几条，够看出时间花在哪了。 */
 private const val ReportTopEntries = 5

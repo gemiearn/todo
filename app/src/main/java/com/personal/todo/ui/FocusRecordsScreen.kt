@@ -53,6 +53,7 @@ import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTagSnapshot
+import com.personal.todo.model.focusRecordLengthCapSeconds
 import com.personal.todo.model.localDateOf
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.Instant
@@ -65,9 +66,6 @@ internal const val FocusRecordsTag = "focus-records"
 
 /** 编辑弹层里「时长（分钟）」那个输入框的测试钩子。 */
 internal const val RecordMinutesFieldTag = "record-minutes-field"
-
-/** 一天里最多能改的时长（分钟）：与一次专注的 24 小时上限同一口径。 */
-private const val MaxRecordMinutes = 24 * 60
 
 /**
  * 专注记录：逐条列出每次专注，可以换关联任务、改时长，也可以删掉。
@@ -166,8 +164,26 @@ fun FocusRecordsScreen(
     }
 
     editing?.let { session ->
+        // 防重叠（用户 2026-10-19 拍板）：延长不许越过**紧随其后那条记录**的起点。上限由
+        // 仓库那一层最终把关（`FocusRepository.updateSession`），这里只是提前把「为什么改不长」
+        // 说给用户听，并挡住越界的输入。
+        val nextStart = remember(all, session) {
+            all.filter { it.id != session.id && it.startedAt > session.startedAt }
+                .minOfOrNull { it.startedAt }
+        }
+        val capMinutes = remember(nextStart, session) {
+            focusRecordLengthCapSeconds(session.startedAt, nextStart, session.actualFocusSeconds) / 60
+        }.coerceAtLeast(1)
         RecordEditSheet(
             session = session,
+            maxMinutes = capMinutes,
+            limitHint = nextStart?.let {
+                stringResource(
+                    R.string.record_length_limit,
+                    nextStartLabel(it, session.startedAt, zone),
+                    capMinutes
+                )
+            },
             openTasks = openTasks,
             lists = lists,
             taskTags = taskTags,
@@ -296,6 +312,17 @@ private fun sessionSubtitle(session: FocusSession, zone: ZoneId): String {
     return stringResource(R.string.focus_session_subtitle, clock, status)
 }
 
+/** 「后面那条记录」的时刻：同一天只写 `HH:mm`，跨天就带上月日。 */
+private fun nextStartLabel(nextStart: Long, sessionStart: Long, zone: ZoneId): String {
+    val at = Instant.ofEpochMilli(nextStart).atZone(zone)
+    val clock = "%02d:%02d".format(at.hour, at.minute)
+    return if (localDateOf(nextStart, zone) == localDateOf(sessionStart, zone)) {
+        clock
+    } else {
+        "${at.monthValue}-${at.dayOfMonth} $clock"
+    }
+}
+
 /** 弹层里「关联任务」这一项当前的选择：保留原来的、换成新挑的、或者清掉。 */
 private sealed interface TaskChoice {
     object Keep : TaskChoice
@@ -322,6 +349,10 @@ private data class RecordTarget(
 @Composable
 private fun RecordEditSheet(
     session: FocusSession,
+    /** 时长输入框允许的上限（分钟）：到紧随其后那条记录开始的间距（防重叠）。 */
+    maxMinutes: Int,
+    /** 上限真的生效时给的说明（后面那条记录是什么时候）；没有下一条时为 null。 */
+    limitHint: String?,
     openTasks: List<Task>,
     lists: List<TaskList>,
     taskTags: Map<Long, List<Tag>>,
@@ -342,7 +373,7 @@ private fun RecordEditSheet(
         TaskChoice.Keep -> session.taskTitleSnapshot
     }
     val minutes = minutesText.toIntOrNull()
-    val minutesValid = minutes != null && minutes in 1..MaxRecordMinutes
+    val minutesValid = minutes != null && minutes in 1..maxMinutes
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -390,6 +421,13 @@ private fun RecordEditSheet(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth().testTag(RecordMinutesFieldTag)
             )
+            if (limitHint != null) {
+                Text(
+                    text = limitHint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.dateMuted
+                )
+            }
 
             Button(
                 onClick = { if (minutes != null) onConfirm(resolveTarget(session, choice, lists, taskTags), minutes) },

@@ -13,6 +13,7 @@ import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTiming
 import com.personal.todo.model.Schedule
 import com.personal.todo.model.TimerState
+import com.personal.todo.model.focusRecordLengthCapSeconds
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
@@ -246,6 +247,9 @@ class FocusRepository(
      * [actualFocusSeconds] 长的一段）。不这样做，统计页摊「最佳专注时间」时会拿新时长去除
      * 旧的那一小段，把一个小时算成 90 分钟；时间线也会与记录对不上。只改任务不动时长时，
      * 原来那几小段（含中途暂停的空档）原样保留。
+     *
+     * 延长**不许越过紧随其后那条记录的起点**（[focusRecordLengthCapSeconds]）：拖过头会盖住
+     * 后面那条（时间线压在同一列、那一小时被两条记录各摊一次而超过 60 分钟）。
      */
     suspend fun updateSession(
         sessionId: Long,
@@ -257,7 +261,14 @@ class FocusRepository(
         actualFocusSeconds: Int
     ): Boolean = db.withTransaction {
         val existing = focusDao.getSessionById(sessionId) ?: return@withTransaction false
-        val seconds = actualFocusSeconds.coerceAtLeast(MinRecordedSeconds)
+        // 上限：到下一条记录开始的间距（老数据已经超了就不强逼缩短）。仓库这一层是权威，
+        // 界面上的那个上限只是提前告诉用户「为什么改不长」。
+        val capSeconds = focusRecordLengthCapSeconds(
+            startedAt = existing.startedAt,
+            nextStartedAt = focusDao.getNextSessionStart(existing.startedAt, sessionId),
+            currentSeconds = existing.actualFocusSeconds
+        )
+        val seconds = actualFocusSeconds.coerceIn(MinRecordedSeconds, capSeconds)
         val durationChanged = seconds != existing.actualFocusSeconds
         val endedAt = if (durationChanged) existing.startedAt + seconds * 1_000L else existing.endedAt
         val segments = if (durationChanged) {

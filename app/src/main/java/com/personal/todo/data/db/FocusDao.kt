@@ -74,6 +74,13 @@ interface FocusDao {
     @Query("SELECT * FROM focus_sessions WHERE id = :id")
     suspend fun getSessionById(id: Long): FocusSession?
 
+    /**
+     * 紧随 [after] 之后开始的那条记录的起点（把自己 [excludeId] 排除掉）：改时长不许越过它，
+     * 否则这段会盖住后面那条（时间线压在一起、那一小时被摊两次超过 60 分钟）。
+     */
+    @Query("SELECT MIN(startedAt) FROM focus_sessions WHERE startedAt > :after AND id != :excludeId")
+    suspend fun getNextSessionStart(after: Long, excludeId: Long): Long?
+
     /** 删掉一条历史记录（用户主动删这一条，不是删任务时的连带行为）。 */
     @Query("DELETE FROM focus_sessions WHERE id = :id")
     suspend fun deleteSession(id: Long): Int
