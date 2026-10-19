@@ -737,6 +737,21 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 7. **⚠️ 冒烟测试新踩的坑（记下来省下一次）**：**`ModalDrawerSheet` 里的行、`DropdownMenu` 与 `AlertDialog` 里的按钮，坐标 `performClick` 落不到它们的 `onClick`**——与之前 `ModalBottomSheet` 那个坑同一类。要驱动它们必须用 `performSemanticsAction(SemanticsActions.OnClick)`（本轮这两条测试因此红了两次）。
 8. 同批一起交付的还有用户自己（让 GPT 补的）**图标备选按用途分组**：`ui/Components.kt` 的 `IconPickerRow` 加「清单 / 习惯 / 其他」三档切换（`IconCategory` + `ListIcons` / `HabitIcons` / `OtherIcons`），新增字符串 `icon_category_list` / `icon_category_habit` / `icon_category_other`。
 
+**第十五批（用户 2026-10-19 真机上一次性提的 8 条；DB 仍是 v14、无迁移）**
+
+开工前用 AskUserQuestion 钉死第 2、7、8 条的口径（用户对第 2 条明确要求「先想好了询问我」）：
+
+1. **切页时左滑面板不收（第 1 条，真，已修）**：壳层是同一个组合，`drawerState` 一直留着——用户在某一页把面板拉出来后切到四象限 / 更多（这两页手势是关的，看不出来），再切到专注页或回收站时它就「自己展开了」。修法：`MainScreen` 里 `LaunchedEffect(kind) { drawerState.close() }`，换页即收。
+2. **改专注时长后与图表打架（第 2 条，真，已修；口径＝时长与时间段一起改）**：统计页的「最佳专注时间」与时间线是按**真实跑的那几小段**摊的——把一条 10 分钟的记录改成 90 分钟，同一小时会被摊进 90 分钟，柱子就冲破一小时，时间线也与记录对不上。现在 `FocusRepository.updateSession` 在**时长真的变了**时把 `focusSegments` 重写成「从 `startedAt` 起、正好新时长的一段」并同步 `endedAt`；**只改任务不动时长时，原来那几小段（含暂停空档）原样保留**。测试 `editingTheDurationRewritesTheTimeSegment` / `editingOnlyTheTaskKeepsTheOriginalTimeSegments`。
+3. **抽屉里加「习惯」一行（第 3 条，已做）**：左侧抽屉底部固定区新增一行「习惯」，徽章＝**今天还没完成的习惯条数**（新增 `HabitRepository.observeTodayPendingCount()`，口径与习惯页那一格一致：`次数 × 单次基数 ≥ 目标` 算完成）。点它推进习惯页；窗口跟着 `observeToday()`，跨午夜徽章自己翻页。
+4. **点任务卡 ▶ 不带任务进专注页（第 4 条，真 bug，已修）**：上一批我在 `FocusScreen` 里加的「选择失效就清掉」用的判据是**给用户看的折叠列表**（一串重复任务只留最近那条），于是点重复任务的后面某一次会被误判成「任务没了」而清掉选择。现在判据搬到 `FocusViewModel`，改用**不折叠**的 `observeAllOpenTasks()`（Room 流第一次发射就是库里的真实结果，没有「空＝还没加载」的问题）。测试 `theQuickFocusButtonCarriesTheTaskIntoTheFocusPage`。
+5. **任务详情「专注小结」为空（第 5 条，已核实——与第 4 条同一根因）**：`TaskDetailViewModel.focusTotals`（`observeTaskTotals(taskId)`）与页面的接线本来就是通的，空是因为那些专注**压根没落到这条任务上**（第 4 条导致没绑上）。补了冒烟 `theTaskDetailShowsTheFocusTotalsOfItsSessions` 钉住：绑定的专注完成后，详情页显示「专注 1 次」。
+6. **白噪音太冲（第 6 条，已调）**：`AmbienceVolume` 0.5 → **0.25**（预听与正式播放同一个值）。再想更安静 / 更响只改这一个数；若某条音色本身还是刺耳，那是素材的问题，得重做那条 wav。
+7. **习惯不再关联任务（第 7 条，用户拍板「习惯不需要绑定任务」）**：把「关联任务 + 专注自动打卡」整个撤掉——`HabitRepository` 去掉 `autoCheckInForTask` 与两个入参、`HabitViewModel.create/update` 同、**`FocusViewModel` 不再需要 `HabitRepository`**（工厂少一个参数）、习惯弹层里的「关联任务」按钮与开关删掉、`HabitScreen` 的 `lists` / `openTasks` 参数与 `/ROUTE_HABITS` 的接线一起简化、4 条相关字符串删除；改习惯时顺手把 v14 那两列残留值清成 `null` / `false`。**DB 的列与索引保留不动（仍是 v14、无迁移）**，`HabitDao.getAutoCheckInHabitsForTask` 只留给 v13→v14 迁移测试用。
+8. **回收站 / 已完成（第 8 条，按用户「抽屉可以有，但是不要展开啊」处理）**：把「回收站」也加进左侧抽屉底部固定区（「已完成」本来就在），点它照旧像「逾期」那样整栈切到根视图；「自己展开」由第 1 条修掉。「更多」页那两条入口照旧保留。
+9. **⚠️ 冒烟测试新踩的坑（务必记住）**：**界面直接 `collectAsStateWithLifecycle` 收仓库的「冷」Room 流，会让冒烟测试在 `db.close()` 时炸 `Cannot perform this operation because the connection pool has been closed`**——裸订阅在界面销毁后还吊着（本轮因此红了 3 条）。本项目安全的写法是让它经过 view model 的 `stateIn`（如 `AppShellViewModel` 的 `lists` / `tagsByTask`）。`observeTodayPendingCount` 因此改成 `HabitViewModel.pendingTodayCount`（`stateIn`）后全过。
+10. **验证**：全量单测 **265 全过**（+4：`FocusRepositoryTest` +2、`HabitRepositoryTest` 换掉 2 条并 +2、`TodoAppSmokeTest` +2 且改写 1 条、`FocusScreenSmokeTest` 改写 2 条）、lint 0 error / 2 warning、Kotlin 编译警告 0；包覆盖 `target/0.4.0/app-debug-0.4.0-fix.apk`。
+
 ### 13.6 版本规划
 
 - **0.3.6（已交付）**：N1、N2（四象限）+ N3（专注小段统计）+ N4（被杀后继续跑）+ N5（习惯单位与单次基数）。DB 升 v11，一次迁移同时加习惯两列与专注小段列。
