@@ -55,17 +55,25 @@ class HabitViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(), emptyMap())
 
+    /**
+     * 今天还没完成的习惯条数：抽屉里「习惯」那一行的徽章用。
+     *
+     * 走 [stateIn] 而不是让界面直接收那条冷流：抽屉几乎每一页都在组合里，这条查询也就
+     * 一直是「有订阅者」的；包成 StateFlow 后它的生命周期归 view model 管，界面销毁后
+     * 不会再有一条裸订阅在关库时炸掉（冒烟测试实测过这个区别）。
+     */
+    val pendingTodayCount: StateFlow<Int> = repository.observeTodayPendingCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     fun create(
         name: String,
         dailyTarget: Int,
         unitLabel: String? = null,
         stepAmount: Int? = null,
-        icon: String? = null,
-        linkedTaskId: Long? = null,
-        autoCheckInOnFocus: Boolean = false
+        icon: String? = null
     ) {
         viewModelScope.launch {
-            repository.createHabit(name, dailyTarget, unitLabel, stepAmount, icon, linkedTaskId, autoCheckInOnFocus)
+            repository.createHabit(name, dailyTarget, unitLabel, stepAmount, icon)
         }
     }
 
@@ -75,14 +83,10 @@ class HabitViewModel(
         dailyTarget: Int,
         unitLabel: String? = null,
         stepAmount: Int? = null,
-        icon: String? = null,
-        linkedTaskId: Long? = null,
-        autoCheckInOnFocus: Boolean = false
+        icon: String? = null
     ) {
         viewModelScope.launch {
-            repository.updateHabit(
-                habitId, name, dailyTarget, unitLabel, stepAmount, icon, linkedTaskId, autoCheckInOnFocus
-            )
+            repository.updateHabit(habitId, name, dailyTarget, unitLabel, stepAmount, icon)
         }
     }
 

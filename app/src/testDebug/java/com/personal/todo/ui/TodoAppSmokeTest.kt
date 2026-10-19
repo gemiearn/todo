@@ -422,6 +422,58 @@ class TodoAppSmokeTest {
     }
 
     /**
+     * 任务卡右侧那个 ▶ 要点得动、并且**把任务带进专注页**（用户 2026-10-19 报「任务点击专注
+     * 图标不会自动绑定任务」）：到专注页时任务已经选好，不再是「先选一个要专注的任务」。
+     */
+    @Test
+    fun theQuickFocusButtonCarriesTheTaskIntoTheFocusPage() {
+        val taskId = runBlocking {
+            tasks.createTask("今天的专注对象", tasks.ensureInbox(), plannedDate = tasks.today())
+        }
+
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.Today)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(quickFocusTag(taskId)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("今天的专注对象").assertExists()
+        compose.onNodeWithText("先选一个要专注的任务").assertDoesNotExist()
+    }
+
+    /**
+     * 任务详情页的「专注小结」要真显示这条任务上的专注（用户 2026-10-19 报「任务里面的专注
+     * 统计为空，哪怕绑定的专注已经完成」）。
+     */
+    @Test
+    fun theTaskDetailShowsTheFocusTotalsOfItsSessions() {
+        val taskId = runBlocking {
+            tasks.createTask("今天的专注对象", tasks.ensureInbox(), plannedDate = tasks.today())
+        }
+        runBlocking {
+            focus.startTimer(
+                mode = FocusMode.POMODORO,
+                plannedSeconds = 1_500,
+                taskId = taskId,
+                taskTitleSnapshot = "今天的专注对象",
+                listNameSnapshot = "收件箱"
+            )
+            focus.finishTimer()
+        }
+
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.Today)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("今天的专注对象").performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("专注小结").assertExists()
+        compose.onNodeWithText("专注 1 次", substring = true).assertExists()
+        compose.onNodeWithText("还没有专注记录").assertDoesNotExist()
+    }
+
+    /**
      * 四象限是「决定优先级」的地方，不是「完成任务」的地方：任务照旧画得出来，但页面上
      * 一个能打勾的控件都没有。完成要回列表或详情页去做。
      */

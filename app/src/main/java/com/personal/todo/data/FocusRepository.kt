@@ -241,6 +241,11 @@ class FocusRepository(
      * 专注的时长。开始时刻、模式与「完成 / 中断」都不动——那些是那次专注真实发生过的事。
      *
      * [actualFocusSeconds] 至少 1 秒：一段 0 秒的专注在记里没有意义，也不该被写进去。
+     *
+     * **时长被改时，时间段也跟着一起重写**（`focusSegments` 换成从 `startedAt` 起、正好
+     * [actualFocusSeconds] 长的一段）。不这样做，统计页摊「最佳专注时间」时会拿新时长去除
+     * 旧的那一小段，把一个小时算成 90 分钟；时间线也会与记录对不上。只改任务不动时长时，
+     * 原来那几小段（含中途暂停的空档）原样保留。
      */
     suspend fun updateSession(
         sessionId: Long,
@@ -251,6 +256,15 @@ class FocusRepository(
         tagIdsSnapshot: String?,
         actualFocusSeconds: Int
     ): Boolean = db.withTransaction {
+        val existing = focusDao.getSessionById(sessionId) ?: return@withTransaction false
+        val seconds = actualFocusSeconds.coerceAtLeast(MinRecordedSeconds)
+        val durationChanged = seconds != existing.actualFocusSeconds
+        val endedAt = if (durationChanged) existing.startedAt + seconds * 1_000L else existing.endedAt
+        val segments = if (durationChanged) {
+            FocusSegments.append(null, existing.startedAt, endedAt)
+        } else {
+            existing.focusSegments
+        }
         focusDao.updateSession(
             id = sessionId,
             taskId = taskId,
@@ -258,7 +272,9 @@ class FocusRepository(
             listName = listNameSnapshot,
             tagNames = tagNamesSnapshot,
             tagIds = tagIdsSnapshot,
-            seconds = actualFocusSeconds.coerceAtLeast(MinRecordedSeconds)
+            seconds = seconds,
+            segments = segments,
+            endedAt = endedAt
         ) > 0
     }
 

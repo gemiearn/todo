@@ -39,8 +39,9 @@ interface FocusDao {
     suspend fun getSessions(): List<FocusSession>
 
     /**
-     * 改一条历史记录：只改「关联任务」（连带它的标题 / 清单 / 标签快照）与「专注时长」。
-     * 开始时刻、模式、状态都不动——那是那次专注真实发生过的事，不手改。
+     * 改一条历史记录：只改「关联任务」（连带它的标题 / 清单 / 标签快照）与「专注时长」，
+     * 外加时长被改时同步重写的**时间段**（[segments] / [endedAt]）。开始时刻、模式、状态
+     * 都不动——那是那次专注真实发生过的事，不手改。
      *
      * @return 受影响的位数；0 表示这条记录已经不在库里。
      */
@@ -52,7 +53,9 @@ interface FocusDao {
             listNameSnapshot = :listName,
             tagNamesSnapshot = :tagNames,
             tagIdsSnapshot = :tagIds,
-            actualFocusSeconds = :seconds
+            actualFocusSeconds = :seconds,
+            focusSegments = :segments,
+            endedAt = :endedAt
         WHERE id = :id
         """
     )
@@ -63,8 +66,13 @@ interface FocusDao {
         listName: String?,
         tagNames: String?,
         tagIds: String?,
-        seconds: Int
+        seconds: Int,
+        segments: String?,
+        endedAt: Long
     ): Int
+
+    @Query("SELECT * FROM focus_sessions WHERE id = :id")
+    suspend fun getSessionById(id: Long): FocusSession?
 
     /** 删掉一条历史记录（用户主动删这一条，不是删任务时的连带行为）。 */
     @Query("DELETE FROM focus_sessions WHERE id = :id")

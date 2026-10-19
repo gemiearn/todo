@@ -316,6 +316,69 @@ class FocusRepositoryTest {
         assertEquals(listOf(7L), FocusTagSnapshot.ids(session.tagIdsSnapshot))
     }
 
+    /**
+     * 改时长必须**连时间段一起改**：原来记 600 秒、时间线只有 09:00–09:10，改成 1800 秒之后
+     * 那一段就该是 09:00–09:30。不然统计页按小段摊时长时，会把一个小时算成 30 分钟以上，
+     * 柱状图会冒出超过一小时的柱子（用户 2026-10-19 报的就是这个）。
+     */
+    @Test
+    fun editingTheDurationRewritesTheTimeSegment() = runBlocking {
+        focus.startTimer(FocusMode.STOPWATCH, 0)
+        advance(600)
+        assertTrue(focus.finishTimer())
+        val session = onlySession()
+        assertEquals("原来只有 10 分钟那一段", listOf(session.startedAt..session.endedAt), FocusSegments.decode(session.focusSegments))
+
+        assertTrue(
+            focus.updateSession(
+                sessionId = session.id,
+                taskId = null,
+                taskTitleSnapshot = null,
+                listNameSnapshot = null,
+                tagNamesSnapshot = null,
+                tagIdsSnapshot = null,
+                actualFocusSeconds = 1_800
+            )
+        )
+
+        val updated = onlySession()
+        assertEquals(1_800, updated.actualFocusSeconds)
+        assertEquals(
+            "时间段跟着新时长重写成一段 09:00–09:30",
+            listOf(session.startedAt..(session.startedAt + 1_800_000L)),
+            FocusSegments.decode(updated.focusSegments)
+        )
+        assertEquals(session.startedAt + 1_800_000L, updated.endedAt)
+    }
+
+    /** 只换关联任务、不动时长时，原来那几小段（含暂停的空档）必须原样保留。 */
+    @Test
+    fun editingOnlyTheTaskKeepsTheOriginalTimeSegments() = runBlocking {
+        focus.startTimer(FocusMode.STOPWATCH, 0)
+        advance(60)
+        focus.pauseTimer()
+        advance(120)
+        focus.resumeTimer()
+        advance(30)
+        assertTrue(focus.finishTimer())
+        val session = onlySession()
+
+        assertTrue(
+            focus.updateSession(
+                sessionId = session.id,
+                taskId = null,
+                taskTitleSnapshot = null,
+                listNameSnapshot = null,
+                tagNamesSnapshot = null,
+                tagIdsSnapshot = null,
+                actualFocusSeconds = session.actualFocusSeconds
+            )
+        )
+
+        assertEquals("小段（两段，中间有暂停空档）原样保留", session.focusSegments, onlySession().focusSegments)
+        assertEquals(session.endedAt, onlySession().endedAt)
+    }
+
     /** 取消关联：任务清空，但那条记录本身还在（只是不再挂在任何任务上）。 */
     @Test
     fun clearingTheTaskOfASessionKeepsTheRecord() = runBlocking {

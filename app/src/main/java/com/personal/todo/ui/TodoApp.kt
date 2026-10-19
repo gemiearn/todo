@@ -308,8 +308,12 @@ fun TodoApp(
     val focusSettings = remember(context) { FocusSettingsStore(context) }
     val focusViewModel: FocusViewModel = viewModel(
         key = HomeTab.Focus.route,
-        factory = FocusViewModel.factory(focusRepository, repository, focusSettings, habitRepository)
+        factory = FocusViewModel.factory(focusRepository, repository, focusSettings)
     )
+
+    // 抽屉里「习惯」那一行要报今天还剩几条没做；走习惯 view model 那条 StateFlow，
+    // 不让界面直接收仓库的冷流（裸订阅会在界面销毁后还吊着，关库时炸在测试里）。
+    val pendingHabitCount by habitViewModel.pendingTodayCount.collectAsStateWithLifecycle()
 
     // 计时器是 App 级状态，落盘（checkpoint）不能挂在专注页上：切到别的页签后专注页就不在
     // 组合里了，那时 App 进后台没人把已经确认的专注时长写下去，进程被杀就丢那一段。挂在
@@ -385,19 +389,12 @@ fun TodoApp(
 
         ROUTE_TAGS -> TagScreen(viewModel = tagViewModel, onBack = { nav.pop() })
 
-        ROUTE_HABITS -> {
-            // 弹层里那个「关联任务」用的就是专注页那份「还没做完的任务」清单（一串重复
-            // 任务只露最近那条），所以这里借它的流，不再另开一条查询。
-            val habitOpenTasks by focusViewModel.openTasks.collectAsStateWithLifecycle()
-            HabitScreen(
-                viewModel = habitViewModel,
-                lists = lists,
-                openTasks = habitOpenTasks,
-                // 顶栏那个「清单 / 习惯」开关点「清单」＝退回进来之前那一页。
-                onSwitchToLists = { nav.pop() },
-                onBack = { nav.pop() }
-            )
-        }
+        ROUTE_HABITS -> HabitScreen(
+            viewModel = habitViewModel,
+            // 顶栏那个「清单 / 习惯」开关点「清单」＝退回进来之前那一页。
+            onSwitchToLists = { nav.pop() },
+            onBack = { nav.pop() }
+        )
 
         ROUTE_SETTINGS -> SettingsScreen(
             themeChoice = themeChoice,
@@ -423,7 +420,8 @@ fun TodoApp(
             kind = kind,
             argument = argument,
             selectedDate = LocalDate.ofEpochDay(selectedEpochDay),
-            onSelectDate = { selectedEpochDay = it.toEpochDay() }
+            onSelectDate = { selectedEpochDay = it.toEpochDay() },
+            pendingHabitCount = pendingHabitCount
         )
     }
 }
@@ -457,12 +455,20 @@ internal fun MainScreen(
     kind: String,
     argument: Long?,
     selectedDate: LocalDate,
-    onSelectDate: (LocalDate) -> Unit
+    onSelectDate: (LocalDate) -> Unit,
+    /** 抽屉里「习惯」那行的徽章：今天还没完成的习惯条数。 */
+    pendingHabitCount: Int = 0
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    // 换页时左滑面板必须收回去。壳层是同一个组合，抽屉状态会一直留着：用户在某一页把它
+    // 拉出来、再切到别的页签，它就**一直开着**（四象限 / 更多页手势是关的，看不出来），
+    // 等切到又有抽屉的页（比如专注页或回收站）时就「自己展开了」——用户 2026-10-19 报的
+    // 「从四象限点到专注，侧栏是拉出的状态」。
+    LaunchedEffect(kind) { drawerState.close() }
 
     // 显示范围筛选与日历显示设置存 SharedPreferences：勾过的范围、日历的看法下次进来
     // 还在。列表顶栏和日历 ⋮ 各用一份独立的筛子，互不影响。
@@ -729,9 +735,16 @@ internal fun MainScreen(
                             lists = lists,
                             openTaskCounts = openTaskCounts,
                             overdueCount = overdueCount,
+                            pendingHabitCount = pendingHabitCount,
                             currentRoute = route,
                             onSelect = { target ->
-                                nav.resetTo(target)
+                                // 习惯是推入页（带返回箭头、退得回来），别的都是根视图——
+                                // 像底部页签那样整栈切换。
+                                if (target == ROUTE_HABITS) nav.push(target) else nav.resetTo(target)
+                                scope.launch { drawerState.close() }
+                            },
+                            onOpenHabits = {
+                                nav.push(ROUTE_HABITS)
                                 scope.launch { drawerState.close() }
                             },
                             onNewList = { showNewListDialog = true }
@@ -1341,8 +1354,11 @@ private fun ListsDrawer(
     lists: List<TaskList>,
     openTaskCounts: Map<Long, Int>,
     overdueCount: Int,
+    /** 今天还没完成的习惯条数：那一行的徽章。 */
+    pendingHabitCount: Int,
     currentRoute: String,
     onSelect: (String) -> Unit,
+    onOpenHabits: () -> Unit,
     onNewList: () -> Unit
 ) {
     val colors = LocalTodoColors.current
@@ -1407,14 +1423,26 @@ private fun ListsDrawer(
             }
         }
 
-        // 分隔线以下这几样不随清单滚动：清单再长，「已完成 / 新建清单」也一直在手边。
-        // 回收站 deliberately has no entry here: it lives in 更多，抽屉里不放它。
-        // 习惯也不在这里了（用户 2026-10-18：入口搬到任务页顶栏那个「清单 / 习惯」开关上）。
+        // 分隔线以下这几样不随清单滚动：清单再长，「已完成 / 回收站 / 习惯 / 新建清单」
+        // 也一直在手边。
         HorizontalDivider(color = colors.dateMuted.copy(alpha = 0.2f))
         DrawerRow(
             label = stringResource(R.string.nav_completed),
             selected = currentRoute == ROUTE_COMPLETED,
             onClick = { onSelect(ROUTE_COMPLETED) }
+        )
+        // 回收站也放进来（用户 2026-10-19）：「更多」页那条照旧保留，这里多一个手边的入口。
+        DrawerRow(
+            label = stringResource(R.string.nav_trash),
+            selected = currentRoute == ROUTE_TRASH,
+            onClick = { onSelect(ROUTE_TRASH) }
+        )
+        // 习惯那一行带徽章：今天还剩几条没打（全打完了就不显示徽章）。
+        DrawerRow(
+            label = stringResource(R.string.switch_habits),
+            selected = false,
+            badge = pendingHabitCount,
+            onClick = onOpenHabits
         )
         TextButton(onClick = onNewList, modifier = Modifier.padding(horizontal = 12.dp)) {
             Text(stringResource(R.string.action_new_list))

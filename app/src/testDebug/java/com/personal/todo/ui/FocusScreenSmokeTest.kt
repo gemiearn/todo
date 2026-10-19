@@ -14,7 +14,6 @@ import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.FocusSound
-import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.data.db.TodoDatabase
@@ -58,7 +57,6 @@ class FocusScreenSmokeTest {
     private lateinit var db: TodoDatabase
     private lateinit var tasks: TaskRepository
     private lateinit var focus: FocusRepository
-    private lateinit var habits: HabitRepository
     private lateinit var lists: List<TaskList>
 
     @Before
@@ -69,7 +67,6 @@ class FocusScreenSmokeTest {
                 .build()
             tasks = TaskRepository(db, "收件箱")
             focus = FocusRepository(db)
-            habits = HabitRepository(db)
             tasks.createTask("写季度报告", tasks.ensureInbox())
             val work = tasks.createList("工作")
             tasks.createTask("整理周报", work)
@@ -88,8 +85,7 @@ class FocusScreenSmokeTest {
             FocusViewModel(
                 focus,
                 tasks,
-                FocusSettingsStore(RuntimeEnvironment.getApplication()),
-                HabitRepository(db)
+                FocusSettingsStore(RuntimeEnvironment.getApplication())
             )
     ) {
         compose.setContent {
@@ -148,60 +144,46 @@ class FocusScreenSmokeTest {
         compose.onNodeWithText("开始专注").assertExists()
     }
 
-    /**
-     * 连点两下「开始」只该记一次打卡（审查报告 3.1）。
-     *
-     * `startTimer` 有「已经有一个计时器就拒绝」的守卫，第二下会拿到 false——不看返回值
-     * 就照样打卡，于是只起了一次表、习惯却记了两次。这里按真实顺序走一遍：第一次真的起表
-     * （该记一次），第二次被守卫拒绝（不该再记）。
-     */
+    /** 连点两下「开始」只该起一次表：`startTimer` 有「已经有一个计时器就拒绝」的守卫。 */
     @Test
-    fun doubleTappingStartChecksTheLinkedHabitInOnlyOnce() = runBlocking {
+    fun doubleTappingStartStartsOnlyOneTimer() = runBlocking {
         val task = tasks.observeAllOpenTasks().first().first { it.title == "写季度报告" }
-        val habitId = habits.createHabit("写周报", 5, linkedTaskId = task.id, autoCheckInOnFocus = true)
-
         val viewModel = FocusViewModel(
             focus,
             tasks,
-            FocusSettingsStore(RuntimeEnvironment.getApplication()),
-            habits
+            FocusSettingsStore(RuntimeEnvironment.getApplication())
         )
         viewModel.linkTask(task)
         // 先把页面组合起来，跟真实使用一致。
         launchFocus(viewModel)
 
-        // 第一下：计时真的起来了，就该记一次。
         compose.runOnIdle { viewModel.start() }
-        waitForDb("第一次起表后的打卡") {
-            runBlocking { db.habitDao().getCheckIn(habitId, habits.today()) != null }
+        waitForDb("第一下起的表") {
+            runBlocking { focus.observeActiveTimer().first() != null }
         }
 
-        // 第二下：会被「已有计时器」的守卫拒掉。给它足够时间去犯错，再断言没有多记。
+        // 第二下会被守卫拒掉；给它足够时间去犯错，再断言库里仍然只有那一个计时器。
         compose.runOnIdle { viewModel.start() }
         repeat(20) { compose.waitForIdle() }
-        assertEquals(
-            "只起了一次表，就只能记一次",
-            1,
-            runBlocking { db.habitDao().getCheckIn(habitId, habits.today())?.count }
-        )
+        val started = runBlocking { focus.observeActiveTimer().first() }
+        assertEquals("只起了一次表", task.id, started?.taskId)
+        assertEquals("计时器只有一行（不是又起了一轮）", 0, runBlocking { focus.observeSessions().first().size })
     }
 
     /**
-     * 选中的任务在别处被完成之后，起表要被拒绝，并且不给关联习惯打卡（审查报告 #1）。
+     * 选中的任务在别处被完成之后，起表要被拒绝（审查报告 #1）。
      *
      * 走一遍真实顺序：先在专注页选好任务，然后「跑到别的页面」把它完成，再回来按开始。
-     * 界面上的失效选择会被清掉；即便没来得及清，起表前的复核也会拦住它——两条路都保证
-     * 不会有计时器被建出来、也不会有一次误打卡。
+     * 视图模型自己盯着「这条任务还在不在库里」，起表前还会再复核一次——两条路都保证
+     * 不会有计时器被建出来。
      */
     @Test
     fun aTaskCompletedElsewhereCannotBeStarted() = runBlocking {
         val task = tasks.observeAllOpenTasks().first().first { it.title == "写季度报告" }
-        val habitId = habits.createHabit("写周报", 5, linkedTaskId = task.id, autoCheckInOnFocus = true)
         val viewModel = FocusViewModel(
             focus,
             tasks,
-            FocusSettingsStore(RuntimeEnvironment.getApplication()),
-            habits
+            FocusSettingsStore(RuntimeEnvironment.getApplication())
         )
         viewModel.linkTask(task)
         launchFocus(viewModel)
@@ -214,11 +196,7 @@ class FocusScreenSmokeTest {
         repeat(20) { compose.waitForIdle() }
 
         assertNull("已完成的任务不该起表", runBlocking { focus.observeActiveTimer().first() })
-        assertEquals(
-            "没起表就不该自动打卡",
-            0,
-            runBlocking { db.habitDao().getCheckIn(habitId, habits.today())?.count ?: 0 }
-        )
+        assertNull("失效的选择要被清掉", viewModel.linkedTaskId)
     }
 
     /** 计时必须绑任务: the screen asks for one before anything can start. */
@@ -338,8 +316,7 @@ class FocusScreenSmokeTest {
         val viewModel = FocusViewModel(
             focus,
             tasks,
-            FocusSettingsStore(RuntimeEnvironment.getApplication()),
-            HabitRepository(db)
+            FocusSettingsStore(RuntimeEnvironment.getApplication())
         )
         val task = runBlocking {
             tasks.observeAllOpenTasks().first().first { it.title == "写季度报告" }
@@ -379,7 +356,7 @@ class FocusScreenSmokeTest {
     @Test
     fun thePomodoroParametersAreAdjustableAndSaved() {
         val store = FocusSettingsStore(RuntimeEnvironment.getApplication())
-        launchFocus(FocusViewModel(focus, tasks, store, HabitRepository(db)))
+        launchFocus(FocusViewModel(focus, tasks, store))
 
         compose.onNodeWithText("专注时长").performClick()
         compose.waitForIdle()
@@ -395,7 +372,7 @@ class FocusScreenSmokeTest {
     @Test
     fun theAmbienceChoiceIsSaved() {
         val store = FocusSettingsStore(RuntimeEnvironment.getApplication())
-        launchFocus(FocusViewModel(focus, tasks, store, HabitRepository(db)))
+        launchFocus(FocusViewModel(focus, tasks, store))
 
         compose.onNodeWithText("雨声").performClick()
         compose.waitForIdle()

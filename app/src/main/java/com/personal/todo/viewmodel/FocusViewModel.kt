@@ -12,7 +12,6 @@ import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettings
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.FocusSound
-import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
@@ -76,9 +75,7 @@ object FocusDurations {
 class FocusViewModel(
     private val focusRepository: FocusRepository,
     private val taskRepository: TaskRepository,
-    private val settingsStore: FocusSettingsStore,
-    /** 习惯：起一次计时就给「关联到这条任务、且开着自动打卡」的习惯记一次（v14）。 */
-    private val habitRepository: HabitRepository
+    private val settingsStore: FocusSettingsStore
 ) : ViewModel() {
 
     val zone: ZoneId = focusRepository.zone
@@ -270,15 +267,12 @@ class FocusViewModel(
         viewModelScope.launch {
             // 选中的那一刻任务还在列表里，之后可能被完成 / 删除 / 挪成子任务。起表前
             // 复核一次：不合格就清掉这个失效的选择并放弃，绝不把一段专注记在一条已经
-            // 结束的任务上——`autoCheckInForTask` 在 `if (started)` 之后，也就不会误打卡。
+            // 结束的任务上。
             if (!taskRepository.isStartableForFocus(taskId)) {
                 clearLink()
                 return@launch
             }
-            // 只有计时**真的起来了**才给习惯记这次打卡：`startTimer` 里有「已经有一个计时器
-            // 就拒绝」的守卫，连点两下「开始」时第二次会返回 false——不看返回值，就会出现
-            // 「只起了一次表、习惯却记了两次」。
-            val started = focusRepository.startTimer(
+            focusRepository.startTimer(
                 mode = mode,
                 plannedSeconds = target,
                 taskId = taskId,
@@ -287,9 +281,6 @@ class FocusViewModel(
                 tagNamesSnapshot = tagSnapshot,
                 tagIdsSnapshot = tagIdSnapshot
             )
-            // 关联任务自动打卡（习惯 v14）：口径是「只要计时了就打卡」，所以不等它跑完，
-            // 中断也算——起一次表记一次，次数照旧夹在习惯的目标以内。
-            if (started) habitRepository.autoCheckInForTask(taskId, habitRepository.today())
         }
     }
 
@@ -352,6 +343,19 @@ class FocusViewModel(
 
     init {
         viewModelScope.launch {
+            // 选中的任务被完成 / 删除之后，这个失效的选择要自己清掉，免得按钮还亮着、
+            // 点下去才被起表前的复核拒绝。
+            //
+            // 判据必须是**不折叠**的那份清单（`observeAllOpenTasks`）：页面上给用户看的
+            // `openTasks` 会把一串重复任务只留最近那条，拿它判会把「用户点的就是后面某一次」
+            // 误当成「任务没了」而清掉选择（这正是 2026-10-19 用户报的「点▶没有带上任务」）。
+            // Room 的流第一次发射就是库里的真实结果，没有「初值是空的＝还没加载」的问题。
+            taskRepository.observeAllOpenTasks().collect { open ->
+                val id = linkedTaskId ?: return@collect
+                if (open.none { it.id == id }) clearLink()
+            }
+        }
+        viewModelScope.launch {
             // A recovered session keeps running from where it was: nothing that
             // happened while the process was gone is counted (spec section 5.2),
             // but the timer itself is not parked on 暂停.
@@ -376,10 +380,9 @@ class FocusViewModel(
         fun factory(
             focusRepository: FocusRepository,
             taskRepository: TaskRepository,
-            settingsStore: FocusSettingsStore,
-            habitRepository: HabitRepository
+            settingsStore: FocusSettingsStore
         ) = viewModelFactory {
-            initializer { FocusViewModel(focusRepository, taskRepository, settingsStore, habitRepository) }
+            initializer { FocusViewModel(focusRepository, taskRepository, settingsStore) }
         }
     }
 }

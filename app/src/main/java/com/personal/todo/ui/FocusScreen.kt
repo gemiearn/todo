@@ -157,13 +157,8 @@ fun FocusScreen(
         taskTags[viewModel.linkedTaskId].orEmpty().map { it.id }
     }
 
-    // 选中的任务如果从「可专注」的列表里消失了（在别的页面被完成 / 删除 / 挪成子任务），
-    // 就把这个失效的选择清掉，免得按钮还亮着、点下去才被仓库拒绝。列表为空时不判——初次
-    // 组合时那条流还没发射，空表只是「还没加载」，不是「任务没了」。
-    LaunchedEffect(openTasks, viewModel.linkedTaskId) {
-        val id = viewModel.linkedTaskId ?: return@LaunchedEffect
-        if (openTasks.isNotEmpty() && openTasks.none { it.id == id }) viewModel.clearLink()
-    }
+    // 「选中的任务已经不在库里了」由 view model 自己盯着（它按**不折叠**的开放任务流判，
+    // 页面这一层不能用给用户看的折叠列表去判——那会把重复任务的后面某几次误清掉）。
 
     var taskPickerOpen by remember { mutableStateOf(false) }
     val colors = LocalTodoColors.current
@@ -862,8 +857,13 @@ private fun AmbientSound(sound: FocusSound, playing: Boolean) {
     }
 }
 
-/** Ambience sits behind the timer, never in front of it. */
-private const val AmbienceVolume = 0.5f
+/**
+ * Ambience sits behind the timer, never in front of it.
+ *
+ * 用户 2026-10-19：几个白噪音「过于强烈」，这里从 0.5 降到 0.25（预听与正式播放同一个值）。
+ * 再要更安静/更响，只改这一个数；若某一条音色本身还是刺耳，那是素材的问题，得重做那条 wav。
+ */
+private const val AmbienceVolume = 0.25f
 
 /** How long a tapped ambience plays as a preview. */
 private const val SoundPreviewMillis = 2_500L

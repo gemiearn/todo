@@ -327,14 +327,6 @@
     <string name="switch_lists">清单</string>
     <string name="switch_habits">习惯</string>
 
-    <!-- 习惯的「关联任务 + 专注自动打卡」 -->
-    <string name="habit_link_task_label">关联任务</string>
-    <string name="habit_link_task_none">未关联</string>
-    <string name="habit_link_task_clear">取消关联</string>
-    <string name="habit_link_task_gone">已不在待办里</string>
-    <string name="habit_auto_check_in">专注这条任务时自动打卡</string>
-    <string name="habit_auto_check_in_hint">起一次计时就算一次，按单次基数折算、到目标为止</string>
-
     <!-- 对话框与提示 -->
     <string name="dialog_new_list_title">新建清单</string>
     <string name="dialog_rename_list_title">重命名清单</string>

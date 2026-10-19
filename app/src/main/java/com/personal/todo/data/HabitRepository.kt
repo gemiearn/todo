@@ -8,10 +8,14 @@ import com.personal.todo.model.HabitRules
 import com.personal.todo.model.Schedule
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 
 /**
  * 「今天」那条流多久重新读一次日期：60 秒足够，跨过午夜后最多晚一分钟翻页。任务侧
@@ -59,14 +63,31 @@ class HabitRepository(
     fun observeCheckIns(from: LocalDate, to: LocalDate): Flow<List<HabitCheckIn>> =
         habitDao.observeCheckInsBetween(from, to)
 
+    /**
+     * 今天还没完成的习惯条数：抽屉里「习惯」那一行的徽章用它。
+     *
+     * 「完成」按 [HabitRules.isComplete]（`次数 × 单次基数 ≥ 目标`）判，与习惯页那一格
+     * 显示的「完成」同一个口径；今天没有打卡记录的习惯算没完成。窗口跟着 [observeToday]
+     * 走，跨过午夜时这个数自己会翻页。
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeTodayPendingCount(): Flow<Int> =
+        combine(observeHabits(), observeToday()) { habits, date -> habits to date }
+            .flatMapLatest { (habits, date) ->
+                habitDao.observeCheckInsBetween(date, date).map { rows ->
+                    val counts = rows.associate { it.habitId to it.count }
+                    habits.count { habit ->
+                        !HabitRules.isComplete(counts[habit.id] ?: 0, habit.dailyTarget, habit.step)
+                    }
+                }
+            }
+
     suspend fun createHabit(
         name: String,
         dailyTarget: Int,
         unitLabel: String? = null,
         stepAmount: Int? = null,
-        icon: String? = null,
-        linkedTaskId: Long? = null,
-        autoCheckInOnFocus: Boolean = false
+        icon: String? = null
     ): Long {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "习惯名不能为空" }
@@ -75,8 +96,6 @@ class HabitRepository(
             Habit(
                 name = trimmed,
                 icon = cleanIcon(icon),
-                linkedTaskId = cleanLinkedTask(linkedTaskId),
-                autoCheckInOnFocus = autoCheckInOnFocus && linkedTaskId != null,
                 dailyTarget = dailyTarget.coerceAtLeast(HabitRules.MinTarget),
                 unitLabel = cleanUnit(unitLabel),
                 stepAmount = cleanStep(stepAmount),
@@ -88,16 +107,14 @@ class HabitRepository(
         )
     }
 
-    /** 名字、单位、目标量、单次基数、图标与关联任务走同一个入口：习惯就这几样可编辑的东西。 */
+    /** 名字、单位、目标量、单次基数与图标走同一个入口：习惯就这几样可编辑的东西。 */
     suspend fun updateHabit(
         habitId: Long,
         name: String,
         dailyTarget: Int,
         unitLabel: String? = null,
         stepAmount: Int? = null,
-        icon: String? = null,
-        linkedTaskId: Long? = null,
-        autoCheckInOnFocus: Boolean = false
+        icon: String? = null
     ) {
         val trimmed = name.trim()
         require(trimmed.isNotEmpty()) { "习惯名不能为空" }
@@ -106,28 +123,16 @@ class HabitRepository(
             habit.copy(
                 name = trimmed,
                 icon = cleanIcon(icon),
-                linkedTaskId = cleanLinkedTask(linkedTaskId),
-                // 没有关联任务就没有自动打卡可言：开关跟着关联一起消失。
-                autoCheckInOnFocus = autoCheckInOnFocus && linkedTaskId != null,
                 dailyTarget = dailyTarget.coerceAtLeast(HabitRules.MinTarget),
                 unitLabel = cleanUnit(unitLabel),
                 stepAmount = cleanStep(stepAmount),
+                // v14 那两列（关联任务 / 专注自动打卡）已经不用了（用户 2026-10-19：习惯
+                // 独立存在），顺手把老数据上残留的值清掉；列本身留着，不动库版本。
+                linkedTaskId = null,
+                autoCheckInOnFocus = false,
                 updatedAt = now()
             )
         )
-    }
-
-    /**
-     * 为一条任务起了一次专注计时：给所有「关联到它、且开着自动打卡」的习惯记一次当天打卡。
-     *
-     * 口径（用户 2026-10-18 拍板）是**只要计时了就打卡**，所以不看时长、也把中断算进来；
-     * 次数仍走 [increment]，也就是照旧夹在目标以内、按单次基数折算。
-     *
-     * 整批放在**同一个事务**里：几个习惯关联同一条任务时，中途失败不该留下「前两个打过了、
-     * 第三个没打」的半完成状态（`withTransaction` 可嵌套，里面的 `increment` 会并进来）。
-     */
-    suspend fun autoCheckInForTask(taskId: Long, date: LocalDate) = db.withTransaction {
-        habitDao.getAutoCheckInHabitsForTask(taskId).forEach { increment(it.id, date) }
     }
 
     /** 删习惯时连它的打卡记录一起清掉（同一事务），不留悬空行。 */
@@ -164,7 +169,4 @@ class HabitRepository(
 
     /** 空图标存成 null：这样「没有图标」只有一种表示，选「无」就是把这一列清空。 */
     private fun cleanIcon(icon: String?): String? = icon?.trim()?.takeIf { it.isNotEmpty() }
-
-    /** 关联任务只接受一个真实的 id；没选就是 null（「不关联」也只有这一种表示）。 */
-    private fun cleanLinkedTask(taskId: Long?): Long? = taskId?.takeIf { it > 0 }
 }
