@@ -12,6 +12,7 @@ import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettings
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.FocusSound
+import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.ActiveTimer
 import com.personal.todo.data.db.FocusSession
@@ -75,7 +76,12 @@ object FocusDurations {
 class FocusViewModel(
     private val focusRepository: FocusRepository,
     private val taskRepository: TaskRepository,
-    private val settingsStore: FocusSettingsStore
+    private val settingsStore: FocusSettingsStore,
+    /**
+     * 习惯仓库：专注抽屉里选了「自动打卡」时，开始一次专注就给那个习惯 +1。
+     * 传 null（老测试）＝这个功能关闭，不影响纯逻辑测试。
+     */
+    private val habitRepository: HabitRepository? = null
 ) : ViewModel() {
 
     val zone: ZoneId = focusRepository.zone
@@ -172,6 +178,11 @@ class FocusViewModel(
 
     fun selectSound(sound: FocusSound) {
         updateSettings { it.copy(sound = sound) }
+    }
+
+    /** 抽屉里选「自动打卡」的习惯；传 null 就是关掉。 */
+    fun selectAutoCheckInHabit(habitId: Long?) {
+        updateSettings { it.copy(autoCheckInHabitId = habitId?.takeIf { id -> id > 0 }) }
     }
 
     private fun updateSettings(change: (FocusSettings) -> FocusSettings) {
@@ -272,7 +283,7 @@ class FocusViewModel(
                 clearLink()
                 return@launch
             }
-            focusRepository.startTimer(
+            val started = focusRepository.startTimer(
                 mode = mode,
                 plannedSeconds = target,
                 taskId = taskId,
@@ -281,6 +292,15 @@ class FocusViewModel(
                 tagNamesSnapshot = tagSnapshot,
                 tagIdsSnapshot = tagIdSnapshot
             )
+            // 只有表真的起来了才打卡：连点两下「开始」时第二次 startTimer 返回 false，
+            // 不看返回值会把同一个习惯记两次。
+            if (started) {
+                val habitId = settings.autoCheckInHabitId
+                val habits = habitRepository
+                if (habitId != null && habits != null) {
+                    habits.increment(habitId, habits.today())
+                }
+            }
         }
     }
 
@@ -380,9 +400,12 @@ class FocusViewModel(
         fun factory(
             focusRepository: FocusRepository,
             taskRepository: TaskRepository,
-            settingsStore: FocusSettingsStore
+            settingsStore: FocusSettingsStore,
+            habitRepository: HabitRepository? = null
         ) = viewModelFactory {
-            initializer { FocusViewModel(focusRepository, taskRepository, settingsStore) }
+            initializer {
+                FocusViewModel(focusRepository, taskRepository, settingsStore, habitRepository)
+            }
         }
     }
 }

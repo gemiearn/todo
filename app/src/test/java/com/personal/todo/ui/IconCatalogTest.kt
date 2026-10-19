@@ -4,15 +4,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 图标目录的硬约束：200 个左右、按种类分组、不重复。 */
+/** 图标目录的硬约束：300 个左右、按种类分组、不重复。 */
 class IconCatalogTest {
 
     @Test
-    fun thereAreAboutTwoHundredDistinctIconsGroupedByKind() {
+    fun thereAreAboutThreeHundredDistinctIconsGroupedByKind() {
         assertTrue("种类太少", IconCategory.entries.size >= 10)
         assertTrue(
-            "图标数量应在 200 左右，实际 ${IconChoices.size}",
-            IconChoices.size in 200..220
+            "图标数量应在 300 左右，实际 ${IconChoices.size}",
+            IconChoices.size in 280..320
         )
         assertEquals("图标不能重复", IconChoices.size, IconChoices.toSet().size)
 

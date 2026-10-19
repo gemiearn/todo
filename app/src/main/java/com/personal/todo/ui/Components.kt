@@ -59,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -93,7 +94,7 @@ import kotlinx.coroutines.delay
 /** Date pattern is a formatting detail, the surrounding labels live in strings.xml. */
 private val TimestampFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
-private val CardShape = RoundedCornerShape(14.dp)
+private val CardShape = RoundedCornerShape(16.dp)
 
 /** Width of the coloured bar along the left edge of a task card. */
 private val BarWidth = 3.dp
@@ -430,6 +431,12 @@ fun TaskCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .shadow(
+                elevation = 1.5.dp,
+                shape = CardShape,
+                ambientColor = Color.Black.copy(alpha = 0.06f),
+                spotColor = Color.Black.copy(alpha = 0.08f)
+            )
             .clip(CardShape)
             .background(colors.card)
             .drawBehind {

@@ -14,6 +14,7 @@ import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.FocusSound
+import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.data.db.TodoDatabase
@@ -57,6 +58,7 @@ class FocusScreenSmokeTest {
     private lateinit var db: TodoDatabase
     private lateinit var tasks: TaskRepository
     private lateinit var focus: FocusRepository
+    private lateinit var habits: HabitRepository
     private lateinit var lists: List<TaskList>
 
     @Before
@@ -67,6 +69,7 @@ class FocusScreenSmokeTest {
                 .build()
             tasks = TaskRepository(db, "收件箱")
             focus = FocusRepository(db)
+            habits = HabitRepository(db)
             tasks.createTask("写季度报告", tasks.ensureInbox())
             val work = tasks.createList("工作")
             tasks.createTask("整理周报", work)
@@ -168,6 +171,28 @@ class FocusScreenSmokeTest {
         val started = runBlocking { focus.observeActiveTimer().first() }
         assertEquals("只起了一次表", task.id, started?.taskId)
         assertEquals("计时器只有一行（不是又起了一轮）", 0, runBlocking { focus.observeSessions().first().size })
+    }
+
+    /** 专注抽屉里选了「自动打卡」之后，起一次表就给那个习惯今天的次数 +1。 */
+    @Test
+    fun startingAFocusChecksInTheChosenHabit() = runBlocking {
+        val habitId = habits.createHabit("喝水", 5)
+        val task = tasks.observeAllOpenTasks().first().first { it.title == "写季度报告" }
+        val viewModel = FocusViewModel(
+            focus,
+            tasks,
+            FocusSettingsStore(RuntimeEnvironment.getApplication()),
+            habits
+        )
+        viewModel.selectAutoCheckInHabit(habitId)
+        viewModel.linkTask(task)
+        launchFocus(viewModel)
+
+        compose.runOnIdle { viewModel.start() }
+        waitForDb("起表后的自动打卡") {
+            runBlocking { db.habitDao().getCheckIn(habitId, habits.today())?.count == 1 }
+        }
+        assertEquals(1, runBlocking { db.habitDao().getCheckIn(habitId, habits.today())?.count })
     }
 
     /**

@@ -30,6 +30,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.personal.todo.R
@@ -202,12 +205,23 @@ fun TaskCollectionContent(
 @Composable
 private fun ListSummaryCard(summary: ListSummary) {
     val colors = LocalTodoColors.current
+    val shape = RoundedCornerShape(18.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.card)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .shadow(
+                elevation = 2.dp,
+                shape = shape,
+                ambientColor = colors.accent.copy(alpha = 0.06f),
+                spotColor = colors.accent.copy(alpha = 0.08f)
+            )
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    listOf(colors.card, lerp(colors.card, colors.accent, 0.055f))
+                )
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -230,18 +244,24 @@ private fun ListSummaryCard(summary: ListSummary) {
         }
         Spacer(Modifier.height(8.dp))
         // 自己画那条进度条：比拉 Material3 的进度条少一层依赖，也更好跟卡片圆角对齐。
+        val barShape = RoundedCornerShape(3.5.dp)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(colors.groupHeader)
+                .height(7.dp)
+                .clip(barShape)
+                .background(colors.groupHeader.copy(alpha = 0.85f))
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(summary.progress.coerceIn(0f, 1f))
-                    .height(6.dp)
-                    .background(colors.accent)
+                    .height(7.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(colors.accent.copy(alpha = 0.60f), colors.accent)
+                        ),
+                        barShape
+                    )
             )
         }
     }

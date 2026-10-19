@@ -2,6 +2,7 @@ package com.personal.todo.ui
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -107,6 +108,16 @@ class HabitScreenSmokeTest {
         launchHabits(habitViewModel())
 
         compose.onNodeWithText("还没有习惯", substring = true).assertExists()
+    }
+
+    @Test
+    fun thePageHeaderAndSummaryAreVisible() {
+        runBlocking { habits.createHabit("喝水", 5) }
+        launchHabits(habitViewModel())
+
+        compose.onNodeWithText("每天一点点，慢慢来").assertIsDisplayed()
+        compose.onNodeWithText("今天完成的习惯").assertIsDisplayed()
+        compose.onNodeWithText("喝水").assertIsDisplayed()
     }
 
     @Test

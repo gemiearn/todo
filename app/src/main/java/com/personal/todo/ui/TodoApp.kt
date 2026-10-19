@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -74,6 +75,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -81,6 +83,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -101,6 +104,7 @@ import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
+import com.personal.todo.data.db.Habit
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.TaskFilter
@@ -309,12 +313,19 @@ fun TodoApp(
     val focusSettings = remember(context) { FocusSettingsStore(context) }
     val focusViewModel: FocusViewModel = viewModel(
         key = HomeTab.Focus.route,
-        factory = FocusViewModel.factory(focusRepository, repository, focusSettings)
+        factory = FocusViewModel.factory(
+            focusRepository,
+            repository,
+            focusSettings,
+            habitRepository
+        )
     )
 
     // 抽屉里「习惯」那一行要报今天还剩几条没做；走习惯 view model 那条 StateFlow，
     // 不让界面直接收仓库的冷流（裸订阅会在界面销毁后还吊着，关库时炸在测试里）。
     val pendingHabitCount by habitViewModel.pendingTodayCount.collectAsStateWithLifecycle()
+    // 专注抽屉的「自动打卡」要列习惯；同一份 StateFlow，不会多查一次库。
+    val habitList by habitViewModel.habits.collectAsStateWithLifecycle()
 
     // 计时器是 App 级状态，落盘（checkpoint）不能挂在专注页上：切到别的页签后专注页就不在
     // 组合里了，那时 App 进后台没人把已经确认的专注时长写下去，进程被杀就丢那一段。挂在
@@ -422,7 +433,10 @@ fun TodoApp(
             argument = argument,
             selectedDate = LocalDate.ofEpochDay(selectedEpochDay),
             onSelectDate = { selectedEpochDay = it.toEpochDay() },
-            pendingHabitCount = pendingHabitCount
+            pendingHabitCount = pendingHabitCount,
+            habits = habitList,
+            autoCheckInHabitId = focusViewModel.settings.autoCheckInHabitId,
+            onSelectAutoCheckIn = focusViewModel::selectAutoCheckInHabit
         )
     }
 }
@@ -458,7 +472,11 @@ internal fun MainScreen(
     selectedDate: LocalDate,
     onSelectDate: (LocalDate) -> Unit,
     /** 抽屉里「习惯」那行的徽章：今天还没完成的习惯条数。 */
-    pendingHabitCount: Int = 0
+    pendingHabitCount: Int = 0,
+    /** 专注抽屉「自动打卡」列出的习惯。 */
+    habits: List<Habit> = emptyList(),
+    autoCheckInHabitId: Long? = null,
+    onSelectAutoCheckIn: (Long?) -> Unit = {}
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -746,6 +764,7 @@ internal fun MainScreen(
                         openTaskCounts = openTaskCounts,
                         overdueCount = overdueCount,
                         pendingHabitCount = pendingHabitCount,
+                        today = today,
                         currentRoute = route,
                         onSelect = { target ->
                             // 习惯是推入页（带返回箭头、退得回来），别的都是根视图——
@@ -764,8 +783,15 @@ internal fun MainScreen(
                     // 记录可以在那里改关联任务与时长、也能删）。原来把整页统计塞进来，
                     // 拉出来就顶掉半屏、也看不出能跳到哪，用户 2026-10-19 让改掉。
                     DrawerMode.FOCUS -> FocusDrawer(
+                        habits = habits,
+                        autoCheckInHabitId = autoCheckInHabitId,
+                        onSelectAutoCheckIn = onSelectAutoCheckIn,
                         onOpenRecords = {
                             nav.push(ROUTE_RECORDS)
+                            scope.launch { drawerState.close() }
+                        },
+                        onOpenHabits = {
+                            nav.push(ROUTE_HABITS)
                             scope.launch { drawerState.close() }
                         }
                     )
@@ -1365,6 +1391,7 @@ private fun ListsDrawer(
     overdueCount: Int,
     /** 今天还没完成的习惯条数：那一行的徽章。 */
     pendingHabitCount: Int,
+    today: LocalDate,
     currentRoute: String,
     onSelect: (String) -> Unit,
     onOpenHabits: () -> Unit,
@@ -1376,13 +1403,44 @@ private fun ListsDrawer(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(colors.accent.copy(alpha = 0.05f), Color.Transparent)
+                )
+            )
             .padding(vertical = 10.dp)
     ) {
-        Text(
-            text = stringResource(R.string.drawer_title),
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(colors.accent.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "📋", fontSize = 20.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = stringResource(R.string.drawer_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(
+                        R.string.date_month_day,
+                        today.monthValue,
+                        today.dayOfMonth
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.dateMuted
+                )
+            }
+        }
 
         // 智能清单: the date driven views of spec section 4.1. They are queries,
         // not folders - nothing here moves a task or a date. 「逾期」那一行带红色徽章，
@@ -1391,17 +1449,20 @@ private fun ListsDrawer(
         DrawerRow(
             label = stringResource(R.string.nav_today),
             selected = currentRoute == HomeTab.Today.route,
+            icon = "☀️",
             onClick = { onSelect(HomeTab.Today.route) }
         )
         DrawerRow(
             label = stringResource(R.string.nav_future),
             selected = currentRoute == ROUTE_FUTURE,
+            icon = "🌤️",
             onClick = { onSelect(ROUTE_FUTURE) }
         )
         DrawerRow(
             label = stringResource(R.string.nav_overdue),
             selected = currentRoute == ROUTE_OVERDUE,
             badge = overdueCount,
+            icon = "⚠️",
             danger = true,
             onClick = { onSelect(ROUTE_OVERDUE) }
         )
@@ -1414,6 +1475,7 @@ private fun ListsDrawer(
                     label = stringResource(R.string.list_inbox_name),
                     selected = currentRoute == ROUTE_INBOX,
                     badge = openTaskCounts[inboxId ?: 0L] ?: 0,
+                    icon = "📥",
                     dot = inboxId?.let(::listDotColor),
                     onClick = { onSelect(ROUTE_INBOX) }
                 )
@@ -1434,16 +1496,21 @@ private fun ListsDrawer(
 
         // 分隔线以下这几样不随清单滚动：清单再长，「已完成 / 回收站 / 习惯 / 新建清单」
         // 也一直在手边。
-        HorizontalDivider(color = colors.dateMuted.copy(alpha = 0.2f))
+        HorizontalDivider(
+            color = colors.dateMuted.copy(alpha = 0.2f),
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
         DrawerRow(
             label = stringResource(R.string.nav_completed),
             selected = currentRoute == ROUTE_COMPLETED,
+            icon = "✅",
             onClick = { onSelect(ROUTE_COMPLETED) }
         )
         // 回收站也放进来（用户 2026-10-19）：「更多」页那条照旧保留，这里多一个手边的入口。
         DrawerRow(
             label = stringResource(R.string.nav_trash),
             selected = currentRoute == ROUTE_TRASH,
+            icon = "🗑️",
             onClick = { onSelect(ROUTE_TRASH) }
         )
         // 习惯那一行带徽章：今天还剩几条没打（全打完了就不显示徽章）。
@@ -1451,9 +1518,22 @@ private fun ListsDrawer(
             label = stringResource(R.string.switch_habits),
             selected = false,
             badge = pendingHabitCount,
+            icon = "🌱",
             onClick = onOpenHabits
         )
-        TextButton(onClick = onNewList, modifier = Modifier.padding(horizontal = 12.dp)) {
+        TextButton(
+            onClick = onNewList,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
             Text(stringResource(R.string.action_new_list))
         }
     }
@@ -1468,24 +1548,145 @@ private fun ListsDrawer(
  */
 @Composable
 private fun FocusDrawer(
+    habits: List<Habit>,
+    autoCheckInHabitId: Long?,
+    onSelectAutoCheckIn: (Long?) -> Unit,
     onOpenRecords: () -> Unit,
+    onOpenHabits: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalTodoColors.current
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(vertical = 10.dp)
     ) {
-        Text(
-            text = stringResource(R.string.focus_title),
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(colors.accent.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "⏱️", fontSize = 20.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = stringResource(R.string.focus_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(R.string.focus_drawer_subtitle),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.dateMuted
+                )
+            }
+        }
+
+        SectionHeader(stringResource(R.string.focus_drawer_section_records))
         DrawerRow(
             label = stringResource(R.string.focus_history_title),
             selected = false,
+            icon = "🕘",
             onClick = onOpenRecords
         )
+
+        HorizontalDivider(
+            color = colors.dateMuted.copy(alpha = 0.2f),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+        )
+        SectionHeader(stringResource(R.string.focus_drawer_section_auto))
+        Text(
+            text = stringResource(R.string.focus_drawer_auto_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.dateMuted,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp)
+        )
+        Spacer(Modifier.height(4.dp))
+
+        if (habits.isEmpty()) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
+                Text(
+                    text = stringResource(R.string.focus_drawer_no_habits),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.dateMuted
+                )
+                TextButton(onClick = onOpenHabits) {
+                    Text(stringResource(R.string.focus_drawer_open_habits))
+                }
+            }
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                item(key = "auto-none") {
+                    FocusHabitChoice(
+                        label = stringResource(R.string.focus_drawer_auto_none),
+                        icon = "🚫",
+                        selected = autoCheckInHabitId == null,
+                        onClick = { onSelectAutoCheckIn(null) }
+                    )
+                }
+                items(habits, key = { it.id }) { habit ->
+                    FocusHabitChoice(
+                        label = habit.name,
+                        icon = habit.icon,
+                        selected = autoCheckInHabitId == habit.id,
+                        onClick = { onSelectAutoCheckIn(habit.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 专注抽屉里的一条习惯选择：图标 + 名字 + 选中勾，和清单行同一个密度。 */
+@Composable
+private fun FocusHabitChoice(
+    label: String,
+    icon: String?,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 1.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            Text(
+                text = icon?.takeIf { it.isNotBlank() } ?: "•",
+                fontSize = 15.sp,
+                maxLines = 1
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) colors.accent else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }
 
@@ -1511,23 +1712,36 @@ private fun DrawerRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 10.dp, vertical = 1.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) colors.accent.copy(alpha = 0.10f) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 选中行左侧一条短竖线：比整行淡底更容易一眼看到「我现在在哪」。
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(18.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(if (selected) colors.accent else Color.Transparent)
+        )
+        Spacer(Modifier.width(7.dp))
         if (!icon.isNullOrBlank()) {
-            Text(text = icon, fontSize = 16.sp, maxLines = 1)
-            Spacer(Modifier.width(10.dp))
+            Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                Text(text = icon, fontSize = 17.sp, maxLines = 1)
+            }
+            Spacer(Modifier.width(8.dp))
         } else if (dot != null) {
-            Box(
-                modifier = Modifier
-                    .size(DrawerDotSize)
-                    .clip(CircleShape)
-                    .background(dot)
-            )
-            Spacer(Modifier.width(10.dp))
+            Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(DrawerDotSize)
+                        .clip(CircleShape)
+                        .background(dot)
+                )
+            }
+            Spacer(Modifier.width(8.dp))
         }
         Text(
             text = label,

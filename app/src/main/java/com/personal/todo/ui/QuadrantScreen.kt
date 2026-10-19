@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,7 +37,7 @@ import com.personal.todo.model.nearestOpenOccurrencePerSeries
 import com.personal.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.flow.Flow
 
-private val QuadrantCardShape = RoundedCornerShape(14.dp)
+private val QuadrantCardShape = RoundedCornerShape(18.dp)
 
 /**
  * How strong a quadrant tints its own card. It is deliberately noticeable rather
@@ -138,6 +139,12 @@ private fun QuadrantCard(
 
     Column(
         modifier = modifier
+            .shadow(
+                elevation = 2.dp,
+                shape = QuadrantCardShape,
+                ambientColor = accent.copy(alpha = 0.08f),
+                spotColor = accent.copy(alpha = 0.10f)
+            )
             .clip(QuadrantCardShape)
             // 卡片先铺白/深灰底，再罩一层这个象限自己的淡色——「清新」就来自这一层。
             .background(colors.card)

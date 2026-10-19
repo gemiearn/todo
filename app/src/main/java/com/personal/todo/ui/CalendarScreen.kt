@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -644,7 +645,22 @@ private fun MonthView(
         weekStartsMonday = weekStartsMonday
     )
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    val colors = LocalTodoColors.current
+    val cardShape = RoundedCornerShape(20.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .shadow(
+                elevation = 2.dp,
+                shape = cardShape,
+                ambientColor = Color.Black.copy(alpha = 0.05f),
+                spotColor = Color.Black.copy(alpha = 0.07f)
+            )
+            .clip(cardShape)
+            .background(colors.card)
+            .padding(vertical = 8.dp)
+    ) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
             // The week-number column keeps its own width so the day columns line up
             // with the grid below it.
@@ -664,6 +680,7 @@ private fun MonthView(
             state = pagerState,
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 6.dp)
                 .height(GridHeightDp.dp)
                 .testTag(calendarBodyTag(CalendarView.MONTH)),
             key = { page -> page }
@@ -818,6 +835,18 @@ private fun DayCell(
         Box(
             modifier = Modifier
                 .size(DayNumberSize)
+                .then(
+                    if (selected) {
+                        Modifier.shadow(
+                            elevation = 4.dp,
+                            shape = CircleShape,
+                            ambientColor = colors.accent.copy(alpha = 0.30f),
+                            spotColor = colors.accent.copy(alpha = 0.35f)
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
                 .clip(CircleShape)
                 .background(if (selected) colors.accent else Color.Transparent)
                 .todayRing(visible = today && !selected, accent = colors.accent),

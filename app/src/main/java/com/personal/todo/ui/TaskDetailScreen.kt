@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,14 +13,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -45,9 +49,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.TaskSeriesTotals
@@ -145,7 +155,8 @@ fun TaskDetailScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
+            contentPadding = PaddingValues(bottom = 20.dp)
         ) {
             item {
                 TaskHeader(
@@ -251,94 +262,245 @@ private fun TaskHeader(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val colors = LocalTodoColors.current
     val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
-    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-        Text(task.title, style = MaterialTheme.typography.headlineSmall)
+    val accent = priorityColor(task.priority)
+    val shape = RoundedCornerShape(22.dp)
+    val deleted = task.deletedAt != null
+    val completed = task.completedAt != null
+    val statusText = when {
+        deleted -> stringResource(R.string.nav_trash)
+        completed -> stringResource(R.string.task_status_completed)
+        else -> stringResource(R.string.task_status_open)
+    }
+    val statusColor = when {
+        deleted -> colors.dateMuted
+        completed -> colors.success
+        else -> accent
+    }
+    val listName = lists.firstOrNull { it.id == task.listId }?.name.orEmpty()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp)
+            .shadow(
+                elevation = 3.dp,
+                shape = shape,
+                ambientColor = accent.copy(alpha = 0.10f),
+                spotColor = accent.copy(alpha = 0.12f)
+            )
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    listOf(colors.card, lerp(colors.card, accent, 0.055f))
+                )
+            )
+            .padding(18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(priorityNumeralRes(task.priority)),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = accent
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                DetailStatusChip(text = statusText, color = statusColor)
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
         task.notes?.takeIf { it.isNotBlank() }?.let { notes ->
-            Spacer(Modifier.height(8.dp))
-            Text(notes, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = notes,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colors.groupHeader.copy(alpha = 0.42f))
+                    .padding(12.dp)
+            )
         }
         if (tags.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             TagChipRow(tags = tags)
         }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = if (task.completedAt != null) {
-                stringResource(R.string.task_status_completed)
-            } else {
-                stringResource(R.string.task_status_open)
-            },
-            style = MaterialTheme.typography.labelLarge
-        )
-        task.completedAt?.let { completedAt ->
-            Text(
-                text = stringResource(R.string.task_completed_at, formatTimestamp(completedAt)),
-                style = MaterialTheme.typography.bodySmall
+
+        Spacer(Modifier.height(14.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(colors.groupHeader.copy(alpha = 0.42f))
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            DetailMetaRow(
+                icon = "🎯",
+                text = stringResource(R.string.task_priority_value, priorityLabel(task.priority))
             )
-        }
-        Text(
-            text = stringResource(R.string.task_priority_value, priorityLabel(task.priority)),
-            style = MaterialTheme.typography.bodySmall
-        )
-        Text(
-            text = stringResource(
-                R.string.task_list_value,
-                lists.firstOrNull { it.id == task.listId }?.name.orEmpty()
-            ),
-            style = MaterialTheme.typography.bodySmall
-        )
-        // The dates of spec section 4.1, as the editor set them. Nothing here is
-        // derived: an overdue task keeps the day the user chose.
-        task.plannedDate?.let { date ->
-            Text(
-                text = stringResource(R.string.task_planned_date_value, calendarDateText(date, today)),
-                style = MaterialTheme.typography.bodySmall
+            DetailMetaRow(
+                icon = "📁",
+                text = stringResource(R.string.task_list_value, listName)
             )
-        }
-        task.plannedTime?.let { time ->
-            Text(
-                text = stringResource(R.string.task_planned_time_value, detailTimeText(time)),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        task.dueDate?.let { date ->
-            Text(
-                text = stringResource(R.string.task_due_date_value, calendarDateText(date, today)),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        task.dueTime?.let { time ->
-            Text(
-                text = stringResource(R.string.task_due_time_value, detailTimeText(time)),
-                style = MaterialTheme.typography.bodySmall
-            )
+            task.plannedDate?.let { date ->
+                DetailMetaRow(
+                    icon = "📅",
+                    text = stringResource(
+                        R.string.task_planned_date_value,
+                        calendarDateText(date, today)
+                    )
+                )
+            }
+            task.plannedTime?.let { time ->
+                DetailMetaRow(
+                    icon = "⏰",
+                    text = stringResource(R.string.task_planned_time_value, detailTimeText(time))
+                )
+            }
+            task.dueDate?.let { date ->
+                DetailMetaRow(
+                    icon = "⏳",
+                    text = stringResource(R.string.task_due_date_value, calendarDateText(date, today))
+                )
+            }
+            task.dueTime?.let { time ->
+                DetailMetaRow(
+                    icon = "⌛",
+                    text = stringResource(R.string.task_due_time_value, detailTimeText(time))
+                )
+            }
+            task.completedAt?.let { completedAt ->
+                DetailMetaRow(
+                    icon = "✅",
+                    text = stringResource(R.string.task_completed_at, formatTimestamp(completedAt))
+                )
+            }
         }
 
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (task.deletedAt != null) {
-                Button(onClick = onRestore) { Text(stringResource(R.string.action_restore)) }
-            } else if (task.completedAt == null) {
-                Button(onClick = onComplete) { Text(stringResource(R.string.action_complete)) }
-            } else {
-                Button(onClick = onReopen) { Text(stringResource(R.string.action_reopen)) }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val primaryColor = if (completed) colors.success else accent
+            Button(
+                onClick = when {
+                    deleted -> onRestore
+                    completed -> onReopen
+                    else -> onComplete
+                },
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primaryColor,
+                    contentColor = onPriorityColor(primaryColor)
+                ),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = when {
+                        deleted -> stringResource(R.string.action_restore)
+                        completed -> stringResource(R.string.action_reopen)
+                        else -> stringResource(R.string.action_complete)
+                    },
+                    fontWeight = FontWeight.SemiBold
+                )
             }
-            OutlinedButton(onClick = onEdit) { Text(stringResource(R.string.action_edit)) }
-            if (task.deletedAt == null) {
-                TextButton(onClick = onDelete) { Text(stringResource(R.string.action_delete)) }
+            OutlinedButton(
+                onClick = onEdit,
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(stringResource(R.string.action_edit))
+            }
+            if (!deleted) {
+                TextButton(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.textButtonColors(contentColor = colors.dateOverdue)
+                ) {
+                    Text(stringResource(R.string.action_delete))
+                }
             }
         }
     }
 }
 
+/** 详情页状态胶囊：完成 / 未完成 / 回收站。 */
+@Composable
+private fun DetailStatusChip(text: String, color: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(color.copy(alpha = 0.12f))
+            .padding(horizontal = 9.dp, vertical = 3.dp)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = color
+        )
+    }
+}
+
+/** 详情页一行元信息：小图标 + 一句「字段：值」。 */
+@Composable
+private fun DetailMetaRow(icon: String, text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            Text(text = icon, fontSize = 13.sp)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
 @Composable
 private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(4.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(LocalTodoColors.current.accent)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
 }
 
 /** The due time as `HH:mm`, the same shape the editor stores. */
@@ -368,13 +530,17 @@ private fun CollapsibleSectionTitle(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.groupHeader.copy(alpha = 0.42f))
             .clickable(onClick = onToggle)
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f)
         )
         Text(
@@ -382,6 +548,7 @@ private fun CollapsibleSectionTitle(
             style = MaterialTheme.typography.bodySmall,
             color = colors.dateMuted
         )
+        Spacer(Modifier.width(4.dp))
         Icon(
             imageVector = if (expanded) {
                 Icons.Default.KeyboardArrowUp
@@ -405,25 +572,50 @@ private fun CollapsibleSectionTitle(
  */
 @Composable
 private fun FocusSummaryCard(totals: TaskFocusTotals, series: TaskSeriesTotals?) {
+    val colors = LocalTodoColors.current
+    val accent = colors.focusAccent
+    val shape = RoundedCornerShape(18.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(LocalTodoColors.current.groupHeader)
-            .padding(14.dp)
+            .shadow(
+                elevation = 2.dp,
+                shape = shape,
+                ambientColor = accent.copy(alpha = 0.08f),
+                spotColor = accent.copy(alpha = 0.10f)
+            )
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    listOf(colors.card, lerp(colors.card, accent, 0.05f))
+                )
+            )
+            .padding(16.dp)
     ) {
-        Text(
-            text = stringResource(R.string.task_focus_summary_title),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Medium
-        )
-        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "⏱️", fontSize = 15.sp)
+            }
+            Spacer(Modifier.width(9.dp))
+            Text(
+                text = stringResource(R.string.task_focus_summary_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        Spacer(Modifier.height(8.dp))
         if (totals.sessionCount == 0) {
             Text(
                 text = stringResource(R.string.task_focus_summary_empty),
                 style = MaterialTheme.typography.bodySmall,
-                color = LocalTodoColors.current.dateMuted
+                color = colors.dateMuted
             )
         } else {
             Text(
@@ -431,7 +623,9 @@ private fun FocusSummaryCard(totals: TaskFocusTotals, series: TaskSeriesTotals?)
                     R.string.task_focus_summary_total,
                     durationText(totals.totalSeconds)
                 ),
-                style = MaterialTheme.typography.headlineSmall
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = accent
             )
             Spacer(Modifier.height(2.dp))
             Text(
@@ -441,7 +635,7 @@ private fun FocusSummaryCard(totals: TaskFocusTotals, series: TaskSeriesTotals?)
                     totals.pomodoroCount
                 ),
                 style = MaterialTheme.typography.bodySmall,
-                color = LocalTodoColors.current.dateMuted
+                color = colors.dateMuted
             )
         }
 
@@ -454,7 +648,7 @@ private fun FocusSummaryCard(totals: TaskFocusTotals, series: TaskSeriesTotals?)
                     durationText(series.focusSeconds)
                 ),
                 style = MaterialTheme.typography.bodySmall,
-                color = LocalTodoColors.current.dateMuted
+                color = colors.dateMuted
             )
         }
     }
@@ -462,12 +656,32 @@ private fun FocusSummaryCard(totals: TaskFocusTotals, series: TaskSeriesTotals?)
 
 @Composable
 private fun EventRow(event: TaskEvent) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(
-            text = "${eventLabel(event.eventType)} · ${formatTimestamp(event.eventAt)}",
-            style = MaterialTheme.typography.bodyMedium
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 5.dp)
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(colors.accent.copy(alpha = 0.45f))
         )
-        Text(event.titleSnapshot, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = "${eventLabel(event.eventType)} · ${formatTimestamp(event.eventAt)}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                text = event.titleSnapshot,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.dateMuted
+            )
+        }
     }
 }
 
@@ -480,7 +694,10 @@ private fun AddSubtaskRow(onAdd: (String) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(LocalTodoColors.current.groupHeader.copy(alpha = 0.42f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         OutlinedTextField(
@@ -488,8 +705,10 @@ private fun AddSubtaskRow(onAdd: (String) -> Unit) {
             onValueChange = { value = it },
             placeholder = { Text(stringResource(R.string.task_add_subtask_hint)) },
             singleLine = true,
+            shape = RoundedCornerShape(12.dp),
             modifier = Modifier.weight(1f)
         )
+        Spacer(Modifier.width(8.dp))
         TextButton(
             onClick = {
                 onAdd(value)

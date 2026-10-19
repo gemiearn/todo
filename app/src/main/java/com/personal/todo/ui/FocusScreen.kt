@@ -1,6 +1,8 @@
 package com.personal.todo.ui
 
+import android.animation.ValueAnimator
 import android.media.MediaPlayer
+import android.view.animation.DecelerateInterpolator
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -281,11 +284,18 @@ private fun StatsHeader(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
+    val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .shadow(
+                elevation = 1.5.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.05f),
+                spotColor = Color.Black.copy(alpha = 0.07f)
+            )
+            .clip(shape)
             .background(colors.card)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -440,10 +450,17 @@ private fun FocusTaskRow(
     onPick: () -> Unit
 ) {
     val colors = LocalTodoColors.current
+    val shape = RoundedCornerShape(16.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .shadow(
+                elevation = 1.5.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.05f),
+                spotColor = Color.Black.copy(alpha = 0.07f)
+            )
+            .clip(shape)
             .background(colors.card)
             .clickable(onClick = onPick)
             .testTag(FocusTaskRowTag)
@@ -774,12 +791,12 @@ private fun SoundPicker(selected: FocusSound, onSelect: (FocusSound) -> Unit) {
     var preview by remember { mutableStateOf<FocusSound?>(null) }
     DisposableEffect(preview) {
         val sound = preview
-        val player = if (sound != null && sound != FocusSound.NONE) {
+        val handle = if (sound != null && sound != FocusSound.NONE) {
             runCatching { createAmbiencePlayer(context, sound, looping = false) }.getOrNull()
         } else {
             null
         }
-        onDispose { releaseAmbiencePlayer(player) }
+        onDispose { handle?.release() }
     }
     LaunchedEffect(preview) {
         if (preview != null) {
@@ -820,21 +837,49 @@ private fun SoundPicker(selected: FocusSound, onSelect: (FocusSound) -> Unit) {
     }
 }
 
+/**
+ * 一段正在播放的环境声：播放器 + 淡入动画。
+ *
+ * 为什么不是直接 `MediaPlayer`：切歌 / 暂停 / 离开页面时都要能立刻停掉，而淡入动画还在
+ * 跑的话会往一个已经 release 的播放器上设音量。把两者绑在一起，释放时先 cancel 动画。
+ */
+private class AmbienceHandle(
+    private val player: MediaPlayer,
+    private val fadeIn: ValueAnimator?
+) {
+    fun release() {
+        fadeIn?.cancel()
+        runCatching { if (player.isPlaying) player.stop() }
+        runCatching { player.release() }
+    }
+}
+
 /** The ambience player, or null when the sound has no file (关闭) or cannot be played. */
 private fun createAmbiencePlayer(
     context: android.content.Context,
     sound: FocusSound,
     looping: Boolean
-): MediaPlayer? = MediaPlayer.create(context, sound.soundRes)?.apply {
-    isLooping = looping
-    setVolume(AmbienceVolume, AmbienceVolume)
-    start()
-}
-
-private fun releaseAmbiencePlayer(player: MediaPlayer?) {
-    val playing = player ?: return
-    runCatching { if (playing.isPlaying) playing.stop() }
-    playing.release()
+): AmbienceHandle? {
+    val player = MediaPlayer.create(context, sound.soundRes) ?: return null
+    return runCatching {
+        player.isLooping = looping
+        player.setVolume(0f, 0f)
+        player.start()
+        // 1.2 秒的淡入：比「一点就开始放」柔和，尤其是雨声 / 海浪这种宽频噪声。
+        val fadeIn = ValueAnimator.ofFloat(0f, AmbienceVolume).apply {
+            duration = AmbienceFadeInMillis
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { animator ->
+                val volume = animator.animatedValue as Float
+                player.setVolume(volume, volume)
+            }
+            start()
+        }
+        AmbienceHandle(player, fadeIn)
+    }.getOrElse {
+        runCatching { player.release() }
+        null
+    }
 }
 
 /**
@@ -848,25 +893,29 @@ private fun releaseAmbiencePlayer(player: MediaPlayer?) {
 private fun AmbientSound(sound: FocusSound, playing: Boolean) {
     val context = LocalContext.current
     DisposableEffect(sound, playing) {
-        val player = if (playing && sound.soundRes != 0) {
+        val handle = if (playing && sound.soundRes != 0) {
             runCatching { createAmbiencePlayer(context, sound, looping = true) }.getOrNull()
         } else {
             null
         }
-        onDispose { releaseAmbiencePlayer(player) }
+        onDispose { handle?.release() }
     }
 }
 
 /**
  * Ambience sits behind the timer, never in front of it.
  *
- * 用户 2026-10-19：几个白噪音「过于强烈」，这里从 0.5 降到 0.25（预听与正式播放同一个值）。
- * 再要更安静/更响，只改这一个数；若某一条音色本身还是刺耳，那是素材的问题，得重做那条 wav。
+ * 用户 2026-10-19：几个白噪音「过于强烈」，先降到 0.25；2026-10-20 又要求「柔和缓慢」，
+ * 于是四个 wav 都做了低通 + 0.88–0.92 倍速 + 循环接缝淡接，音量再收到 0.22，并加了 1.2 秒
+ * 淡入。素材与播放两层都变柔了；再要调只改这一个数或重跑 `tools/process_ambience.py` 脚本。
  */
-private const val AmbienceVolume = 0.25f
+private const val AmbienceVolume = 0.22f
+
+/** 播放开始时的淡入时长；暂停再继续也会重新淡入。 */
+private const val AmbienceFadeInMillis = 1_200L
 
 /** How long a tapped ambience plays as a preview. */
-private const val SoundPreviewMillis = 2_500L
+private const val SoundPreviewMillis = 3_200L
 
 /** How much of the ring is filled before the session starts. */
 private fun plannedFraction(mode: FocusMode, minutes: Int): Float = when (mode) {

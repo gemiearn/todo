@@ -119,7 +119,17 @@
     <string name="habit_edit">编辑习惯</string>
     <string name="habit_delete">删除习惯</string>
     <string name="habit_more">更多操作</string>
-    <string name="habit_empty">还没有习惯。右上角新建一个，比如「一天喝水 5 次」。</string>
+    <string name="habit_page_subtitle">每天一点点，慢慢来</string>
+    <string name="habit_empty_title">还没有习惯</string>
+    <string name="habit_empty_body">从一个很小的目标开始，比如每天喝 5 杯水。</string>
+    <string name="habit_empty_action">新建第一个习惯</string>
+    <string name="habit_summary_remaining">还差 %1$d 个就全部完成</string>
+    <string name="habit_summary_all_done">全部完成，今天很棒</string>
+    <string name="habit_edit_subtitle">把一个小目标，变成每天的习惯</string>
+    <string name="habit_icon_pick">换个图标</string>
+    <string name="habit_icon_hide">收起图标</string>
+    <string name="habit_preview">预览</string>
+    <string name="habit_preview_target">每天 %1$d %2$s</string>
     <string name="habit_name_label">习惯名称</string>
     <string name="habit_unit_label">单位</string>
     <string name="habit_unit_preset_repeat">次</string>
@@ -132,7 +142,7 @@
     <string name="habit_today_progress">今天 %1$d/%2$d %3$s</string>
     <!-- 顶部今日概况：今天到目标的习惯数 -->
     <string name="habit_summary_title">今天完成的习惯</string>
-    <string name="habit_summary_count">%1$d/%2$d</string>
+
     <string name="habit_delete_title">删除这个习惯？</string>
     <string name="habit_delete_message">「%1$s」的打卡记录会一起删掉，删了拿不回来。</string>
     <string name="habit_delete_confirm">删除</string>
@@ -456,6 +466,13 @@
     <string name="focus_stats_pomodoros">番茄 %1$d 个</string>
     <string name="focus_stats_week">本周 %1$s</string>
     <string name="focus_history_title">专注记录</string>
+    <string name="focus_drawer_subtitle">把专注和习惯连在一起</string>
+    <string name="focus_drawer_section_records">记录</string>
+    <string name="focus_drawer_section_auto">自动打卡</string>
+    <string name="focus_drawer_auto_hint">每次开始专注，顺手给这个习惯记一次</string>
+    <string name="focus_drawer_auto_none">不自动打卡</string>
+    <string name="focus_drawer_no_habits">还没有习惯，先去习惯页建一个</string>
+    <string name="focus_drawer_open_habits">去习惯页</string>
     <!-- 记录行只留「时刻 · 结果」：用户说不需要区分是正计时 / 倒计时 / 番茄钟 -->
     <string name="focus_session_subtitle">%1$s · %2$s</string>
     <string name="focus_duration_seconds">%1$d 秒</string>

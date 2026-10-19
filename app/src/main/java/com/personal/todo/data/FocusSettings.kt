@@ -18,7 +18,14 @@ data class FocusSettings(
     val shortBreakMinutes: Int = DefaultShortBreakMinutes,
     val longBreakMinutes: Int = DefaultLongBreakMinutes,
     val longBreakEvery: Int = DefaultLongBreakEvery,
-    val sound: FocusSound = FocusSound.NONE
+    val sound: FocusSound = FocusSound.NONE,
+    /**
+     * 专注时自动打卡的习惯 id（null＝关闭）。
+     *
+     * 这是**专注页**的偏好，不写回习惯表：习惯页的「关联任务」是另一回事，2026-10-19
+     * 已经撤掉；这里只是「每次开始专注，顺手给某个习惯 +1」，换一个习惯不影响任务。
+     */
+    val autoCheckInHabitId: Long? = null
 ) {
     companion object {
         const val DefaultFocusMinutes = 25
@@ -59,7 +66,8 @@ class FocusSettingsStore(context: Context) {
         longBreakMinutes = prefs.getInt(KeyLongBreak, FocusSettings.DefaultLongBreakMinutes),
         longBreakEvery = prefs.getInt(KeyLongBreakEvery, FocusSettings.DefaultLongBreakEvery),
         sound = FocusSound.entries.firstOrNull { it.name == prefs.getString(KeySound, null) }
-            ?: FocusSound.NONE
+            ?: FocusSound.NONE,
+        autoCheckInHabitId = prefs.getLong(KeyAutoCheckInHabit, -1L).takeIf { it > 0L }
     )
 
     fun write(settings: FocusSettings) {
@@ -69,6 +77,7 @@ class FocusSettingsStore(context: Context) {
             .putInt(KeyLongBreak, settings.longBreakMinutes)
             .putInt(KeyLongBreakEvery, settings.longBreakEvery)
             .putString(KeySound, settings.sound.name)
+            .putLong(KeyAutoCheckInHabit, settings.autoCheckInHabitId ?: -1L)
             .apply()
     }
 
@@ -79,5 +88,6 @@ class FocusSettingsStore(context: Context) {
         const val KeyLongBreak = "long_break_minutes"
         const val KeyLongBreakEvery = "long_break_every"
         const val KeySound = "sound"
+        const val KeyAutoCheckInHabit = "auto_check_in_habit"
     }
 }
