@@ -115,6 +115,9 @@ class HabitScreenSmokeTest {
         runBlocking { habits.createHabit("喝水", 5) }
         launchHabits(habitViewModel())
 
+        // 习惯是异步从库里读出来的：先等第一行出现，再断言标题和概况。
+        // 直接断言会在慢一点的机器上撞上「库里还没读完、页面还是空态」的那一帧。
+        compose.waitUntilNodeCount(hasText("喝水", substring = true), 1, TimeoutMillis)
         compose.onNodeWithText("每天一点点，慢慢来").assertIsDisplayed()
         compose.onNodeWithText("今天完成的习惯").assertIsDisplayed()
         compose.onNodeWithText("喝水").assertIsDisplayed()
