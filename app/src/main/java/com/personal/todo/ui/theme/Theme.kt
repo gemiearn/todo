@@ -35,10 +35,18 @@ fun TodoPomodoroTheme(
             .copy(quadrants = colorStyle.quadrantColors())
             .tintBackground(backgroundStyle, darkTheme)
     }
-    CompositionLocalProvider(LocalTodoColors provides colors) {
-        MaterialTheme(
-            colorScheme = if (darkTheme) DarkScheme else LightScheme,
-            content = content
+    // 把 Material 的页面底 / 顶栏底也挂到同一份页面底色上（含「背景风格」掺色）。
+    // 否则每个页面 `Scaffold` 默认画的还是未掺色的 scheme 底：壳层与推入页颜色不一致，
+    // 切页时看着就像亮了一层 / 暗了一层。卡片、弹层那几档（surfaceContainerLow…）不动。
+    val scheme = remember(darkTheme, colors) {
+        (if (darkTheme) DarkScheme else LightScheme).copy(
+            background = colors.canvas,
+            surface = colors.canvas,
+            surfaceVariant = colors.canvas,
+            surfaceContainer = colors.canvas
         )
+    }
+    CompositionLocalProvider(LocalTodoColors provides colors) {
+        MaterialTheme(colorScheme = scheme, content = content)
     }
 }

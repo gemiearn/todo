@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark window theme, used when the system is in dark mode (API 29+). -->
-    <style name="Theme.TodoPomodoro" parent="android:Theme.Material.NoActionBar" />
+    <!--
+        Dark window theme, used when the system is in dark mode (API 29+).
+        windowBackground is the app's own canvas, for the same reason as the light one.
+    -->
+    <style name="Theme.TodoPomodoro" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background_dark</item>
+    </style>
 </resources>

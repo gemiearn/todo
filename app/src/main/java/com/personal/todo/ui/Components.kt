@@ -3,9 +3,9 @@ package com.personal.todo.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,8 +17,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -681,7 +687,8 @@ fun TextInputDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            // 图标格子换成一个有高度的网格后，弹层在横屏 / 小屏上可能装不下：整块可滚。
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = value,
                     onValueChange = { value = it },
@@ -695,7 +702,7 @@ fun TextInputDialog(
                     color = colors.dateMuted
                 )
                 Spacer(Modifier.height(6.dp))
-                IconPickerRow(selected = icon, onPick = { icon = it })
+                IconPicker(selected = icon, onPick = { icon = it })
             }
         },
         confirmButton = {
@@ -709,100 +716,100 @@ fun TextInputDialog(
     )
 }
 
-/** 图标备选里「没有图标」那一项：点它就清掉。 */
-internal const val NoIcon = ""
-
-/**
- * 清单与习惯名字前面那个小图标的备选，按用途分组后横向浏览。
- *
- * 用 emoji 文本而不是 Material 图标集：用户参照的是嘀嗒清单那种**彩色**小图标，而本项目
- * 只依赖 `material-icons-core`（能选的图标少、还是单色的）。库里存的就是这个字符串，
- * 空＝没有图标——若以后换成图标集，换的只是这一行与存值格式，列不用改。
- */
-enum class IconCategory { LIST, HABIT, OTHER }
-
-private val ListIcons = listOf(
-    "📋", "📌", "⭐", "🎯", "📚", "💼", "🛒", "💰", "🏠", "✈️", "🎨", "🎓", "🧹",
-    "🗂️", "🗓️", "📝", "📁", "💻", "🔧", "🧾", "🎁", "🚗", "🧳", "🍽️", "🏡", "🪴",
-    "🗃️", "📊", "📈", "📣", "📞", "✉️", "🖥️", "⌨️", "🖨️", "🔑", "🏢", "🏦", "🏫",
-    "🏥", "🏪", "🏖️", "🏕️", "🚆", "🚲", "⛽", "🛠️", "🔨", "📦", "🧰", "🗒️", "📍", "🧭", "🪪"
-)
-private val HabitIcons = listOf(
-    "❤️", "🔥", "🍎", "💧", "☕", "💊", "🏃", "💪", "😴", "🎵", "🌱",
-    "📖", "🧘", "🚶", "🥗", "🦷", "🛌", "⏰", "✍️", "🧠", "🏊", "🚴", "🌞", "🍵",
-    "🥛", "🥤", "🍳", "🍊", "🍋", "🥑", "🥦", "🍚", "🏋️", "🤸", "🧗", "⚽", "🏀", "🎾",
-    "🧼", "🧴", "🪥", "📵", "📱", "🚶‍♀️", "🚶‍♂️", "🧘‍♀️", "🧘‍♂️", "🧑‍🍳", "🧑‍💻", "🌙", "🌼", "🌳"
-)
-private val OtherIcons = listOf(
-    "🐱", "🎮", "🎬", "📷", "🎧", "🌈", "🐶", "🎉", "🐰", "🦊", "🐼", "🐻", "🦁", "🐸",
-    "🐧", "🦋", "🐢", "🦄", "🚀", "⚽️", "🏆", "🎲", "🧩", "🎤", "🎹", "🎸", "🪄", "💎", "🌻"
-)
-
-internal val IconChoices = ListIcons + HabitIcons + OtherIcons
-
 private val IconChipSize = 40.dp
+private val IconChipGap = 6.dp
 
 /**
- * 按分类横向浏览图标：第一个是「无」（清空），点某个图标即选中它。
+ * 按**种类**浏览图标：上面一排是「工作 / 学习 / 饮食……」页签，下面是这个种类的图标格子，
+ * 第一个格子是「无」（清空）。同一个图标在清单和习惯里都能选。
  *
  * 只负责「选中了哪个」，落库时机由上层决定（清单弹层是点 ✓ 才写，习惯弹层同理）。
+ *
+ * 格子高度按当前种类的图标数算：每类 14 个 + 「无」= 15 格，常见宽度下 3 行，弹层不会
+ * 被撑到屏幕外；页签本身横向滚动，15 个种类也不会挤成两行。
  */
 @Composable
-fun IconPickerRow(
+internal fun IconPicker(
     selected: String,
     onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
-    preferredCategory: IconCategory = IconCategory.LIST
+    preferredCategory: IconCategory = IconCategory.WORK
 ) {
-    val initialCategory = when (selected) {
-        in ListIcons -> IconCategory.LIST
-        in HabitIcons -> IconCategory.HABIT
-        in OtherIcons -> IconCategory.OTHER
-        else -> preferredCategory
-    }
+    val initialCategory = IconCategory.entries.firstOrNull { selected in it.icons }
+        ?: preferredCategory
     var category by remember { mutableStateOf(initialCategory) }
-    val choices = when (category) {
-        IconCategory.LIST -> ListIcons
-        IconCategory.HABIT -> HabitIcons
-        IconCategory.OTHER -> OtherIcons
+    val tabState = rememberLazyListState()
+    // 打开时把当前图标所在的页签滚到能看见的位置（动物、节日这些排在后面的种类）。
+    LaunchedEffect(initialCategory) {
+        tabState.scrollToItem(initialCategory.ordinal)
     }
     val colors = LocalTodoColors.current
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            IconCategory.entries.forEach { option ->
-                val label = when (option) {
-                    IconCategory.LIST -> R.string.icon_category_list
-                    IconCategory.HABIT -> R.string.icon_category_habit
-                    IconCategory.OTHER -> R.string.icon_category_other
-                }
-                TextButton(onClick = { category = option }) {
+        LazyRow(
+            state = tabState,
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items(IconCategory.entries, key = { it.name }) { option ->
+                TextButton(
+                    onClick = { category = option },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                ) {
                     Text(
-                        text = stringResource(label),
+                        text = stringResource(option.labelRes),
+                        style = MaterialTheme.typography.labelLarge,
                         color = if (category == option) colors.accent else colors.dateMuted
                     )
                 }
             }
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconChoiceChip(
-                text = stringResource(R.string.icon_none),
-                emoji = false,
-                selected = selected.isEmpty(),
-                onPick = { onPick(NoIcon) }
-            )
-            choices.forEach { icon ->
-                IconChoiceChip(
-                    text = icon,
-                    emoji = true,
-                    selected = selected == icon,
-                    onPick = { onPick(icon) }
-                )
+        Spacer(Modifier.height(4.dp))
+        // 老版本存下来的图标可能不在新目录里（比如 ☕、🎧）：把它临时放进当前这一页，
+        // 至少用户打开弹层能看见「现在用的是哪个」，而不是一片没选中。
+        val legacySelected = selected.takeIf {
+            it.isNotBlank() && category == initialCategory && it !in category.icons
+        }
+        val icons = if (legacySelected != null) {
+            listOf(legacySelected) + category.icons
+        } else {
+            category.icons
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // 一行能放几格：按实际宽度算，弹层 / 底部弹层宽度不同也不会留一条空边。
+            val columns = ((maxWidth + IconChipGap) / (IconChipSize + IconChipGap))
+                .toInt()
+                .coerceAtLeast(1)
+            val cells = icons.size + 1
+            val rows = (cells + columns - 1) / columns
+            val gridHeight = IconChipSize * rows + IconChipGap * (rows - 1)
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(gridHeight),
+                horizontalArrangement = Arrangement.spacedBy(IconChipGap),
+                verticalArrangement = Arrangement.spacedBy(IconChipGap),
+                userScrollEnabled = false
+            ) {
+                items(count = cells) { index ->
+                    if (index == 0) {
+                        IconChoiceChip(
+                            text = stringResource(R.string.icon_none),
+                            emoji = false,
+                            selected = selected.isEmpty(),
+                            onPick = { onPick(NoIcon) }
+                        )
+                    } else {
+                        val icon = icons[index - 1]
+                        IconChoiceChip(
+                            text = icon,
+                            emoji = true,
+                            selected = selected == icon,
+                            onPick = { onPick(icon) }
+                        )
+                    }
+                }
             }
         }
     }

@@ -774,6 +774,9 @@ internal fun MainScreen(
         }
     ) {
         Scaffold(
+            // 页面底与窗口底用同一个颜色（见 [todoCanvasColor]）：背景风格掺色后，
+            // 原来 Scaffold 还画未掺色的 scheme 底，窗口 / 页面之间会差一层颜色。
+            containerColor = LocalTodoColors.current.canvas,
             topBar = {
                 if (!showsCalendarHeader) {
                     TopAppBar(

@@ -12,4 +12,11 @@
     <color name="ic_launcher_ring_background">#16233A</color>
     <color name="ic_launcher_clock_background">#1C1C1E</color>
     <color name="ic_launcher_quad_background">#F7F9FC</color>
+
+    <!--
+        窗口底色（= App 页面底色 CanvasLight / CanvasDark，见 ui/theme/Color.kt）。
+        只给 Compose 首帧之前 / 系统窗口层用；运行中按外观选择刷同一个值。
+    -->
+    <color name="window_background_light">#F2F3F5</color>
+    <color name="window_background_dark">#121316</color>
 </resources>

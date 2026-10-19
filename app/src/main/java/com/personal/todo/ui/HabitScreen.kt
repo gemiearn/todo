@@ -662,10 +662,11 @@ private fun HabitEditSheet(
                 color = colors.dateMuted
             )
             Spacer(Modifier.height(6.dp))
-            IconPickerRow(
+            IconPicker(
                 selected = icon,
                 onPick = { icon = it },
-                preferredCategory = IconCategory.HABIT
+                // 新建习惯默认落在「健康」这一页；之后想选什么种类都行。
+                preferredCategory = IconCategory.HEALTH
             )
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(

@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Light window theme; Compose draws all content. -->
-    <style name="Theme.TodoPomodoro" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        Light window theme; Compose draws all content.
+
+        windowBackground is the app's own canvas, not the platform white: this window
+        shows before Compose's first frame (and behind any frame the app has not
+        painted yet), and a white layer there is exactly the "白闪一下" when pages
+        switch. MainActivity re-applies the same colour at runtime for the user's
+        theme / background-style choice.
+    -->
+    <style name="Theme.TodoPomodoro" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background_light</item>
+    </style>
 </resources>

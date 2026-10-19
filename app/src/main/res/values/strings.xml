@@ -316,12 +316,24 @@
     <string name="empty_subtasks">还没有子任务</string>
     <string name="empty_events">还没有记录</string>
 
-    <!-- 名字前面那个小图标（清单 / 习惯共用一行备选） -->
+    <!-- 名字前面那个小图标（清单 / 习惯共用一个按「种类」分的备选） -->
     <string name="icon_label">图标</string>
     <string name="icon_none">无</string>
-    <string name="icon_category_list">清单</string>
-    <string name="icon_category_habit">习惯</string>
-    <string name="icon_category_other">其他</string>
+    <string name="icon_category_work">工作</string>
+    <string name="icon_category_study">学习</string>
+    <string name="icon_category_daily">生活</string>
+    <string name="icon_category_health">健康</string>
+    <string name="icon_category_sport">运动</string>
+    <string name="icon_category_food">饮食</string>
+    <string name="icon_category_travel">出行</string>
+    <string name="icon_category_home">家居</string>
+    <string name="icon_category_money">购物</string>
+    <string name="icon_category_social">社交</string>
+    <string name="icon_category_fun">娱乐</string>
+    <string name="icon_category_nature">自然</string>
+    <string name="icon_category_animal">动物</string>
+    <string name="icon_category_festival">节日</string>
+    <string name="icon_category_symbol">符号</string>
 
     <!-- 顶栏「清单 / 习惯」两格开关 -->
     <string name="switch_lists">清单</string>

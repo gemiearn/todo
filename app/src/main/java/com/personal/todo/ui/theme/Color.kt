@@ -233,6 +233,18 @@ internal val DarkTodoColors = LightTodoColors.copy(
 )
 
 /**
+ * App 的页面底色（已按「背景风格」掺过色）。
+ *
+ * `MainActivity` 用它刷**窗口背景**，壳层 `Scaffold` 用它当 `containerColor`：
+ * 两处必须是同一个值——窗口底是系统在 Compose 画满之前露出来的那一层，颜色对不上，
+ * 切页时就会闪一下白 / 黑。
+ */
+fun todoCanvasColor(dark: Boolean, backgroundStyle: BackgroundStyle): Color =
+    (if (dark) DarkTodoColors else LightTodoColors)
+        .tintBackground(backgroundStyle, dark)
+        .canvas
+
+/**
  * The material color scheme. Every slot the screens actually use is pinned to
  * the palette above - most importantly `primary`/`primaryContainer` (the FAB
  * and the checkbox) and `secondaryContainer` (the selected navigation entry),
