@@ -1,21 +1,28 @@
 package com.personal.todo.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,9 +36,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.personal.todo.R
 import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.ColorStyle
@@ -100,40 +112,52 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .testTag(SettingsScreenTag)
         ) {
-            SectionLabel(stringResource(R.string.settings_section_theme))
-            ThemeChoice.entries.forEach { choice ->
-                ChoiceRow(
-                    label = stringResource(themeLabelRes(choice)),
-                    selected = choice == themeChoice,
-                    onClick = { onThemeChoiceChange(choice) }
-                )
+            SettingsGroupLabel(stringResource(R.string.settings_section_theme))
+            SettingsCard {
+                ThemeChoice.entries.forEachIndexed { index, choice ->
+                    if (index > 0) SettingsDivider()
+                    ChoiceRow(
+                        label = stringResource(themeLabelRes(choice)),
+                        selected = choice == themeChoice,
+                        onClick = { onThemeChoiceChange(choice) }
+                    )
+                }
             }
 
-            SectionLabel(stringResource(R.string.settings_section_color))
-            ColorStyle.entries.forEach { style ->
-                ChoiceRow(
-                    label = stringResource(colorStyleLabelRes(style)),
-                    selected = style == colorStyle,
-                    onClick = { onColorStyleChange(style) }
-                )
+            SettingsGroupLabel(stringResource(R.string.settings_section_color))
+            SettingsCard {
+                ColorStyle.entries.forEachIndexed { index, style ->
+                    if (index > 0) SettingsDivider()
+                    ChoiceRow(
+                        label = stringResource(colorStyleLabelRes(style)),
+                        selected = style == colorStyle,
+                        onClick = { onColorStyleChange(style) }
+                    )
+                }
             }
 
-            SectionLabel(stringResource(R.string.settings_section_background))
-            BackgroundStyle.entries.forEach { style ->
-                ChoiceRow(
-                    label = stringResource(backgroundStyleLabelRes(style)),
-                    selected = style == backgroundStyle,
-                    onClick = { onBackgroundStyleChange(style) }
-                )
+            SettingsGroupLabel(stringResource(R.string.settings_section_background))
+            SettingsCard {
+                BackgroundStyle.entries.forEachIndexed { index, style ->
+                    if (index > 0) SettingsDivider()
+                    ChoiceRow(
+                        label = stringResource(backgroundStyleLabelRes(style)),
+                        selected = style == backgroundStyle,
+                        onClick = { onBackgroundStyleChange(style) }
+                    )
+                }
             }
 
-            SectionLabel(stringResource(R.string.settings_section_icon))
-            LauncherIcon.entries.forEach { icon ->
-                ChoiceRow(
-                    label = stringResource(launcherIconLabelRes(icon)),
-                    selected = icon == launcherIcon,
-                    onClick = { onLauncherIconChange(icon) }
-                )
+            SettingsGroupLabel(stringResource(R.string.settings_section_icon))
+            SettingsCard {
+                LauncherIcon.entries.forEachIndexed { index, icon ->
+                    if (index > 0) SettingsDivider()
+                    ChoiceRow(
+                        label = stringResource(launcherIconLabelRes(icon)),
+                        selected = icon == launcherIcon,
+                        onClick = { onLauncherIconChange(icon) }
+                    )
+                }
             }
             Text(
                 text = stringResource(R.string.settings_icon_hint),
@@ -142,24 +166,33 @@ fun SettingsScreen(
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
             )
 
-            SectionLabel(stringResource(R.string.settings_section_more))
-            SettingsEntry(
-                label = stringResource(R.string.more_entry_focus),
-                onClick = onOpenFocus
-            )
-            SettingsEntry(
-                label = stringResource(R.string.more_entry_stats),
-                onClick = onOpenStats
-            )
-            SettingsEntry(
-                label = stringResource(R.string.more_entry_tags),
-                onClick = onOpenTags
-            )
-            SettingsEntry(
-                label = stringResource(R.string.settings_export),
-                trailing = stringResource(R.string.settings_export_soon_short),
-                onClick = { scope.launch { snackbarHostState.showSnackbar(exportMessage) } }
-            )
+            SettingsGroupLabel(stringResource(R.string.settings_section_more))
+            SettingsCard {
+                SettingsEntry(
+                    icon = "⏱️",
+                    label = stringResource(R.string.more_entry_focus),
+                    onClick = onOpenFocus
+                )
+                SettingsDivider()
+                SettingsEntry(
+                    icon = "📊",
+                    label = stringResource(R.string.more_entry_stats),
+                    onClick = onOpenStats
+                )
+                SettingsDivider()
+                SettingsEntry(
+                    icon = "🏷️",
+                    label = stringResource(R.string.more_entry_tags),
+                    onClick = onOpenTags
+                )
+                SettingsDivider()
+                SettingsEntry(
+                    icon = "📤",
+                    label = stringResource(R.string.settings_export),
+                    trailing = stringResource(R.string.settings_export_soon_short),
+                    onClick = { scope.launch { snackbarHostState.showSnackbar(exportMessage) } }
+                )
+            }
 
             // 可滚动列里不能再让子项抢剩余高度（weight 在无界高度下没有意义），
             // 所以这里用一段固定间距把「关于」推到底部。
@@ -174,13 +207,43 @@ fun SettingsScreen(
     }
 }
 
+/** 设置页里一组选项的圆角卡片：与更多页、任务卡同一个视觉语言。 */
 @Composable
-private fun SectionLabel(text: String) {
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    val colors = LocalTodoColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .shadow(
+                elevation = 1.5.dp,
+                shape = RoundedCornerShape(18.dp),
+                ambientColor = Color.Black.copy(alpha = 0.05f),
+                spotColor = Color.Black.copy(alpha = 0.07f)
+            )
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.card),
+        content = content
+    )
+}
+
+/** 设置卡片里两行之间的淡分隔线。 */
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        color = LocalTodoColors.current.dateMuted.copy(alpha = 0.14f),
+        modifier = Modifier.padding(start = 20.dp)
+    )
+}
+
+/** 卡片上方的分组小标题（贴着卡片外沿，不再像原来的裸行）。 */
+@Composable
+private fun SettingsGroupLabel(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
         color = LocalTodoColors.current.dateMuted,
-        modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp)
+        modifier = Modifier.padding(start = 22.dp, top = 16.dp, bottom = 4.dp)
     )
 }
 
@@ -199,6 +262,7 @@ private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
             text = label,
             style = MaterialTheme.typography.bodyLarge,
             color = if (selected) colors.accent else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (selected) FontWeight.SemiBold else null,
             modifier = Modifier.weight(1f)
         )
         if (selected) {
@@ -212,15 +276,30 @@ private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SettingsEntry(label: String, trailing: String? = null, onClick: () -> Unit) {
+private fun SettingsEntry(
+    icon: String,
+    label: String,
+    trailing: String? = null,
+    onClick: () -> Unit
+) {
     val colors = LocalTodoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(colors.accent.copy(alpha = 0.08f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = icon, fontSize = 15.sp, maxLines = 1)
+        }
+        Spacer(Modifier.width(12.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,

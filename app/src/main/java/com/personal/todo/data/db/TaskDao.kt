@@ -107,6 +107,22 @@ interface TaskDao {
     )
     fun observeSubtasks(parentTaskId: Long): Flow<List<Task>>
 
+    /**
+     * Every live subtask, whatever its parent: the list screens fetch them once
+     * and group by [Task.parentTaskId] themselves, so an expanded card can draw
+     * its rows inline without opening a detail screen. The total number of
+     * subtasks is small, one query for all of them is cheaper than one flow per
+     * expanded card.
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE parentTaskId IS NOT NULL AND deletedAt IS NULL
+        ORDER BY createdAt ASC, id ASC
+        """
+    )
+    fun observeAllSubtasks(): Flow<List<Task>>
+
     @Query(
         """
         SELECT parentTaskId AS taskId, COUNT(*) AS subtaskCount FROM tasks

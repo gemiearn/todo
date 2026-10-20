@@ -28,8 +28,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -871,22 +869,24 @@ private fun RankHeader(rankBy: FocusRankBy, onSelect: (FocusRankBy) -> Unit) {
                     modifier = Modifier.size(18.dp)
                 )
             }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.stats_rank_by_task)) },
-                    onClick = {
-                        onSelect(FocusRankBy.TASK)
-                        menuOpen = false
-                    }
+            TodoDropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+                items = listOf(
+                    TodoMenuItem(
+                        label = stringResource(R.string.stats_rank_by_task),
+                        icon = "✅",
+                        selected = rankBy == FocusRankBy.TASK,
+                        onClick = { onSelect(FocusRankBy.TASK) }
+                    ),
+                    TodoMenuItem(
+                        label = stringResource(R.string.stats_rank_by_list),
+                        icon = "📋",
+                        selected = rankBy == FocusRankBy.LIST,
+                        onClick = { onSelect(FocusRankBy.LIST) }
+                    )
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.stats_rank_by_list)) },
-                    onClick = {
-                        onSelect(FocusRankBy.LIST)
-                        menuOpen = false
-                    }
-                )
-            }
+            )
         }
     }
 }

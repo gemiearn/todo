@@ -24,10 +24,13 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -36,7 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -66,6 +68,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -106,6 +109,9 @@ private val CheckSize = 22.dp
 
 /** 勾选钮的触控区：图标只画 22dp，外面这一圈是给手指点的。 */
 private val CheckTouchSize = 32.dp
+
+/** 卡片内联子任务行勾选钮的触控区（比主卡的略小，行距才压得住）。 */
+private val subtaskCheckTouchSize = 28.dp
 
 /** How often the "now" used by the date labels and countdowns is refreshed. */
 private const val NowRefreshMillis = 30_000L
@@ -407,7 +413,16 @@ fun TaskCard(
     /**
      * 卡片最右侧那个 ▶：「开始专注」。给了才画——回收站、已完成这类列表没有它。
      */
-    onQuickFocus: (() -> Unit)? = null
+    onQuickFocus: (() -> Unit)? = null,
+    /**
+     * 子任务展开：给了（并带子任务行）才把「N 个子任务」画成可点开的行；点开就地列出
+     * 子任务，能打勾、能进详情。null 或 [subtaskCount] == 0 时维持原来那行小字。
+     */
+    onToggleSubtasks: (() -> Unit)? = null,
+    /** 子任务是否处于展开状态（只在给了 [onToggleSubtasks] 时有意义）。 */
+    subtasksExpanded: Boolean = false,
+    /** 展开后画在卡片里的子任务行；每行带自己的勾选状态与点击。 */
+    subtaskRows: List<SubtaskRow> = emptyList()
 ) {
     val colors = LocalTodoColors.current
     val completed = task.completedAt != null
@@ -424,7 +439,9 @@ fun TaskCard(
     val barColor = priorityColor(task.priority)
     val titleColor = if (completed) colors.doneInk else MaterialTheme.colorScheme.onSurface
 
-    Row(
+    // 子任务行的布局放在卡片最外的 Column 里（而不是嵌在标题列里），展开后卡片自然
+    // 变高、色条跟着拉长——它是「这张卡的一部分」，不是标题下面的注脚。
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .shadow(
@@ -444,12 +461,15 @@ fun TaskCard(
                     cornerRadius = CornerRadius(BarWidth.toPx() / 2f)
                 )
             }
-            .clickable(onClick = onClick)
-            // 色条现在只有 3dp，左边的内边距也收窄一点；上下各降 2dp，抵消勾选钮
-            // 那圈 32dp 触控区带来的高度增长，卡片总高基本不变。
-            .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
+        Row(
+            modifier = Modifier
+                .clickable(onClick = onClick)
+                // 色条现在只有 3dp，左边的内边距也收窄一点；上下各降 2dp，抵消勾选钮
+                // 那圈 32dp 触控区带来的高度增长，卡片总高基本不变。
+                .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         if (onCheckedChange != null) {
             CircleCheck(
                 checked = checked == true,
@@ -476,7 +496,7 @@ fun TaskCard(
                     RepeatMark()
                 }
             }
-            if (subtaskCount > 0) {
+            if (subtaskCount > 0 && onToggleSubtasks == null) {
                 Text(
                     text = stringResource(R.string.task_subtask_count, subtaskCount),
                     style = MaterialTheme.typography.bodySmall,
@@ -536,8 +556,138 @@ fun TaskCard(
                 )
             }
         }
+        }
+
+        // 子任务展开区：标题行下面的一条淡色带上列出子任务。整块仍在卡片内（色条包着
+        // 它们），勾选/进详情都在这儿完成，不必先点进详情页再回来。
+        if (onToggleSubtasks != null && subtaskCount > 0) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colors.groupHeader.copy(alpha = 0.30f))
+                    .padding(start = 14.dp, end = 6.dp, top = 2.dp, bottom = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onToggleSubtasks)
+                        .testTag(subtasksToggleTag(task.id))
+                        .padding(horizontal = 2.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.task_subtask_count, subtaskCount),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (subtasksExpanded) colors.accent else colors.dateMuted,
+                        fontWeight = if (subtasksExpanded) FontWeight.SemiBold else null,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = if (subtasksExpanded) {
+                            Icons.Default.KeyboardArrowUp
+                        } else {
+                            Icons.Default.KeyboardArrowDown
+                        },
+                        contentDescription = stringResource(
+                            if (subtasksExpanded) {
+                                R.string.action_hide_subtasks
+                            } else {
+                                R.string.action_show_subtasks
+                            }
+                        ),
+                        tint = if (subtasksExpanded) colors.accent else colors.dateMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                if (subtasksExpanded) {
+                    subtaskRows.forEach { row ->
+                        SubtaskInlineRow(row = row)
+                    }
+                }
+            }
+        }
     }
 }
+
+/** 卡片内联展开的一条子任务：小勾 + 标题，整行可点（点击＝打勾），长按区留给将来。 */
+@Composable
+private fun SubtaskInlineRow(row: SubtaskRow) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { row.onCheckedChange(!row.checked) }
+            .padding(horizontal = 2.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(subtaskCheckTouchSize)
+                .clip(CircleShape)
+                .toggleable(
+                    value = row.checked,
+                    onValueChange = row.onCheckedChange,
+                    role = Role.Checkbox
+                )
+                .testTag(subtaskCheckTag(row.id)),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(if (row.checked) colors.accent else Color.Transparent)
+                    .border(
+                        1.5.dp,
+                        if (row.checked) colors.accent else colors.checkOutline,
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (row.checked) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = row.title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (row.checked) colors.doneInk else MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (row.onOpen != null) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = colors.dateMuted,
+                modifier = Modifier
+                    .size(16.dp)
+                    .clickable(onClick = row.onOpen)
+            )
+        }
+    }
+}
+
+/** 展开的子任务区里的一行数据：由调用方（列表页）从库里取好后喂给 [TaskCard]。 */
+data class SubtaskRow(
+    val id: Long,
+    val title: String,
+    val checked: Boolean,
+    val onCheckedChange: (Boolean) -> Unit,
+    /** 点了行尾的箭头进子任务详情；null 就不画箭头。 */
+    val onOpen: (() -> Unit)? = null
+)
 
 /**
  * 重复任务的小标记：标题末尾一个循环符号，不占一整行。
@@ -618,7 +768,9 @@ fun SwipeableTaskCard(
     modifier: Modifier = Modifier,
     tags: List<Tag> = emptyList(),
     /** 卡片上的「开始专注」；给 null 就不画。 */
-    onQuickFocus: (() -> Unit)? = null
+    onQuickFocus: (() -> Unit)? = null,
+    /** 子任务内联展开区；给 null 就不画（见 [TaskCard.onToggleSubtasks]）。 */
+    subtaskSections: SubtaskSection? = null
 ) {
     val colors = LocalTodoColors.current
     val dismissState = rememberSwipeToDismissBoxState(
@@ -679,7 +831,10 @@ fun SwipeableTaskCard(
             nowMillis = nowMillis,
             zone = zone,
             tags = tags,
-            onQuickFocus = onQuickFocus
+            onQuickFocus = onQuickFocus,
+            onToggleSubtasks = subtaskSections?.onToggle,
+            subtasksExpanded = subtaskSections?.expanded ?: false,
+            subtaskRows = if (subtaskSections?.expanded == true) subtaskSections.rows else emptyList()
         )
     }
 }
@@ -693,6 +848,119 @@ private fun completedAtText(completedAt: Long, zone: ZoneId): String {
     val date = Schedule.todayOf(completedAt, zone)
     return stringResource(R.string.date_month_day, date.monthValue, date.dayOfMonth)
 }
+
+/** 「子任务」那行的测试钩子：冒烟测试靠它点开 / 收起。 */
+internal fun subtasksToggleTag(taskId: Long): String = "subtasks-toggle-$taskId"
+
+/** 展开的子任务行里那个勾选钮的测试钩子。 */
+internal fun subtaskCheckTag(taskId: Long): String = "subtask-check-$taskId"
+
+/**
+ * 全局统一的小菜单。
+ *
+ * 各处右上角的 ⋮ / ▾ 以前直接用 material3 的 [DropdownMenu]：默认是直角白块、无阴影层次，
+ * 和这套圆角卡片的界面不是一个味儿。这里统一成：16dp 圆角、卡片底色（随色系 / 背景 /
+ * 深色主题走）、一点投影、每项前后留足空隙；[items] 里给了 [TodoMenuItem.selected] 的那项
+ * 在行尾画一个强调色勾，给了 danger 的那项文字标红——清单排序这种「单选」菜单和
+ * 记录 / 习惯 ⋮ 里的「删除」从此长得一模一样。
+ */
+@Composable
+internal fun TodoDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    items: List<TodoMenuItem>
+) {
+    val colors = LocalTodoColors.current
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        containerColor = colors.card,
+        shadowElevation = 6.dp,
+        tonalElevation = 0.dp
+    ) {
+        items.forEachIndexed { index, item ->
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = item.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = when {
+                            item.danger -> colors.dateOverdue
+                            item.selected -> colors.accent
+                            else -> MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                },
+                leadingIcon = item.icon?.let { icon ->
+                    {
+                        Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                            Text(text = icon, fontSize = 16.sp, maxLines = 1)
+                        }
+                    }
+                },
+                trailingIcon = if (item.selected || item.showChevron) {
+                    {
+                        if (item.selected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = colors.accent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = colors.dateMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                } else {
+                    null
+                },
+                onClick = {
+                    onDismissRequest()
+                    item.onClick()
+                },
+                // 项与项之间来一条淡淡的分隔线（最后一条后面不画）：纯靠留白分不出两项。
+                modifier = (item.tag?.let { Modifier.testTag(it) } ?: Modifier).then(
+                    if (index != items.lastIndex) {
+                        Modifier.drawBehind {
+                            drawLine(
+                                color = colors.dateMuted.copy(alpha = 0.15f),
+                                start = Offset(0f, size.height),
+                                end = Offset(size.width, size.height),
+                                strokeWidth = 1.dp.toPx()
+                            )
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
+            )
+        }
+    }
+}
+
+/** [TodoDropdownMenu] 里的一项。 */
+internal data class TodoMenuItem(
+    val label: String,
+    val onClick: () -> Unit,
+    /** 行首的小图标（emoji 或字符）；null 就不放。 */
+    val icon: String? = null,
+    /** 单选菜单里当前选中的那项：行尾画强调色勾。 */
+    val selected: Boolean = false,
+    /** 冒烟测试的 testTag；null 就不上。 */
+    val tag: String? = null,
+    /** 行尾画一个「还有下级」的箭头（现在备用，ListPicker 这类入口菜单用）。 */
+    val showChevron: Boolean = false,
+    /** 删除这类破坏性动作：文字标红。 */
+    val danger: Boolean = false
+)
 
 /** Simple single line text dialog used for "new list" and "rename list". */
 @Composable
@@ -1024,22 +1292,56 @@ fun ListPicker(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedName = lists.firstOrNull { it.id == selectedListId }?.name.orEmpty()
+    val selected = lists.firstOrNull { it.id == selectedListId }
+    val colors = LocalTodoColors.current
 
     Column(modifier = modifier) {
-        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-            Text(selectedName)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            lists.forEach { list ->
-                DropdownMenuItem(
-                    text = { Text(list.name) },
-                    onClick = {
-                        onSelect(list.id)
-                        expanded = false
-                    }
+        // 入口行照编辑器其它「值行」的样子画：标签 + 当前值 + 右边的小箭头，点开才弹菜单。
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(colors.groupHeader.copy(alpha = 0.42f))
+                .clickable { expanded = true }
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = selected?.icon?.takeIf { it.isNotBlank() } ?: "📋",
+                    fontSize = 14.sp,
+                    maxLines = 1
                 )
             }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = selected?.name.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = colors.dateMuted,
+                modifier = Modifier.size(18.dp)
+            )
         }
+        TodoDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            items = lists.map { list ->
+                TodoMenuItem(
+                    label = list.name,
+                    icon = list.icon?.takeIf { it.isNotBlank() },
+                    selected = list.id == selectedListId,
+                    onClick = { onSelect(list.id) }
+                )
+            }
+        )
     }
 }

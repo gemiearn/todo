@@ -91,6 +91,16 @@ class TaskCollectionViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /**
+     * 列表页内联展开的子任务：**父任务 id → 那些还活着的子任务**。一条流全量供给（子任务
+     * 总数有限），展开哪张卡只由界面自己记；勾一个子任务库一变这张卡立即刷新。
+     *
+     * 展开状态不放这里——转屏要保住它，而且它是纯界面状态，放 `rememberSaveable` 更直接。
+     */
+    val subtasksByParent: StateFlow<Map<Long, List<Task>>> = repository.observeAllSubtasks()
+        .map { rows -> rows.groupBy { it.parentTaskId ?: 0L } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
      * Completed tasks of this view. A list keeps its finished tasks folded away
      * behind a "已完成 N" header instead of losing them to another screen; the
      * 已完成 and 回收站 views have nothing to fold, and the 未来 / 逾期 views
@@ -131,6 +141,17 @@ class TaskCollectionViewModel(
 
     fun restore(taskId: Long) {
         viewModelScope.launch { repository.restoreTask(taskId) }
+    }
+
+    /** 勾 / 取消一条子任务（列表页内联展开区里点的那一下）。 */
+    fun toggleSubtask(subtask: Task) {
+        viewModelScope.launch {
+            if (subtask.completedAt == null) {
+                repository.completeTask(subtask.id)
+            } else {
+                repository.reopenTask(subtask.id)
+            }
+        }
     }
 
     companion object {

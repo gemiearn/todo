@@ -56,6 +56,18 @@ import java.time.ZoneId
  * A list keeps its finished tasks folded away behind a "已完成 N" header, so
  * completing a task removes it from the working list without hiding it.
  */
+/**
+ * [TaskCard] 用的一包子任务数据：展开状态与行，由壳层按父任务 id 现取。
+ */
+data class SubtaskSection(
+    /** 这张卡现在是否展开着子任务区。 */
+    val expanded: Boolean,
+    /** 点「N 个子任务」那一下：展开 / 收起。 */
+    val onToggle: () -> Unit,
+    /** 展开时画的行（收起时不用）。 */
+    val rows: List<SubtaskRow>
+)
+
 @Composable
 fun TaskCollectionContent(
     collection: TaskCollection,
@@ -74,7 +86,12 @@ fun TaskCollectionContent(
     /** 清单小结（收件箱与用户清单各一条）；其它视图给 null，就不画那条。 */
     summary: ListSummary? = null,
     /** 任务卡上的「开始专注」；给 null 就不显示那个按钮。 */
-    onQuickFocus: ((Task) -> Unit)? = null
+    onQuickFocus: ((Task) -> Unit)? = null,
+    /**
+     * 子任务内联展开：每张有子任务的卡把「N 个子任务」画成可点开的行。给 null（已完成 /
+     * 回收站这类只读视图）就维持原来的那行小字。
+     */
+    subtaskSections: Map<Long, SubtaskSection> = emptyMap()
 ) {
     val foldsCompleted = when (collection) {
         TaskCollection.Inbox,
@@ -121,6 +138,7 @@ fun TaskCollectionContent(
         items(tasks, key = { it.id }) { task ->
             val subtaskCount = subtaskCounts[task.id] ?: 0
             val tags = tagsByTask[task.id].orEmpty()
+            val section = subtaskSections[task.id]
             when (collection) {
                 TaskCollection.Trash -> TaskCard(
                     task = task,
@@ -163,7 +181,8 @@ fun TaskCollectionContent(
                     tags = tags,
                     // 「开始专注」只在还能干这件事的清单里给（回收站 / 已完成那两个分支
                     // 走的是另一条路，没有它）。
-                    onQuickFocus = onQuickFocus?.let { focus -> { focus(task) } }
+                    onQuickFocus = onQuickFocus?.let { focus -> { focus(task) } },
+                    subtaskSections = section
                 )
             }
         }

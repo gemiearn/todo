@@ -31,8 +31,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -542,22 +540,23 @@ private fun RecordRow(
                     tint = colors.dateMuted
                 )
             }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_edit)) },
-                    onClick = {
-                        menuOpen = false
-                        onEdit()
-                    }
+            TodoDropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+                items = listOf(
+                    TodoMenuItem(
+                        label = stringResource(R.string.action_edit),
+                        icon = "✏️",
+                        onClick = onEdit
+                    ),
+                    TodoMenuItem(
+                        label = stringResource(R.string.action_delete),
+                        icon = "🗑️",
+                        danger = true,
+                        onClick = onDelete
+                    )
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.action_delete)) },
-                    onClick = {
-                        menuOpen = false
-                        onDelete()
-                    }
-                )
-            }
+            )
         }
     }
 }

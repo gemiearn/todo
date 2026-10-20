@@ -30,8 +30,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -477,18 +475,24 @@ private fun CalendarHeader(
                     tint = if (view == CalendarView.MONTH) colors.dateMuted else colors.accent
                 )
             }
-            DropdownMenu(expanded = viewMenuOpen, onDismissRequest = { viewMenuOpen = false }) {
-                CalendarView.entries.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(stringResource(calendarViewLabelRes(option))) },
-                        onClick = {
-                            onSelectView(option)
-                            viewMenuOpen = false
+            TodoDropdownMenu(
+                expanded = viewMenuOpen,
+                onDismissRequest = { viewMenuOpen = false },
+                items = CalendarView.entries.map { option ->
+                    TodoMenuItem(
+                        label = stringResource(calendarViewLabelRes(option)),
+                        icon = when (option) {
+                            CalendarView.YEAR -> "📆"
+                            CalendarView.MONTH -> "🗓️"
+                            CalendarView.WEEK -> "📋"
+                            CalendarView.THREE_DAY -> "📚"
                         },
-                        modifier = Modifier.testTag(calendarViewOptionTag(option))
+                        selected = view == option,
+                        tag = calendarViewOptionTag(option),
+                        onClick = { onSelectView(option) }
                     )
                 }
-            }
+            )
         }
 
         // ⋮ 打开「显示范围 + 显示设置」面板：筛选因子和日期显示方式都在里面。

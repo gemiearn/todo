@@ -44,8 +44,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -484,22 +482,23 @@ private fun HabitCard(
                         tint = colors.dateMuted
                     )
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.habit_edit)) },
-                        onClick = {
-                            menuOpen = false
-                            onEdit()
-                        }
+                TodoDropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                    items = listOf(
+                        TodoMenuItem(
+                            label = stringResource(R.string.habit_edit),
+                            icon = "✏️",
+                            onClick = onEdit
+                        ),
+                        TodoMenuItem(
+                            label = stringResource(R.string.habit_delete),
+                            icon = "🗑️",
+                            danger = true,
+                            onClick = onDelete
+                        )
                     )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.habit_delete)) },
-                        onClick = {
-                            menuOpen = false
-                            onDelete()
-                        }
-                    )
-                }
+                )
             }
         }
 

@@ -431,6 +431,9 @@ class TaskRepository(
     fun observeSubtasks(parentTaskId: Long): Flow<List<Task>> =
         taskDao.observeSubtasks(parentTaskId)
 
+    /** Every live subtask of every parent; the list screens group by parent themselves. */
+    fun observeAllSubtasks(): Flow<List<Task>> = taskDao.observeAllSubtasks()
+
     /** Live subtask count per parent task; parents without subtasks are absent. */
     fun observeSubtaskCounts(): Flow<Map<Long, Int>> =
         taskDao.observeSubtaskCounts().map { rows ->

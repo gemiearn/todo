@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,8 +36,6 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -69,12 +68,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
@@ -576,6 +577,16 @@ internal fun MainScreen(
     val tasks by collectionViewModel.tasks.collectAsStateWithLifecycle()
     val completedTasks by collectionViewModel.completedTasks.collectAsStateWithLifecycle()
     val subtaskCounts by collectionViewModel.subtaskCounts.collectAsStateWithLifecycle()
+    val subtasksByParent by collectionViewModel.subtasksByParent.collectAsStateWithLifecycle()
+
+    // 列表页内联展开的子任务：哪张卡的子任务区开着。用 id 集合记（转屏保得住），换卡
+    // 也自然复用；收起就只是把 id 拿掉，不打扰别的卡。
+    val expandedSubtaskParents = rememberSaveable(
+        saver = listSaver<SnapshotStateList<Long>, Long>(
+            save = { ArrayList(it) },
+            restore = { SnapshotStateList<Long>().apply { addAll(it) } }
+        )
+    ) { mutableStateListOf() }
 
     // 复用同一个实例时把「今天是哪一天」喂进去；这个 effect 对每条路由都会跑，但只有
     // DayView 有日期，其它路由 dayOfCollection 是 null，什么都不做。
@@ -676,6 +687,32 @@ internal fun MainScreen(
     val onRestore: (Task) -> Unit = { collectionViewModel?.restore(it.id) }
     val requestDelete: (Task) -> Unit = { task ->
         if ((subtaskCounts[task.id] ?: 0) > 0) pendingTaskDelete = task else deleteTaskWithUndo(task)
+    }
+
+    // 每张卡的子任务展开区：行直接从 subtasksByParent 里拿，勾选走 collectionViewModel。
+    // 整个 map 只在有子任务的卡上才画（TaskCard 内部按 subtaskCount 判断）。
+    val subtaskSections = remember(subtasksByParent, expandedSubtaskParents.toSet()) {
+        subtasksByParent.mapValues { (parentId, rows) ->
+            SubtaskSection(
+                expanded = parentId in expandedSubtaskParents,
+                onToggle = {
+                    if (parentId in expandedSubtaskParents) {
+                        expandedSubtaskParents.remove(parentId)
+                    } else {
+                        expandedSubtaskParents.add(parentId)
+                    }
+                },
+                rows = rows.map { row ->
+                    SubtaskRow(
+                        id = row.id,
+                        title = row.title,
+                        checked = row.completedAt != null,
+                        onCheckedChange = { collectionViewModel.toggleSubtask(row) },
+                        onOpen = { onOpenTask(row.id) }
+                    )
+                }
+            )
+        }
     }
 
     // The inbox is pinned first, so only user lists can be reordered.
@@ -891,20 +928,22 @@ internal fun MainScreen(
                                             contentDescription = stringResource(R.string.action_sort)
                                         )
                                     }
-                                    DropdownMenu(
+                                    TodoDropdownMenu(
                                         expanded = sortMenuOpen,
-                                        onDismissRequest = { sortMenuOpen = false }
-                                    ) {
-                                        TaskSort.entries.forEach { mode ->
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(sortLabelRes(mode))) },
-                                                onClick = {
-                                                    sort = mode
-                                                    sortMenuOpen = false
-                                                }
+                                        onDismissRequest = { sortMenuOpen = false },
+                                        items = TaskSort.entries.map { mode ->
+                                            TodoMenuItem(
+                                                label = stringResource(sortLabelRes(mode)),
+                                                icon = when (mode) {
+                                                    TaskSort.DEFAULT -> "🗂️"
+                                                    TaskSort.PRIORITY -> "🎯"
+                                                    TaskSort.CREATED -> "🕒"
+                                                },
+                                                selected = sort == mode,
+                                                onClick = { sort = mode }
                                             )
                                         }
-                                    }
+                                    )
                                 }
                             }
                             if (!searchActive && !showsFocusChrome && currentList != null && !currentList.isInbox) {
@@ -1033,7 +1072,8 @@ internal fun MainScreen(
                                 onDelete = requestDelete,
                                 onRestore = onRestore,
                                 modifier = Modifier.weight(1f),
-                                onQuickFocus = quickFocus
+                                onQuickFocus = quickFocus,
+                                subtaskSections = subtaskSections
                             )
                         }
                     }
@@ -1098,7 +1138,8 @@ internal fun MainScreen(
                     modifier = Modifier.padding(innerPadding),
                     // 收件箱与用户清单在列表最上面给一条小结，其它视图这里是 null。
                     summary = listSummary,
-                    onQuickFocus = quickFocus
+                    onQuickFocus = quickFocus,
+                    subtaskSections = subtaskSections
                 )
             }
         }
@@ -1267,58 +1308,125 @@ internal fun MoreScreen(
     onNewList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalTodoColors.current
+    val cardShape = RoundedCornerShape(18.dp)
     Column(modifier = modifier.fillMaxSize()) {
-        MoreEntry(
-            label = stringResource(R.string.more_entry_settings),
-            onClick = { onOpen(ROUTE_SETTINGS) }
-        )
-        MoreEntry(
-            label = stringResource(R.string.more_entry_focus),
-            // Switching to the 专注 tab, not pushing it: pushing would put a page with
-            // no tab strip on top of the stack and leave its back arrow with nothing
-            // to pop.
-            onClick = { onOpen(HomeTab.Focus.route) }
-        )
+        // 功能入口：一张圆角卡片把「设置 / 专注 / 统计 / 标签」装在一起，行首加一个小
+        // 图标、行间一条淡分隔线——与清单抽屉同一个视觉语言，不再是裸的一列字。
+        MoreCard(shape = cardShape) {
+            MoreEntry(
+                icon = "⚙️",
+                label = stringResource(R.string.more_entry_settings),
+                onClick = { onOpen(ROUTE_SETTINGS) }
+            )
+            MoreDivider()
+            MoreEntry(
+                icon = "⏱️",
+                label = stringResource(R.string.more_entry_focus),
+                // Switching to the 专注 tab, not pushing it: pushing would put a page with
+                // no tab strip on top of the stack and leave its back arrow with nothing
+                // to pop.
+                onClick = { onOpen(HomeTab.Focus.route) }
+            )
+            MoreDivider()
+            MoreEntry(
+                icon = "📊",
+                label = stringResource(R.string.more_entry_stats),
+                onClick = { onOpen(ROUTE_STATS) }
+            )
+            MoreDivider()
+            MoreEntry(
+                icon = "🏷️",
+                label = stringResource(R.string.more_entry_tags),
+                onClick = { onOpen(ROUTE_TAGS) }
+            )
+        }
 
-        MoreEntry(
-            label = stringResource(R.string.more_entry_stats),
-            onClick = { onOpen(ROUTE_STATS) }
-        )
-        MoreEntry(
-            label = stringResource(R.string.more_entry_tags),
-            onClick = { onOpen(ROUTE_TAGS) }
-        )
-        // 习惯的入口不在这儿了（用户 2026-10-18）：它在任务页顶栏那个「清单 / 习惯」
-        // 开关上，点一下就切过去。
-        MoreEntry(
-            label = stringResource(R.string.nav_completed),
-            onClick = { onOpen(ROUTE_COMPLETED) }
-        )
-        MoreEntry(
-            label = stringResource(R.string.nav_trash),
-            onClick = { onOpen(ROUTE_TRASH) }
-        )
-        MoreEntry(
-            label = stringResource(R.string.crash_log_title),
-            onClick = { onOpen(ROUTE_CRASH) }
-        )
+        // 任务视图：已完成 / 回收站 一组。
+        MoreCard(shape = cardShape, modifier = Modifier.padding(top = 10.dp)) {
+            MoreEntry(
+                icon = "✅",
+                label = stringResource(R.string.nav_completed),
+                onClick = { onOpen(ROUTE_COMPLETED) }
+            )
+            MoreDivider()
+            MoreEntry(
+                icon = "🗑️",
+                label = stringResource(R.string.nav_trash),
+                onClick = { onOpen(ROUTE_TRASH) }
+            )
+            MoreDivider()
+            MoreEntry(
+                icon = "🐞",
+                label = stringResource(R.string.crash_log_title),
+                onClick = { onOpen(ROUTE_CRASH) }
+            )
+        }
 
         SectionHeader(stringResource(R.string.drawer_title))
 
         LazyColumn(modifier = Modifier.weight(1f)) {
-            items(lists, key = { it.id }) { list ->
-                MoreEntry(
-                    label = list.name,
-                    trailing = openTaskCounts[list.id] ?: 0,
-                    onClick = { onOpen(listRoute(list.id)) }
-                )
+            item {
+                MoreCard(shape = cardShape) {
+                    lists.forEachIndexed { index, list ->
+                        if (index > 0) MoreDivider()
+                        MoreEntry(
+                            icon = list.icon?.takeIf { it.isNotBlank() } ?: "📋",
+                            label = list.name,
+                            trailing = openTaskCounts[list.id] ?: 0,
+                            onClick = { onOpen(listRoute(list.id)) }
+                        )
+                    }
+                }
             }
         }
 
-        TextButton(onClick = onNewList, modifier = Modifier.padding(horizontal = 12.dp)) {
+        TextButton(
+            onClick = onNewList,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
             Text(stringResource(R.string.action_new_list))
         }
     }
+}
+
+/** 更多页里装一组入口的圆角卡片：卡片底 + 轻投影，与任务卡同一个层次。 */
+@Composable
+private fun MoreCard(
+    shape: RoundedCornerShape,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .shadow(
+                elevation = 1.5.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = 0.05f),
+                spotColor = Color.Black.copy(alpha = 0.07f)
+            )
+            .clip(shape)
+            .background(colors.card),
+        content = content
+    )
+}
+
+/** 更多卡片里两条入口之间的淡分隔线，缩进到图标之后。 */
+@Composable
+private fun MoreDivider() {
+    HorizontalDivider(
+        color = LocalTodoColors.current.dateMuted.copy(alpha = 0.14f),
+        modifier = Modifier.padding(start = 54.dp)
+    )
 }
 
 @Composable
@@ -1332,14 +1440,31 @@ private fun SectionHeader(text: String) {
 }
 
 @Composable
-private fun MoreEntry(label: String, trailing: Int? = null, onClick: () -> Unit) {
+private fun MoreEntry(
+    icon: String,
+    label: String,
+    trailing: Int? = null,
+    onClick: () -> Unit
+) {
+    val colors = LocalTodoColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 行首的 32dp 图标位：与抽屉行同一个语言，一眼认出「这一行是去哪的」。
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(colors.accent.copy(alpha = 0.08f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = icon, fontSize = 15.sp, maxLines = 1)
+        }
+        Spacer(Modifier.width(12.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
@@ -1349,14 +1474,14 @@ private fun MoreEntry(label: String, trailing: Int? = null, onClick: () -> Unit)
             Text(
                 text = trailing.toString(),
                 style = MaterialTheme.typography.bodyMedium,
-                color = LocalTodoColors.current.dateMuted
+                color = colors.dateMuted
             )
             Spacer(Modifier.width(6.dp))
         }
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = LocalTodoColors.current.dateMuted
+            tint = colors.dateMuted
         )
     }
 }
