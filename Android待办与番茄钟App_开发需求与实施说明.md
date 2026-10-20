@@ -795,3 +795,38 @@ CI 至少运行：Debug 构建、单元测试、lint。模拟器 UI 测试可在
 - **0.4.4（已交付，versionCode 34）**：年视图改为 12 张独立迷你月卡（仍是单 Canvas，邻月日期不画，点选与绘制共用同一份几何）；任务详情改为状态胶囊 + 优先级签 + 2×2 属性格 + 重排的专注小结；专注统计页顶部新增「专注概览」（今日 / 累计的番茄、时长，以及完成段数）；圆环倒计时拖拽跨过半圈不再跳回起点；白噪音卡片重排成标题 + 安静态 + 2×2 声音方块。**DB v14、无迁移**；包 `target/0.4.4/app-debug-0.4.4.apk`。
 - **0.4.5（本次交付，versionCode 35）**：重复任务在任务卡与详情页带 🔁 标记；专注记录页改成按日期分组的吸顶列表 + 标签筛选；新增「补记专注」（日期 / 开始时间 / 时长 / 可选任务 / 是否算番茄）；`FocusRepository.addManualSession` 与对应测试。**DB v14、无迁移**；包 `target/0.4.5/app-debug-0.4.5.apk`。
 - **下一版候选**：§13.3 里那几项，其中第 6 条（只有时间段任务才判结尾、其余按「创建日期」判）用户已经说了「之后做」，动手前要先拍板「创建日期」到底指哪一天；**子任务（第 12 条）等他定要改什么**。此外还有 §13.5「仍未做」里那一串（逾期按时刻刷新、重复任务模型定稿、时区统一、性能与测试盲区），以及第 8 条那些只登记、没动手的想法（任务说明存图片、模板、倒数日、编辑器草稿①）。
+
+## 附录 A：本机编译与验证环境（2026-10-20 记）
+
+本机**不装 Android Studio、也不配全局 JDK**：构建用的是一套下载到临时目录里的便携工具链。想构建 / 跑测试，照着这一节做即可。
+
+| 东西 | 位置 | 版本 |
+|---|---|---|
+| 工具链根 | `C:\Users\18108\AppData\Local\Temp\android-tc`（整目录约 1.14 GB） | — |
+| JDK | 根下 `jdk-17.0.20.1+1\` | Microsoft OpenJDK **17.0.20.1 LTS** |
+| Android SDK | 根下 `sdk\` | `platforms/android-35`、`build-tools/34.0.0` 与 `35.0.0`、`platform-tools`、`cmdline-tools`、`licenses` |
+| Gradle | 根下 `gradle-8.9\`（已解压、可直接执行的分发） | **8.9** |
+| 下载物留档 | 根下 `jdk17.zip`、`cmdline-tools.zip`、`gradle-8.9-bin.zip`（还有 `wrapper-extract`） | 重装时直接解压，不必重新下载 |
+| Gradle 用户缓存 | `C:\Users\18108\.gradle`（依赖、wrapper、daemon、kotlin-profile；首次构建靠它下载依赖） | — |
+
+项目里**没有** `local.properties`——`sdk.dir` 是靠 `ANDROID_HOME` / `ANDROID_SDK_ROOT` 环境变量传进去的。
+
+**全量验证命令**（PowerShell；每条命令都要自己把这套环境挂上，shell 状态不跨命令保留）：
+
+```powershell
+$tc="$env:TEMP\android-tc"
+$env:JAVA_HOME="$tc\jdk-17.0.20.1+1"
+$env:ANDROID_HOME="$tc\sdk"; $env:ANDROID_SDK_ROOT="$tc\sdk"
+$env:PATH="$env:JAVA_HOME\bin;$env:PATH"
+& "$tc\gradle-8.9\bin\gradle.bat" --no-daemon --console=plain `
+  "-Pkotlin.compiler.execution.strategy=in-process" `
+  :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+```
+
+三个必须记住的点：
+
+1. **命令必须脱离沙箱跑**（工具里传 `dangerouslyDisableSandbox: true`）：Robolectric 要在用户主目录建锁文件，而沙箱的可写目录不含主目录根——否则所有 Robolectric 测试会集体失败。
+2. **输出重定向到文件再筛**（`*> $env:TEMP\build.log`，然后 `Select-String`）：直接 `Select-Object -Last` 会缓冲、读不到内容；`^w: `（Kotlin 编译警告）要一起看，别只看 `BUILD SUCCESSFUL`。
+3. **结果的三个落点**：单测汇总 `app/build/test-results/testDebugUnitTest/*.xml`；lint 报告 `app/build/reports/lint-results-debug.txt`；产物 `app/build/outputs/apk/debug/app-debug.apk`（按惯例复制成 `target/<版本>/app-debug-<版本>[-fix].apk`）。
+
+⚠️ **唯一要留意的**：这套工具链放在 `%TEMP%` 下，**Windows 的磁盘清理 / 存储感知可能连它和那三个 zip 一起删掉**（本机已有 0.4.0～0.4.5 的包在 `target/`，不受影响）。真被清掉就得重新下载解压——Gradle 走 `services.gradle.org/distributions/gradle-8.9-bin.zip`，JDK 走 Microsoft OpenJDK 17 的 aka.ms 分发，cmdline-tools 走 `dl.google.com/android/repository/commandlinetools-win-*_latest.zip`。想一劳永逸，可以把它挪到固定目录（例如 `D:\Home\Coding\toolchain`）——说一声就挪。
