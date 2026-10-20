@@ -6,7 +6,7 @@
 
 ## 当前进度
 
-**当前版本 0.4.5（versionCode 35）**，本地数据库 schema 版本 **v14**（本版无迁移）。阶段 0–3 与「专注统计、专注记录、设置、标签、习惯打卡、外观定制」等都已落地：
+**当前版本 0.4.6（versionCode 36）**，本地数据库 schema 版本 **v14**（本版无迁移）。阶段 0–3 与「专注统计、专注记录、设置、标签、习惯打卡、外观定制」等都已落地：
 
 - **任务**：新建/编辑/完成/重开/软删除与回收站恢复、标题+备注、优先级（直接对应四象限四档）、一层子任务、重复任务（按规则生成真实实例，规则源和生成出来的那一次在任务卡上都带 🔁 标记，规则源那一条还会显示「本系列完成 k 次 · 共专注 X」）、创建/完成/删除等关键事件历史（带标题快照，默认收起）、滑动操作、卡片上直接 ▶「开始专注」。
 - **清单**：内置收件箱 + 自定义清单（新增/改名/排序/删除时把任务移入收件箱，可给清单选一个 emoji 小图标）；左侧抽屉导航（**屏幕宽度 50%**，分「智能清单 / 我的清单」两组，清单前是图标或色点、计数是药丸徽章；分隔线以下固定「已完成 / 回收站 / 习惯 / 新建清单」，其中**习惯那一行带「今天还剩几条没打」的徽章**）。
@@ -34,7 +34,7 @@
 | compileSdk / targetSdk | 35（Android 15，可运行于 Android 15 / 16 真机） |
 | minSdk | 26（Android 8.0） |
 | applicationId | `com.personal.todo` |
-| versionCode / versionName | 35 / 0.4.5（在 `gradle.properties` 中集中管理） |
+| versionCode / versionName | 36 / 0.4.6（在 `gradle.properties` 中集中管理） |
 | 数据库 schema | v14（`app/schemas/`，随每次模型变化提交） |
 
 `versionCode` 与 `versionName` 统一写在 [gradle.properties](gradle.properties) 的 `appVersionCode` / `appVersionName`，CI 读取 `appVersionName` 用于生成 artifact 名称。

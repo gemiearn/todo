@@ -19,6 +19,10 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.waitUntilNodeCount
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.HabitRepository
@@ -69,6 +73,11 @@ class TodoAppSmokeTest {
     private lateinit var tasks: TaskRepository
     private lateinit var focus: FocusRepository
     private lateinit var habits: HabitRepository
+    private lateinit var viewModelStore: ViewModelStore
+    private val viewModelStoreOwner = object : ViewModelStoreOwner {
+        override val viewModelStore: ViewModelStore
+            get() = this@TodoAppSmokeTest.viewModelStore
+    }
 
     @Before
     fun setUp() {
@@ -79,19 +88,23 @@ class TodoAppSmokeTest {
             tasks = TaskRepository(db, "收件箱")
             focus = FocusRepository(db)
             habits = HabitRepository(db)
+            viewModelStore = ViewModelStore()
             tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
         }
     }
 
     @After
     fun tearDown() {
+        viewModelStore.clear()
         db.close()
     }
 
     private fun launchApp() {
         compose.setContent {
-            TodoPomodoroTheme {
-                TodoApp(repository = tasks, focusRepository = focus, habitRepository = habits)
+            CompositionLocalProvider(LocalViewModelStoreOwner provides viewModelStoreOwner) {
+                TodoPomodoroTheme {
+                    TodoApp(repository = tasks, focusRepository = focus, habitRepository = habits)
+                }
             }
         }
     }

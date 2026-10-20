@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.waitUntilNodeCount
+import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
@@ -60,6 +61,8 @@ class FocusScreenSmokeTest {
     private lateinit var focus: FocusRepository
     private lateinit var habits: HabitRepository
     private lateinit var lists: List<TaskList>
+    private lateinit var viewModelStore: ViewModelStore
+    private var nextViewModelKey = 0
 
     @Before
     fun setUp() {
@@ -70,6 +73,7 @@ class FocusScreenSmokeTest {
             tasks = TaskRepository(db, "收件箱")
             focus = FocusRepository(db)
             habits = HabitRepository(db)
+            viewModelStore = ViewModelStore()
             tasks.createTask("写季度报告", tasks.ensureInbox())
             val work = tasks.createList("工作")
             tasks.createTask("整理周报", work)
@@ -79,6 +83,7 @@ class FocusScreenSmokeTest {
 
     @After
     fun tearDown() {
+        viewModelStore.clear()
         db.close()
     }
 
@@ -91,6 +96,7 @@ class FocusScreenSmokeTest {
                 FocusSettingsStore(RuntimeEnvironment.getApplication())
             )
     ) {
+        viewModelStore.put("focus-${nextViewModelKey++}", viewModel)
         compose.setContent {
             TodoPomodoroTheme {
                 FocusScreen(viewModel = viewModel, lists = lists, taskTags = emptyMap(), onBack = {})

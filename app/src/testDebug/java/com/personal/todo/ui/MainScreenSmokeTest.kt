@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
 import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.FocusRepository
@@ -52,6 +53,8 @@ class MainScreenSmokeTest {
     private lateinit var tasks: TaskRepository
     private lateinit var focus: FocusRepository
     private lateinit var focusSettings: FocusSettingsStore
+    private lateinit var viewModelStore: ViewModelStore
+    private var nextViewModelKey = 0
     private var listId = 0L
 
     @Before
@@ -63,6 +66,7 @@ class MainScreenSmokeTest {
             tasks = TaskRepository(db, "收件箱")
             focus = FocusRepository(db)
             focusSettings = FocusSettingsStore(RuntimeEnvironment.getApplication())
+            viewModelStore = ViewModelStore()
             val inbox = tasks.ensureInbox()
             tasks.createTask("写季度报告", inbox, plannedDate = tasks.today())
             listId = tasks.createList("工作")
@@ -71,11 +75,14 @@ class MainScreenSmokeTest {
 
     @After
     fun tearDown() {
+        viewModelStore.clear()
         db.close()
     }
 
     private fun launch(route: String, kind: String, argument: Long? = null) {
         val nav = NavStack(mutableStateListOf(route))
+        val focusViewModel = FocusViewModel(focus, tasks, focusSettings)
+        viewModelStore.put("focus-${nextViewModelKey++}", focusViewModel)
         compose.setContent {
             TodoPomodoroTheme {
                 // The selected day is live, the way the shell keeps it: a view that
@@ -83,7 +90,7 @@ class MainScreenSmokeTest {
                 var selectedDate by remember { mutableStateOf(tasks.today()) }
                 MainScreen(
                     repository = tasks,
-                    focusViewModel = FocusViewModel(focus, tasks, focusSettings),
+                    focusViewModel = focusViewModel,
                     nav = nav,
                     route = route,
                     kind = kind,
