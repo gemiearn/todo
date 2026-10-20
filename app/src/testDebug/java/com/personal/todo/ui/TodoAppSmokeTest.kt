@@ -185,7 +185,7 @@ class TodoAppSmokeTest {
     }
 
     /**
-     * 有记录时统计页把五张卡都画出来，顺序照参考图来：专注详情、专注趋势、
+     * 有记录时统计页把概览和五张卡都画出来：概览、专注详情、专注趋势、
      * 专注时间线、最佳专注时间、年度热力图。
      */
     @Test
@@ -210,11 +210,16 @@ class TodoAppSmokeTest {
 
         // sessions 是 Room 的 Flow，进页面之后才第一次发值：等那张卡真的出现。
         compose.waitUntilNodeCount(hasText("专注详情"), 1, TimeoutMillis)
+        compose.onNodeWithText("专注概览").assertExists()
+        compose.onNodeWithText("今日番茄").assertExists()
+        compose.onNodeWithText("累计专注").assertExists()
+        // 概览卡在 0，后面依次是详情 / 趋势 / 时间线 / 最佳时间 / 年度；趋势及之后的
+        // 卡片在视口之外，列表要滚过去才会组合它们。
+        compose.onNodeWithTag(FocusStatsTag).performScrollToIndex(2)
         compose.onNodeWithText("专注趋势").assertExists()
-        // 后两张在视口之外，列表要滚过去才会组合它们。
-        compose.onNodeWithTag(FocusStatsTag).performScrollToIndex(3)
-        compose.onNodeWithText("最佳专注时间").assertExists()
         compose.onNodeWithTag(FocusStatsTag).performScrollToIndex(4)
+        compose.onNodeWithText("最佳专注时间").assertExists()
+        compose.onNodeWithTag(FocusStatsTag).performScrollToIndex(5)
         compose.onNodeWithText("年度热力图").assertExists()
     }
 

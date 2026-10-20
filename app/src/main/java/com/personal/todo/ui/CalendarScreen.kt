@@ -50,7 +50,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -168,11 +170,14 @@ private val OutOfMonthNumberStyle = DayNumberStyle.copy(fontWeight = FontWeight(
 private fun Modifier.todayRing(visible: Boolean, accent: Color): Modifier =
     if (visible) border(1.6.dp, accent.copy(alpha = 0.38f), CircleShape) else this
 
-/** 年视图里小月份名那一行的高度；它下面才是 6×7 的日期格子。 */
-private val MiniMonthLabelHeight = 14.dp
+/** 年视图：每个月一张小卡片，四周留白，月份之间不再糊成一片。 */
+private val YearOuter = 4.dp
+private val YearGap = 6.dp
+private val YearCardPadding = 6.dp
+private val YearCardCorner = 12.dp
 
-/** 月份名与它所在格左边缘的距离。 */
-private val MonthLabelGap = 4.dp
+/** 年视图里小月份名那一行的高度；它下面才是 6×7 的日期格子。 */
+private val MiniMonthLabelHeight = 15.dp
 
 /** Width of the left column that carries the week numbers when they are shown. */
 private val WeekNumberWidth = 26.dp
@@ -1124,6 +1129,9 @@ private fun sortDayEntries(tasks: List<Task>): List<Task> =
  * 要一两秒。改成一张 Canvas 之后，格子和数字都只是 draw 指令，节点数掉到 1，跟
  * [FocusStatsScreen] 的年度热力图是同一个路子。数字的字型量一次就够，31 个数字复用。
  *
+ * 每个月份是一张独立的小卡片，卡片之间留缝；邻月的日子不画（它们只负责撑住格子），
+ * 这样 12 个月不会糊成一整片数字墙，也没有增加任何组合节点。
+ *
  * A tap on a day is a way in, not a place to stay, so it selects that day and
  * returns to the month view; the hit test walks the same grid math the drawing does.
  */
@@ -1149,17 +1157,19 @@ private fun YearView(
 
     // 字型只量两样：1..31 这组日期数字，和十二个月份名。量一次整年复用，不必每格都量。
     val measurer = rememberTextMeasurer()
-    val labelStyle = TextStyle(color = colors.dateMuted)
+    val monthStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+    val dayStyle = TextStyle(fontSize = 9.sp)
     val monthNames = (1..12).map { stringResource(monthNameRes(it)) }
-    val dayTexts = remember(measurer, labelStyle) {
-        (1..31).map { measurer.measure(it.toString(), labelStyle) }
+    val dayTexts = remember(measurer, dayStyle) {
+        (1..31).map { measurer.measure(it.toString(), dayStyle) }
     }
-    val monthLabels = remember(measurer, labelStyle, monthNames) {
-        monthNames.map { measurer.measure(it, labelStyle) }
+    val monthLabels = remember(measurer, monthStyle, monthNames) {
+        monthNames.map { measurer.measure(it, monthStyle) }
     }
 
     val accent = colors.accent
     val muted = colors.dateMuted
+    val cardBorder = muted.copy(alpha = 0.22f)
     val labelHeight = MiniMonthLabelHeight
     val todayRingWidth = 1.dp
 
@@ -1174,6 +1184,9 @@ private fun YearView(
                         y = offset.y,
                         width = size.width.toFloat(),
                         height = size.height.toFloat(),
+                        gap = YearGap.toPx(),
+                        outer = YearOuter.toPx(),
+                        padding = YearCardPadding.toPx(),
                         labelHeight = labelHeight.toPx(),
                         year = year,
                         weekStartsMonday = weekStartsMonday
@@ -1181,22 +1194,41 @@ private fun YearView(
                 }
             }
     ) {
-        val blockWidth = size.width / YearColumns
-        val blockHeight = size.height / YearRows
+        val layout = yearLayout(
+            width = size.width,
+            height = size.height,
+            gap = YearGap.toPx(),
+            outer = YearOuter.toPx(),
+            padding = YearCardPadding.toPx(),
+            labelHeight = labelHeight.toPx()
+        )
         val labelHeightPx = labelHeight.toPx()
-        val cellWidth = blockWidth / DaysPerWeek
-        val cellHeight = (blockHeight - labelHeightPx) / WeeksPerMonth
-        val circleRadius = minOf(cellWidth, cellHeight) * 0.42f
+        val circleRadius = minOf(layout.cellWidth, layout.cellHeight) * 0.42f
 
         repeat(YearRows * YearColumns) { index ->
             val month = index + 1
-            val left = (index % YearColumns) * blockWidth
-            val top = (index / YearColumns) * blockHeight
+            val left = layout.outer + (index % YearColumns) * (layout.cardWidth + layout.gap)
+            val top = layout.outer + (index / YearColumns) * (layout.cardHeight + layout.gap)
+
+            // 每个月一张小卡片：底色和四周留白把十二个月分开，不再是一整片数字墙。
+            drawRoundRect(
+                color = colors.card,
+                topLeft = Offset(left, top),
+                size = Size(layout.cardWidth, layout.cardHeight),
+                cornerRadius = CornerRadius(YearCardCorner.toPx())
+            )
+            drawRoundRect(
+                color = cardBorder,
+                topLeft = Offset(left, top),
+                size = Size(layout.cardWidth, layout.cardHeight),
+                cornerRadius = CornerRadius(YearCardCorner.toPx()),
+                style = Stroke(width = 1.dp.toPx())
+            )
 
             drawText(
                 monthLabels[index],
-                color = muted,
-                topLeft = Offset(left + MonthLabelGap.toPx(), top)
+                color = if (year == today.year && month == today.monthValue) accent else onSurface,
+                topLeft = Offset(left + layout.padding, top + layout.padding - 1.dp.toPx())
             )
 
             val firstOfMonth = YearMonth.of(year, month).atDay(1)
@@ -1204,42 +1236,77 @@ private fun YearView(
             repeat(WeeksPerMonth) { week ->
                 repeat(DaysPerWeek) { dayOfWeek ->
                     val date = firstCell.plusDays((week * DaysPerWeek + dayOfWeek).toLong())
-                    val centerX = left + dayOfWeek * cellWidth + cellWidth / 2f
-                    val centerY = top + labelHeightPx + week * cellHeight + cellHeight / 2f
-                    val center = Offset(centerX, centerY)
-                    val inMonth = YearMonth.from(date).monthValue == month
-                    val isSelected = inMonth && date == selectedDate
+                    // 邻月那几天不再画：它们只是撑住格子，画出来只会把月份边界搅乱。
+                    if (YearMonth.from(date).monthValue == month) {
+                        val centerX = left + layout.padding + dayOfWeek * layout.cellWidth +
+                            layout.cellWidth / 2f
+                        val centerY = top + layout.padding + labelHeightPx +
+                            week * layout.cellHeight + layout.cellHeight / 2f
+                        val center = Offset(centerX, centerY)
+                        val isSelected = date == selectedDate
 
-                    if (isSelected) {
-                        drawCircle(color = accent, radius = circleRadius, center = center)
-                    } else if (inMonth && date == today) {
-                        drawCircle(
-                            color = accent,
-                            radius = circleRadius,
-                            center = center,
-                            style = Stroke(width = todayRingWidth.toPx())
+                        if (isSelected) {
+                            drawCircle(color = accent, radius = circleRadius, center = center)
+                        } else if (date == today) {
+                            drawCircle(
+                                color = accent,
+                                radius = circleRadius,
+                                center = center,
+                                style = Stroke(width = todayRingWidth.toPx())
+                            )
+                        }
+
+                        val text = dayTexts[date.dayOfMonth - 1]
+                        val textColor = when {
+                            isSelected -> Color.White
+                            date == today || tasksByDay.containsKey(date) -> accent
+                            else -> onSurface
+                        }
+                        drawText(
+                            text,
+                            color = textColor,
+                            topLeft = Offset(
+                                centerX - text.size.width / 2f,
+                                centerY - text.size.height / 2f
+                            )
                         )
                     }
-
-                    val text = dayTexts[date.dayOfMonth - 1]
-                    val textColor = when {
-                        !inMonth -> muted
-                        isSelected -> Color.White
-                        date == today || tasksByDay.containsKey(date) -> accent
-                        else -> onSurface
-                    }
-                    drawText(
-                        text,
-                        color = textColor,
-                        topLeft = Offset(
-                            centerX - text.size.width / 2f,
-                            centerY - text.size.height / 2f
-                        )
-                    )
                 }
             }
         }
     }
+}
+
+/** 年视图 12 张卡片的几何：画和点用同一份，免得加留白之后点中的格子错位。 */
+private data class YearLayout(
+    val cardWidth: Float,
+    val cardHeight: Float,
+    val gap: Float,
+    val outer: Float,
+    val padding: Float,
+    val cellWidth: Float,
+    val cellHeight: Float
+)
+
+private fun yearLayout(
+    width: Float,
+    height: Float,
+    gap: Float,
+    outer: Float,
+    padding: Float,
+    labelHeight: Float
+): YearLayout {
+    val cardWidth = (width - outer * 2 - gap * (YearColumns - 1)) / YearColumns
+    val cardHeight = (height - outer * 2 - gap * (YearRows - 1)) / YearRows
+    return YearLayout(
+        cardWidth = cardWidth,
+        cardHeight = cardHeight,
+        gap = gap,
+        outer = outer,
+        padding = padding,
+        cellWidth = (cardWidth - padding * 2) / DaysPerWeek,
+        cellHeight = (cardHeight - padding * 2 - labelHeight) / WeeksPerMonth
+    )
 }
 
 /**
@@ -1248,32 +1315,39 @@ private fun YearView(
  * 画和点必须用同一套格子算法，否则看上去点中的格子跟实际选中的那一天会错位——所以这里
  * 只有这一份几何计算，[YearView] 的 Canvas 和它的手势都调它。
  */
-private fun yearDateAt(
+internal fun yearDateAt(
     x: Float,
     y: Float,
     width: Float,
     height: Float,
+    gap: Float,
+    outer: Float,
+    padding: Float,
     labelHeight: Float,
     year: Int,
     weekStartsMonday: Boolean
 ): LocalDate? {
     if (width <= 0f || height <= 0f || x < 0f || y < 0f || x >= width || y >= height) return null
 
-    val blockWidth = width / YearColumns
-    val blockHeight = height / YearRows
-    val column = (x / blockWidth).toInt().coerceIn(0, YearColumns - 1)
-    val row = (y / blockHeight).toInt().coerceIn(0, YearRows - 1)
+    val layout = yearLayout(width, height, gap, outer, padding, labelHeight)
+    if (layout.cellWidth <= 0f || layout.cellHeight <= 0f) return null
+
+    val strideX = layout.cardWidth + layout.gap
+    val strideY = layout.cardHeight + layout.gap
+    val column = ((x - outer) / strideX).toInt().coerceIn(0, YearColumns - 1)
+    val row = ((y - outer) / strideY).toInt().coerceIn(0, YearRows - 1)
     val month = row * YearColumns + column + 1
 
-    // 月份名那一行只是标题，点它不算选日期。
-    val withinBlockY = y - row * blockHeight
-    if (withinBlockY < labelHeight) return null
+    val localX = x - (outer + column * strideX)
+    val localY = y - (outer + row * strideY)
+    // 卡片之间的缝、卡片四周的留白、月份名那一行，都不算选日期。
+    if (localX < padding || localX >= layout.cardWidth - padding) return null
+    if (localY < padding + labelHeight || localY >= layout.cardHeight - padding) return null
 
-    val cellWidth = blockWidth / DaysPerWeek
-    val cellHeight = (blockHeight - labelHeight) / WeeksPerMonth
-    if (cellHeight <= 0f) return null
-    val week = ((withinBlockY - labelHeight) / cellHeight).toInt().coerceIn(0, WeeksPerMonth - 1)
-    val day = ((x - column * blockWidth) / cellWidth).toInt().coerceIn(0, DaysPerWeek - 1)
+    val week = ((localY - padding - labelHeight) / layout.cellHeight)
+        .toInt().coerceIn(0, WeeksPerMonth - 1)
+    val day = ((localX - padding) / layout.cellWidth)
+        .toInt().coerceIn(0, DaysPerWeek - 1)
 
     val firstOfMonth = YearMonth.of(year, month).atDay(1)
     val firstCell = firstOfMonth.minusDays(weekStartOffset(firstOfMonth, weekStartsMonday))

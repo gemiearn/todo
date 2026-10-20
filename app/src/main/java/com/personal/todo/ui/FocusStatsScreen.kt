@@ -50,11 +50,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -67,17 +70,20 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.Tag
 import com.personal.todo.model.FocusDay
 import com.personal.todo.model.FocusHourBar
+import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusPeriod
 import com.personal.todo.model.FocusPeriodTotals
 import com.personal.todo.model.FocusPeriodUnit
 import com.personal.todo.model.FocusRankBy
 import com.personal.todo.model.FocusRankEntry
+import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.FocusTrendBar
 import com.personal.todo.model.FocusTrendUnit
 import com.personal.todo.model.FocusTagSnapshot
@@ -90,6 +96,7 @@ import com.personal.todo.model.focusRanking
 import com.personal.todo.model.focusSpans
 import com.personal.todo.model.focusTrendBars
 import com.personal.todo.model.focusYearWeeks
+import com.personal.todo.model.localDateOf
 import com.personal.todo.model.shift
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.DayOfWeek
@@ -260,6 +267,10 @@ fun FocusStatsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item(key = "overview") {
+                FocusOverviewCard(sessions = all, today = today, zone = zone)
+            }
+
             if (all.isEmpty()) {
                 // 一次都没专注过时，五张空图表只是噪音，所以直接说实话。
                 item(key = "empty") {
@@ -367,6 +378,181 @@ fun FocusStatsScreen(
                 }
             }
         }
+    }
+}
+
+// ------------------------------------------------------------------ 概览
+
+/** 顶部概览的四组数字，一次遍历算完，不在 Compose 里反复 filter。 */
+private data class FocusOverview(
+    val todaySeconds: Int,
+    val todayPomodoros: Int,
+    val totalSeconds: Int,
+    val totalPomodoros: Int,
+    val todayCompleted: Int,
+    val totalCompleted: Int
+)
+
+private fun focusOverview(
+    sessions: List<FocusSession>,
+    today: LocalDate,
+    zone: ZoneId
+): FocusOverview {
+    var todaySeconds = 0
+    var todayPomodoros = 0
+    var totalSeconds = 0
+    var totalPomodoros = 0
+    var todayCompleted = 0
+    var totalCompleted = 0
+
+    sessions.forEach { session ->
+        val isToday = localDateOf(session.startedAt, zone) == today
+        totalSeconds += session.actualFocusSeconds
+        if (isToday) todaySeconds += session.actualFocusSeconds
+
+        if (session.status == FocusStatus.COMPLETED) {
+            totalCompleted++
+            if (session.mode == FocusMode.POMODORO) totalPomodoros++
+            if (isToday) {
+                todayCompleted++
+                if (session.mode == FocusMode.POMODORO) todayPomodoros++
+            }
+        }
+    }
+
+    return FocusOverview(
+        todaySeconds = todaySeconds,
+        todayPomodoros = todayPomodoros,
+        totalSeconds = totalSeconds,
+        totalPomodoros = totalPomodoros,
+        todayCompleted = todayCompleted,
+        totalCompleted = totalCompleted
+    )
+}
+
+/**
+ * 页首的「专注概览」：先看今天，再看累计。
+ *
+ * 四块数字按 2×2 排：今日番茄 / 今日专注、累计番茄 / 累计专注；底下再补一句今天完成
+ * 了几段、累计几段。数字全部从 [FocusSession] 现算，不落库，也不会和下面的卡片对不上。
+ */
+@Composable
+private fun FocusOverviewCard(
+    sessions: List<FocusSession>,
+    today: LocalDate,
+    zone: ZoneId
+) {
+    val colors = LocalTodoColors.current
+    val accent = colors.focusAccent
+    val overview = remember(sessions, today, zone) { focusOverview(sessions, today, zone) }
+    val shape = RoundedCornerShape(20.dp)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(
+                elevation = 3.dp,
+                shape = shape,
+                ambientColor = accent.copy(alpha = 0.08f),
+                spotColor = accent.copy(alpha = 0.12f)
+            )
+            .clip(shape)
+            .background(
+                Brush.linearGradient(listOf(colors.card, lerp(colors.card, accent, 0.09f)))
+            )
+            .padding(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(accent.copy(alpha = 0.13f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "🍅", fontSize = 18.sp)
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.stats_overview_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = stringResource(
+                        R.string.stats_overview_today,
+                        dateLabel(today)
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.dateMuted
+                )
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OverviewStat(
+                label = stringResource(R.string.stats_overview_today_pomodoro),
+                value = stringResource(R.string.stats_overview_pomodoro_value, overview.todayPomodoros),
+                modifier = Modifier.weight(1f)
+            )
+            OverviewStat(
+                label = stringResource(R.string.stats_overview_today_focus),
+                value = compactDuration(overview.todaySeconds),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OverviewStat(
+                label = stringResource(R.string.stats_overview_total_pomodoro),
+                value = stringResource(R.string.stats_overview_pomodoro_value, overview.totalPomodoros),
+                modifier = Modifier.weight(1f)
+            )
+            OverviewStat(
+                label = stringResource(R.string.stats_overview_total_focus),
+                value = compactDuration(overview.totalSeconds),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(Modifier.height(11.dp))
+        Text(
+            text = stringResource(
+                R.string.stats_overview_sessions,
+                overview.todayCompleted,
+                overview.totalCompleted
+            ),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.dateMuted
+        )
+    }
+}
+
+@Composable
+private fun OverviewStat(label: String, value: String, modifier: Modifier = Modifier) {
+    val colors = LocalTodoColors.current
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.groupHeader.copy(alpha = 0.42f))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.dateMuted
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = colors.focusAccent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

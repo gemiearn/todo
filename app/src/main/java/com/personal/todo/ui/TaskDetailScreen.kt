@@ -279,6 +279,18 @@ private fun TaskHeader(
         else -> accent
     }
     val listName = lists.firstOrNull { it.id == task.listId }?.name.orEmpty()
+    val planText = task.plannedDate?.let { date ->
+        buildString {
+            append(calendarDateText(date, today))
+            task.plannedTime?.let { append(" ").append(detailTimeText(it)) }
+        }
+    }.orEmpty()
+    val dueText = task.dueDate?.let { date ->
+        buildString {
+            append(calendarDateText(date, today))
+            task.dueTime?.let { append(" ").append(detailTimeText(it)) }
+        }
+    }.orEmpty()
 
     Column(
         modifier = Modifier
@@ -298,34 +310,19 @@ private fun TaskHeader(
             )
             .padding(18.dp)
     ) {
-        Row(verticalAlignment = Alignment.Top) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(accent.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(priorityNumeralRes(task.priority)),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = accent
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                DetailStatusChip(text = statusText, color = statusColor)
-                Spacer(Modifier.height(7.dp))
-                Text(
-                    text = task.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            DetailStatusChip(text = statusText, color = statusColor)
+            Spacer(Modifier.weight(1f))
+            PriorityPill(label = priorityLabel(task.priority), color = accent)
         }
+        Spacer(Modifier.height(9.dp))
+        Text(
+            text = task.title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
 
         task.notes?.takeIf { it.isNotBlank() }?.let { notes ->
             Spacer(Modifier.height(12.dp))
@@ -345,54 +342,43 @@ private fun TaskHeader(
         }
 
         Spacer(Modifier.height(14.dp))
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(colors.groupHeader.copy(alpha = 0.42f))
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            DetailMetaRow(
-                icon = "🎯",
-                text = stringResource(R.string.task_priority_value, priorityLabel(task.priority))
-            )
-            DetailMetaRow(
+        // 两列属性卡：清单 / 优先级、计划 / 截止。时间并进日期那一行，不再一列
+        // 「计划日期」「计划时间」「截止日期」「截止时间」四行把卡片撑长。
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DetailProperty(
                 icon = "📁",
-                text = stringResource(R.string.task_list_value, listName)
+                label = stringResource(R.string.task_property_list),
+                value = listName,
+                modifier = Modifier.weight(1f)
             )
-            task.plannedDate?.let { date ->
-                DetailMetaRow(
-                    icon = "📅",
-                    text = stringResource(
-                        R.string.task_planned_date_value,
-                        calendarDateText(date, today)
-                    )
-                )
-            }
-            task.plannedTime?.let { time ->
-                DetailMetaRow(
-                    icon = "⏰",
-                    text = stringResource(R.string.task_planned_time_value, detailTimeText(time))
-                )
-            }
-            task.dueDate?.let { date ->
-                DetailMetaRow(
-                    icon = "⏳",
-                    text = stringResource(R.string.task_due_date_value, calendarDateText(date, today))
-                )
-            }
-            task.dueTime?.let { time ->
-                DetailMetaRow(
-                    icon = "⌛",
-                    text = stringResource(R.string.task_due_time_value, detailTimeText(time))
-                )
-            }
-            task.completedAt?.let { completedAt ->
-                DetailMetaRow(
-                    icon = "✅",
-                    text = stringResource(R.string.task_completed_at, formatTimestamp(completedAt))
-                )
-            }
+            DetailProperty(
+                icon = "🎯",
+                label = stringResource(R.string.task_property_priority),
+                value = priorityLabel(task.priority),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DetailProperty(
+                icon = "📅",
+                label = stringResource(R.string.task_property_planned),
+                value = planText,
+                modifier = Modifier.weight(1f)
+            )
+            DetailProperty(
+                icon = "⏳",
+                label = stringResource(R.string.task_property_due),
+                value = dueText,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        task.completedAt?.let { completedAt ->
+            Spacer(Modifier.height(10.dp))
+            DetailMetaRow(
+                icon = "✅",
+                text = stringResource(R.string.task_completed_at, formatTimestamp(completedAt))
+            )
         }
 
         Spacer(Modifier.height(16.dp))
@@ -456,6 +442,75 @@ private fun DetailStatusChip(text: String, color: Color) {
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             color = color
+        )
+    }
+}
+
+/** 标题右上角的优先级小签：一个色点 + 文字，不再单独占一个 48dp 的序号方块。 */
+@Composable
+private fun PriorityPill(label: String, color: Color) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(colors.groupHeader.copy(alpha = 0.55f))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+/** 两列属性格里的一格：小标题 + 值；值太长就省略，不把卡片撑高。 */
+@Composable
+private fun DetailProperty(
+    icon: String,
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    val shown = if (value.isBlank()) {
+        stringResource(R.string.task_property_unset)
+    } else {
+        value
+    }
+    Column(
+        modifier = modifier
+            .height(62.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(colors.groupHeader.copy(alpha = 0.38f))
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = icon, fontSize = 11.sp)
+            Spacer(Modifier.width(5.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.dateMuted
+            )
+        }
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = shown,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = if (value.isBlank()) colors.dateMuted else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -618,25 +673,31 @@ private fun FocusSummaryCard(totals: TaskFocusTotals, series: TaskSeriesTotals?)
                 color = colors.dateMuted
             )
         } else {
-            Text(
-                text = stringResource(
-                    R.string.task_focus_summary_total,
-                    durationText(totals.totalSeconds)
-                ),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = accent
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = stringResource(
-                    R.string.task_focus_summary_detail,
-                    totals.sessionCount,
-                    totals.pomodoroCount
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.dateMuted
-            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.task_focus_summary_total_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.dateMuted
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = durationText(totals.totalSeconds),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = accent
+                    )
+                }
+                Text(
+                    text = stringResource(
+                        R.string.task_focus_summary_detail,
+                        totals.sessionCount,
+                        totals.pomodoroCount
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.dateMuted
+                )
+            }
         }
 
         if (series != null && (series.completedCount > 0 || series.focusSeconds > 0)) {

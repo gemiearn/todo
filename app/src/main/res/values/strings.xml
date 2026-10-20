@@ -244,12 +244,11 @@
     <string name="task_detail_title">任务详情</string>
     <string name="task_status_open">未完成</string>
     <string name="task_status_completed">已完成</string>
-    <string name="task_priority_value">优先级：%1$s</string>
-    <string name="task_list_value">所属清单：%1$s</string>
-    <string name="task_planned_date_value">计划日期：%1$s</string>
-    <string name="task_planned_time_value">计划时间：%1$s</string>
-    <string name="task_due_date_value">截止日期：%1$s</string>
-    <string name="task_due_time_value">截止时间：%1$s</string>
+    <string name="task_property_list">清单</string>
+    <string name="task_property_priority">优先级</string>
+    <string name="task_property_planned">计划</string>
+    <string name="task_property_due">截止</string>
+    <string name="task_property_unset">未设置</string>
     <string name="task_completed_at">完成时间：%1$s</string>
     <string name="task_subtasks_title">子任务</string>
     <string name="task_add_subtask_hint">添加子任务</string>
@@ -259,7 +258,7 @@
     <!-- 任务详情页的「专注小结」：这条任务一共专注了多久、几次、其中几个番茄 -->
     <string name="task_focus_summary_title">专注小结</string>
     <string name="task_focus_summary_empty">还没有专注记录</string>
-    <string name="task_focus_summary_total">累计 %1$s</string>
+    <string name="task_focus_summary_total_label">累计专注</string>
     <string name="task_focus_summary_detail">专注 %1$d 次 · 番茄 %2$d 个</string>
     <!-- 重复任务的规则源才显示这一行；实例页看到的是它自己那一天 -->
     <string name="task_focus_series">本系列完成 %1$d 次 · 共专注 %2$s</string>
@@ -371,6 +370,14 @@
     <string name="more_entry_stats">专注统计</string>
     <!-- 统计页（照滴答清单/番茄ToDo那一页） -->
     <string name="focus_stats_open">统计</string>
+    <string name="stats_overview_title">专注概览</string>
+    <string name="stats_overview_today">今天 · %1$s</string>
+    <string name="stats_overview_today_pomodoro">今日番茄</string>
+    <string name="stats_overview_today_focus">今日专注</string>
+    <string name="stats_overview_total_pomodoro">累计番茄</string>
+    <string name="stats_overview_total_focus">累计专注</string>
+    <string name="stats_overview_pomodoro_value">%1$d 个</string>
+    <string name="stats_overview_sessions">今天完成 %1$d 段专注 · 累计 %2$d 段</string>
     <string name="stats_detail_title">专注详情</string>
     <string name="stats_trend_title">专注趋势</string>
     <string name="stats_timeline_title">专注时间线</string>
