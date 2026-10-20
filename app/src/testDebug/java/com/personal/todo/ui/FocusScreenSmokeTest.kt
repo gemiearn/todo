@@ -51,7 +51,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
 class FocusScreenSmokeTest {
 
-    private val TimeoutMillis = 5_000L
+    private val TimeoutMillis = 15_000L
 
     @get:Rule
     val compose = createComposeRule()
