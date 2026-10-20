@@ -27,25 +27,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -97,6 +92,7 @@ import com.personal.todo.R
 import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.CrashLog
 import com.personal.todo.data.ColorStyle
+import com.personal.todo.data.DevSettingsStore
 import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.HabitRepository
@@ -105,6 +101,7 @@ import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
+import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.Habit
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
@@ -124,6 +121,7 @@ import com.personal.todo.viewmodel.TaskCollectionViewModel
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -147,6 +145,7 @@ private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_STATS = "stats"
 private const val ROUTE_RECORDS = "records"
 private const val ROUTE_CRASH = "crash"
+private const val ROUTE_DEV = "dev"
 private const val ROUTE_TAGS = "tags"
 private const val ROUTE_HABITS = "habits"
 private const val ROUTE_SETTINGS = "settings"
@@ -240,11 +239,18 @@ fun TodoApp(
     val kind = route.substringBefore('/')
     val argument = route.substringAfter('/', "").toLongOrNull()
 
-    // A crash that happened on a screen the app can no longer open would be
-    // unreachable through the UI, so it is shown right here instead: the next
-    // launch reports it, and the user can copy it out and dismiss it.
+    // 上一次的崩溃日志**默认不弹**（用户 2026-10-21：「崩溃日志不要直接显示吧」）。
+    //
+    // 它现在藏在「设置 → 开发者声明（连点五下）→ 开发者选项」里那个开关后面：只有开发者
+    // 自己打开过，下一次启动才会把它弹出来自查；普通用户永远看不到这段吓人的文本。日志
+    // 本身照旧由 [CrashLog] 记下来，也照旧能在开发者选项里查看和清除，没有丢东西。
     val context = LocalContext.current
-    var crashText by remember { mutableStateOf(CrashLog.read(context)) }
+    val devSettings = remember(context) { DevSettingsStore(context) }
+    var developerUnlocked by remember { mutableStateOf(devSettings.readDeveloperUnlocked()) }
+    var showCrashOnLaunch by remember { mutableStateOf(devSettings.readShowCrashOnLaunch()) }
+    var crashText by remember {
+        mutableStateOf(if (devSettings.readShowCrashOnLaunch()) CrashLog.read(context) else null)
+    }
     crashText?.let { text ->
         AlertDialog(
             onDismissRequest = { },
@@ -382,6 +388,23 @@ fun TodoApp(
 
         ROUTE_CRASH -> CrashLogScreen(onBack = { nav.pop() })
 
+        // 开发者选项：设置页连点「开发者声明」五下才出现的入口，进去之后能改这一页的开关
+        // （目前只有「启动时弹不弹崩溃日志」），也能把入口重新藏起来。
+        ROUTE_DEV -> DevSettingsScreen(
+            showCrashOnLaunch = showCrashOnLaunch,
+            onShowCrashOnLaunchChange = {
+                showCrashOnLaunch = it
+                devSettings.writeShowCrashOnLaunch(it)
+            },
+            onOpenCrashLog = { nav.push(ROUTE_CRASH) },
+            onHideEntry = {
+                developerUnlocked = false
+                devSettings.writeDeveloperUnlocked(false)
+                nav.pop()
+            },
+            onBack = { nav.pop() }
+        )
+
         ROUTE_RECORDS -> {
             // 记录页用专注页那份「还没做完的任务」清单当选择器（与专注页、习惯弹层同一个
             // 口径：一串重复任务只露最近那条），不再另开一条查询。
@@ -423,6 +446,12 @@ fun TodoApp(
             onOpenFocus = { nav.resetTo(HomeTab.Focus.route) },
             onOpenStats = { nav.push(ROUTE_STATS) },
             onOpenTags = { nav.push(ROUTE_TAGS) },
+            developerUnlocked = developerUnlocked,
+            onDeveloperModeUnlocked = {
+                developerUnlocked = true
+                devSettings.writeDeveloperUnlocked(true)
+            },
+            onOpenDeveloperSettings = { nav.push(ROUTE_DEV) },
             onBack = { nav.pop() }
         )
 
@@ -658,7 +687,6 @@ internal fun MainScreen(
     val completedMessage = stringResource(R.string.message_task_completed)
     val listDeletedMessage = stringResource(R.string.message_list_deleted)
     val undoLabel = stringResource(R.string.action_undo)
-    val filterDescription = stringResource(R.string.filter_action)
     val statsDescription = stringResource(R.string.focus_stats_open)
 
     // Deleting a task always soft deletes it and offers undo. Parents that
@@ -821,6 +849,11 @@ internal fun MainScreen(
                     // 记录可以在那里改关联任务与时长、也能删）。原来把整页统计塞进来，
                     // 拉出来就顶掉半屏、也看不出能跳到哪，用户 2026-10-19 让改掉。
                     DrawerMode.FOCUS -> FocusDrawer(
+                        // 抽屉里那块「这一天」饼图要读专注记录；走专注页那份 StateFlow
+                        // （与统计页、记录页同一份），不另开一条 Room 查询。
+                        sessions = focusViewModel.sessions,
+                        zone = focusViewModel.zone,
+                        today = today,
                         habits = habits,
                         autoCheckInHabitId = autoCheckInHabitId,
                         onSelectAutoCheckIn = onSelectAutoCheckIn,
@@ -843,141 +876,133 @@ internal fun MainScreen(
             containerColor = LocalTodoColors.current.canvas,
             topBar = {
                 if (!showsCalendarHeader) {
-                    TopAppBar(
-                        title = {
-                            if (searchActive && !showsFocusChrome) {
-                                OutlinedTextField(
-                                    value = searchQuery,
-                                    onValueChange = { searchQuery = it },
-                                    placeholder = { Text(stringResource(R.string.search_hint)) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } else {
-                                Text(title)
-                            }
-                        },
-                        navigationIcon = {
-                            if (searchActive && !showsFocusChrome) {
-                                IconButton(
-                                    onClick = {
-                                        searchActive = false
-                                        searchQuery = ""
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = stringResource(R.string.action_close_search)
-                                    )
-                                }
-                            } else if (drawerMode != DrawerMode.NONE) {
-                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Menu,
-                                        contentDescription = stringResource(R.string.action_open_lists)
-                                    )
-                                }
-                            }
-                        },
-                        actions = {
-                            // 专注页的统计入口放在右上角：页签根的顶栏是外壳画的，所以
-                            // 由外壳在这里补一个图标。
-                            if (!searchActive && showsFocusChrome) {
-                                IconButton(
-                                    onClick = { nav.push(ROUTE_STATS) },
-                                    modifier = Modifier
-                                        .testTag(FocusStatsEntryTag)
-                                        .semantics { contentDescription = statsDescription }
-                                ) {
-                                    StatsGlyph(tint = LocalTodoColors.current.dateMuted)
-                                }
-                            }
-                            // While the search field is open it owns the whole bar.
-                            if (!searchActive && !showsFocusChrome) {
-                                // 清单 / 习惯 两格开关：就在「显示范围」前面（用户指定的位置）。
-                                if (showsListSwitch) {
-                                    ListsHabitsSwitch(
-                                        onLists = true,
-                                        // 已经在清单这一侧了，点它不需要做任何事。
-                                        onSelectLists = {},
-                                        onSelectHabits = { nav.push(ROUTE_HABITS) }
-                                    )
-                                }
-                                // 显示范围筛选：只在有任务列表的路由上出现；日历用自己的
-                                // ⋮，更多 / 四象限没有列表可筛。
-                                if (!showsCalendarHeader && collection != TaskCollection.None) {
-                                    IconButton(
-                                        onClick = { filterPanelOpen = true },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = filterDescription
-                                        }
-                                    ) {
-                                        FilterGlyph(tint = LocalTodoColors.current.dateMuted)
-                                    }
-                                }
-                                IconButton(onClick = { searchActive = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Search,
-                                        contentDescription = stringResource(R.string.action_search)
-                                    )
-                                }
-                                Box {
-                                    IconButton(onClick = { sortMenuOpen = true }) {
+                    // 搜索态下整条顶栏让给搜索框 + 「取消」（用户 2026-10-21 要的
+                    // 「搜索的样式、框」）：不再把输入框塞进 TopAppBar 的标题槽里，那会
+                    // 带着描边和 Material 的大内边距，看着像一张没对齐的表单。
+                    if (searchActive && !showsFocusChrome) {
+                        SearchTopBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            onCancel = {
+                                searchActive = false
+                                searchQuery = ""
+                            },
+                            hint = stringResource(R.string.search_hint)
+                        )
+                    } else {
+                        TopAppBar(
+                            title = {
+                                Text(text = title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            navigationIcon = {
+                                if (drawerMode != DrawerMode.NONE) {
+                                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                         Icon(
-                                            imageVector = Icons.Default.MoreVert,
-                                            contentDescription = stringResource(R.string.action_sort)
+                                            imageVector = Icons.Default.Menu,
+                                            contentDescription = stringResource(R.string.action_open_lists)
                                         )
                                     }
-                                    TodoDropdownMenu(
-                                        expanded = sortMenuOpen,
-                                        onDismissRequest = { sortMenuOpen = false },
-                                        items = TaskSort.entries.map { mode ->
-                                            TodoMenuItem(
-                                                label = stringResource(sortLabelRes(mode)),
-                                                icon = when (mode) {
-                                                    TaskSort.DEFAULT -> "🗂️"
-                                                    TaskSort.PRIORITY -> "🎯"
-                                                    TaskSort.CREATED -> "🕒"
-                                                },
-                                                selected = sort == mode,
-                                                onClick = { sort = mode }
+                                }
+                            },
+                            actions = {
+                                // 专注页的统计入口放在右上角：页签根的顶栏是外壳画的，所以
+                                // 由外壳在这里补一个图标。
+                                if (showsFocusChrome) {
+                                    IconButton(
+                                        onClick = { nav.push(ROUTE_STATS) },
+                                        modifier = Modifier
+                                            .testTag(FocusStatsEntryTag)
+                                            .semantics { contentDescription = statsDescription }
+                                    ) {
+                                        StatsGlyph(tint = LocalTodoColors.current.dateMuted)
+                                    }
+                                }
+                                if (!showsFocusChrome) {
+                                    // 清单 / 习惯 两格开关：就在「筛选」前面（用户指定的位置）。
+                                    if (showsListSwitch) {
+                                        ListsHabitsSwitch(
+                                            onLists = true,
+                                            // 已经在清单这一侧了，点它不需要做任何事。
+                                            onSelectLists = {},
+                                            onSelectHabits = { nav.push(ROUTE_HABITS) }
+                                        )
+                                        Spacer(Modifier.width(2.dp))
+                                    }
+                                    // 显示范围筛选：一枚能看清「筛了什么」的胶囊。日历自己有
+                                    // 一条筛选条，更多 / 四象限没有列表可筛，都不出现。
+                                    if (collection != TaskCollection.None) {
+                                        FilterPill(
+                                            activeCount = activeFilter.selectedCount(),
+                                            onClick = { filterPanelOpen = true }
+                                        )
+                                        Spacer(Modifier.width(2.dp))
+                                    }
+                                    IconButton(onClick = { searchActive = true }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Search,
+                                            contentDescription = stringResource(R.string.action_search)
+                                        )
+                                    }
+                                    // 排序与「这个清单」的几个动作收进同一个 ⋮：原来清单页上
+                                    // 一步排开八个图标，标题被挤得只剩几个字（2026-10-21 收拢）。
+                                    val menuItems = mutableListOf<TodoMenuItem>()
+                                    TaskSort.entries.forEach { mode ->
+                                        menuItems += TodoMenuItem(
+                                            label = stringResource(sortLabelRes(mode)),
+                                            icon = when (mode) {
+                                                TaskSort.DEFAULT -> "🗂️"
+                                                TaskSort.PRIORITY -> "🎯"
+                                                TaskSort.CREATED -> "🕒"
+                                            },
+                                            selected = sort == mode,
+                                            onClick = { sort = mode }
+                                        )
+                                    }
+                                    if (currentList != null && !currentList.isInbox) {
+                                        val list = currentList
+                                        if (currentUserListIndex > 0) {
+                                            menuItems += TodoMenuItem(
+                                                label = stringResource(R.string.action_move_up),
+                                                icon = "⬆️",
+                                                onClick = { shellViewModel.moveList(list.id, -1) }
                                             )
                                         }
-                                    )
-                                }
-                            }
-                            if (!searchActive && !showsFocusChrome && currentList != null && !currentList.isInbox) {
-                                if (currentUserListIndex > 0) {
-                                    IconButton(onClick = { shellViewModel.moveList(currentList.id, -1) }) {
-                                        Icon(
-                                            imageVector = Icons.Default.KeyboardArrowUp,
-                                            contentDescription = stringResource(R.string.action_move_up)
+                                        if (currentUserListIndex in 0 until userLists.lastIndex) {
+                                            menuItems += TodoMenuItem(
+                                                label = stringResource(R.string.action_move_down),
+                                                icon = "⬇️",
+                                                onClick = { shellViewModel.moveList(list.id, 1) }
+                                            )
+                                        }
+                                        menuItems += TodoMenuItem(
+                                            label = stringResource(R.string.action_rename),
+                                            icon = "✏️",
+                                            onClick = { renameTarget = list }
+                                        )
+                                        menuItems += TodoMenuItem(
+                                            label = stringResource(R.string.action_delete_list),
+                                            icon = "🗑️",
+                                            danger = true,
+                                            onClick = { deleteTarget = list }
+                                        )
+                                    }
+                                    Box {
+                                        IconButton(onClick = { sortMenuOpen = true }) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = stringResource(R.string.action_sort)
+                                            )
+                                        }
+                                        TodoDropdownMenu(
+                                            expanded = sortMenuOpen,
+                                            onDismissRequest = { sortMenuOpen = false },
+                                            items = menuItems
                                         )
                                     }
                                 }
-                                if (currentUserListIndex in 0 until userLists.lastIndex) {
-                                    IconButton(onClick = { shellViewModel.moveList(currentList.id, 1) }) {
-                                        Icon(
-                                            imageVector = Icons.Default.KeyboardArrowDown,
-                                            contentDescription = stringResource(R.string.action_move_down)
-                                        )
-                                    }
-                                }
-                                IconButton(onClick = { renameTarget = currentList }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = stringResource(R.string.action_rename)
-                                    )
-                                }
-                                IconButton(onClick = { deleteTarget = currentList }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = stringResource(R.string.action_delete_list)
-                                    )
-                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             },
             bottomBar = {
@@ -990,12 +1015,37 @@ internal fun MainScreen(
             floatingActionButton = {
                 val listId = targetListId
                 if (listId != null) {
-                    FloatingActionButton(onClick = { openNewTaskSheet(listId) }) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = stringResource(R.string.action_new_task)
+                    // 「+ 新建任务」：一枚带字的胶囊，而不是孤零零一个圆加号（用户
+                    // 2026-10-21 要的「加号增加任务的 UI 和布局」）。字让第一次用的人
+                    // 也知道它是什么；投影压得比默认低一点，压在列表上不抢戏。
+                    val newTaskLabel = stringResource(R.string.action_new_task)
+                    ExtendedFloatingActionButton(
+                        onClick = { openNewTaskSheet(listId) },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = newTaskLabel,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        // 字在左、图标在左，语义上仍叫「新建任务」：读屏与冒烟测试
+                        // （按 contentDescription 找它）都不用改。
+                        modifier = Modifier.semantics { contentDescription = newTaskLabel },
+                        shape = RoundedCornerShape(20.dp),
+                        containerColor = LocalTodoColors.current.accent,
+                        contentColor = Color.White,
+                        elevation = FloatingActionButtonDefaults.elevation(
+                            defaultElevation = 5.dp,
+                            pressedElevation = 1.dp
                         )
-                    }
+                    )
                 }
             },
             snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -1017,6 +1067,8 @@ internal fun MainScreen(
                         displaySettings = calendarSettings,
                         filter = calendarFilter,
                         tagIdsByTask = tagIdsByTask,
+                        lists = lists,
+                        tags = allTags,
                         onOpenDisplayOptions = { calendarOptionsOpen = true },
                         onSelectDate = onSelectDate,
                         onOpenLists = { scope.launch { drawerState.open() } },
@@ -1137,7 +1189,9 @@ internal fun MainScreen(
                     // 收件箱与用户清单在列表最上面给一条小结，其它视图这里是 null。
                     summary = listSummary,
                     onQuickFocus = quickFocus,
-                    subtaskSections = subtaskSections
+                    subtaskSections = subtaskSections,
+                    // 首页（今天）最上面那条「还剩几件」要用它。
+                    today = today
                 )
             }
         }
@@ -1653,12 +1707,15 @@ private fun ListsDrawer(
 /**
  * 专注页左滑出来的那块面板：一个**导航面板**，只放能跳过去的入口（用户 2026-10-19）。
  *
- * 原来这里塞的是整页专注统计（内容本身），拉出来就顶掉半屏、也看不出「能跳到哪」。现在
- * 与清单抽屉同一个形态：一行一个目的地。专注页目前只有一个去处——「专注记录」（逐条
- * 记录可以在那一页改关联任务与时长、也能删）；统计图表仍走顶栏右上角那个图标。
+ * 2026-10-21 又加了一块：面板顶部先给一张「这一天」的甜甜圈——按任务切开的专注占比，
+ * 上面那对箭头能翻到前一天 / 后一天（用户要的「饼图之类的东西，可以查看某天的专注」）。
+ * 它只画图，不改任何记录；要改记录仍然走下面那一行「专注记录」。
  */
 @Composable
 private fun FocusDrawer(
+    sessions: Flow<List<FocusSession>>,
+    zone: ZoneId,
+    today: LocalDate,
     habits: List<Habit>,
     autoCheckInHabitId: Long?,
     onSelectAutoCheckIn: (Long?) -> Unit,
@@ -1667,6 +1724,8 @@ private fun FocusDrawer(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
+    // 与专注页 / 统计页 / 记录页同一份 StateFlow，不另开一条查询。
+    val allSessions by sessions.collectAsStateWithLifecycle(initialValue = emptyList())
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1701,6 +1760,14 @@ private fun FocusDrawer(
         }
 
         SectionHeader(stringResource(R.string.focus_drawer_section_records))
+        // 「这一天」的专注占比（饼图）：只在抽屉里看，翻日期不动任何记录。
+        FocusDayDonutCard(
+            sessions = allSessions,
+            today = today,
+            zone = zone,
+            onOpenRecords = onOpenRecords
+        )
+        Spacer(Modifier.height(4.dp))
         DrawerRow(
             label = stringResource(R.string.focus_history_title),
             selected = false,

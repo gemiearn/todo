@@ -69,7 +69,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.CalendarSettings
+import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
+import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Priority
 import com.personal.todo.model.TaskFilter
 import com.personal.todo.model.filterByRange
@@ -201,6 +203,10 @@ fun CalendarScreen(
     displaySettings: CalendarSettings,
     filter: TaskFilter,
     tagIdsByTask: Map<Long, Set<Long>>,
+    /** 筛选条上要显示清单名字，所以这里也要一份清单表。 */
+    lists: List<TaskList>,
+    /** 筛选条上要显示标签名字。 */
+    tags: List<Tag>,
     onOpenDisplayOptions: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
     onOpenLists: () -> Unit,
@@ -284,6 +290,16 @@ fun CalendarScreen(
             onSelectView = onSelectView,
             onOpenDisplayOptions = onOpenDisplayOptions,
             onOpenLists = onOpenLists
+        )
+
+        // 「看哪些任务」：一条常驻的筛选条（用户 2026-10-21 要求重做日历的显示范围筛
+        // 选）。原来筛子只藏在右上角的 ⋮ 里，筛完页面上一点痕迹都没有——看不出日历被
+        // 收窄过，也找不到把它还原的地方。现在它就在日历下面，勾了什么一眼可见。
+        FilterSummaryBar(
+            filter = filter,
+            lists = lists,
+            tags = tags,
+            onOpen = onOpenDisplayOptions
         )
 
         when (view) {

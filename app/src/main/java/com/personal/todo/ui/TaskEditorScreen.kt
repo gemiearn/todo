@@ -62,6 +62,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.Tag
@@ -178,6 +179,11 @@ fun TaskEditorScreen(
  * 新建任务的底部弹层 (the 创建任务UI-2 shape): the same body as the page, plus the
  * 今天 / 明天 / 下周 / 下个月 / 选日期 shortcut row that makes adding a task a
  * two-tap job.
+ *
+ * 2026-10-21 重做外壳（用户要的「加号增加任务的 UI 和布局」）：顶部改成一颗小把手 +
+ * 图标 + 「新建任务」+ 一行说明 + 右上角关闭，下面才是标题卡 / 快捷日期 / 图标工具条；
+ * 保存按钮做成整宽 48dp 的强调色胶囊。内容组件 [TaskEditorBody] 一个字段都没动——
+ * 改的只是「这张弹层长什么样」。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -189,6 +195,8 @@ fun NewTaskSheet(
     val saved by viewModel.saved.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val colors = LocalTodoColors.current
+    val closeLabel = stringResource(R.string.action_close)
 
     LaunchedEffect(saved) {
         if (saved) {
@@ -200,23 +208,82 @@ fun NewTaskSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = LocalTodoColors.current.card
+        containerColor = colors.card,
+        shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
+        // 自己画一颗更细的把手：默认那颗跟着拖拽槽一起往下压，标题就离顶太远。
+        dragHandle = null
     ) {
         Column(
             modifier = Modifier
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
+                .padding(bottom = 20.dp)
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(38.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(colors.dateMuted.copy(alpha = 0.30f))
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(colors.accent.copy(alpha = 0.13f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "✍️", fontSize = 16.sp)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.action_new_task),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(R.string.new_task_sheet_subtitle),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.dateMuted,
+                        maxLines = 1
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = closeLabel,
+                        tint = colors.dateMuted
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+
             TaskEditorBody(viewModel = viewModel, showQuickDates = true)
 
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = viewModel::save,
                 enabled = !saving,
-                modifier = Modifier.fillMaxWidth()
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
             ) {
-                Text(stringResource(R.string.action_save))
+                Text(
+                    text = stringResource(R.string.action_save),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }

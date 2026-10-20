@@ -32,8 +32,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.personal.todo.R
 import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.ColorStyle
+import com.personal.todo.data.DevSettingsStore
 import com.personal.todo.data.LauncherIcon
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.ui.theme.LocalTodoColors
@@ -80,12 +84,19 @@ fun SettingsScreen(
     onOpenFocus: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenTags: () -> Unit,
+    /** 开发者选项那一组入口是否已经解锁（连点「开发者声明」五下之后为 true）。 */
+    developerUnlocked: Boolean = false,
+    onDeveloperModeUnlocked: () -> Unit = {},
+    onOpenDeveloperSettings: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val colors = LocalTodoColors.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val exportMessage = stringResource(R.string.settings_export_soon)
+    // 距解锁还差几下；点够 [DevSettingsStore.TapsToUnlock] 下就解锁并清零。
+    var devTaps by remember { mutableIntStateOf(0) }
+    val devUnlockedMessage = stringResource(R.string.dev_unlocked_message)
 
     Scaffold(
         topBar = {
@@ -194,6 +205,18 @@ fun SettingsScreen(
                 )
             }
 
+            // 开发者选项：解锁之后才出现在这里（入口本身在开发者选项页里还能再藏起来）。
+            if (developerUnlocked) {
+                SettingsGroupLabel(stringResource(R.string.dev_section_title))
+                SettingsCard {
+                    SettingsEntry(
+                        icon = "🛠️",
+                        label = stringResource(R.string.dev_entry_title),
+                        onClick = onOpenDeveloperSettings
+                    )
+                }
+            }
+
             // 可滚动列里不能再让子项抢剩余高度（weight 在无界高度下没有意义），
             // 所以这里用一段固定间距把「关于」推到底部。
             Spacer(Modifier.height(24.dp))
@@ -201,7 +224,36 @@ fun SettingsScreen(
                 text = stringResource(R.string.settings_about_local),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.dateMuted,
-                modifier = Modifier.padding(20.dp)
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+
+            // 「开发者声明」：一个看上去只是说明文字的行，连点五下才解锁开发者选项。
+            // 用户 2026-10-21 要的入口就藏在这里——正常用的人不会去连点一段声明文字，
+            // 而调试的人知道该点哪儿；解锁之后还能从开发者选项页里再把它藏回去。
+            Text(
+                text = stringResource(R.string.settings_developer_statement),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = colors.dateMuted,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (!developerUnlocked) {
+                            devTaps++
+                            if (devTaps >= DevSettingsStore.TapsToUnlock) {
+                                devTaps = 0
+                                onDeveloperModeUnlocked()
+                                scope.launch { snackbarHostState.showSnackbar(devUnlockedMessage) }
+                            }
+                        }
+                    }
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp)
+            )
+            Text(
+                text = stringResource(R.string.settings_developer_statement_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.dateMuted.copy(alpha = 0.75f),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 2.dp, bottom = 24.dp)
             )
         }
     }

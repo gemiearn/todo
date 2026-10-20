@@ -41,6 +41,7 @@ import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskCollection
+import java.time.LocalDate
 import java.time.ZoneId
 
 /**
@@ -91,7 +92,12 @@ fun TaskCollectionContent(
      * 子任务内联展开：每张有子任务的卡把「N 个子任务」画成可点开的行。给 null（已完成 /
      * 回收站这类只读视图）就维持原来的那行小字。
      */
-    subtaskSections: Map<Long, SubtaskSection> = emptyMap()
+    subtaskSections: Map<Long, SubtaskSection> = emptyMap(),
+    /**
+     * 今天是哪一天。只有首页（[TaskCollection.Today]）用它画顶上那条小结；其它视图给
+     * null，就什么都不画。
+     */
+    today: LocalDate? = null
 ) {
     val foldsCompleted = when (collection) {
         TaskCollection.Inbox,
@@ -133,6 +139,18 @@ fun TaskCollectionContent(
         // 清单小结排在任务行之前：先说这个清单整体什么情况，再看具体任务。
         if (summary != null) {
             item(key = "list-summary") { ListSummaryCard(summary) }
+        }
+
+        // 首页（今天）顶上那条：今天几号、还剩几件、做完几件。它排在任务卡之前，滚动时
+        // 跟着列表一起走，不占固定高度。
+        if (collection == TaskCollection.Today && today != null) {
+            item(key = "today-summary") {
+                TodaySummaryCard(
+                    date = today,
+                    openCount = tasks.size,
+                    doneCount = completedTasks.size
+                )
+            }
         }
 
         items(tasks, key = { it.id }) { task ->

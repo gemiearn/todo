@@ -355,9 +355,11 @@ fun TagChipRow(tags: List<Tag>, modifier: Modifier = Modifier, max: Int = 3) {
 }
 
 /**
- * 筛选面板里一个可勾选的胶囊：选中的填 [accent] 的浅色底并描边，没选中的是中性灰。
- * 它是筛选维度的最小单位，清单 / 优先级 / 标签三种维度共用。一行放不下时由调用方
- * 用横向滚动装下，不需要测量换行。
+ * 筛选面板里一个可勾选的胶囊：选中的填 [accent] 的浅色底、描一圈同色边并带一个勾，
+ * 没选中的是中性灰。它是筛选维度的最小单位，清单 / 优先级 / 标签三种维度共用。
+ *
+ * 2026-10-21 从 8dp 方角改成整圆药丸、并补上「√」：只靠底色深浅表达「选中」在一屏
+ * 十几个胶囊里太弱，尤其是马卡龙那套浅色——勾让它一眼可读。
  */
 @Composable
 fun ToggleChip(
@@ -368,19 +370,31 @@ fun ToggleChip(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
-    Box(
+    val shape = RoundedCornerShape(999.dp)
+    Row(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) accent.copy(alpha = 0.16f) else colors.groupHeader)
+            .clip(shape)
+            .background(if (selected) accent.copy(alpha = 0.15f) else colors.groupHeader)
             .then(
-                if (selected) Modifier.border(1.dp, accent, RoundedCornerShape(8.dp)) else Modifier
+                if (selected) Modifier.border(1.dp, accent.copy(alpha = 0.55f), shape) else Modifier
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(start = if (selected) 8.dp else 12.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(Modifier.width(4.dp))
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else null,
             color = if (selected) accent else MaterialTheme.colorScheme.onSurface,
             maxLines = 1
         )
