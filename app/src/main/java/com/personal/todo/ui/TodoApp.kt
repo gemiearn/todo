@@ -394,6 +394,7 @@ fun TodoApp(
                 zone = focusRepository.zone,
                 today = repository.today(),
                 onUpdate = focusViewModel::updateSession,
+                onAdd = focusViewModel::addManualSession,
                 onDelete = focusViewModel::deleteSession,
                 onBack = { nav.pop() }
             )

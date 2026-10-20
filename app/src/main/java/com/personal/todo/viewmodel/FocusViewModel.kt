@@ -241,6 +241,35 @@ class FocusViewModel(
         }
     }
 
+    /**
+     * 补记一条专注（用户事后手动记，不开计时器）。
+     *
+     * [asPomodoro] 决定它进不进「番茄」计数；补记默认按普通专注算，勾上才记成番茄。
+     */
+    fun addManualSession(
+        startedAt: Long,
+        seconds: Int,
+        taskId: Long?,
+        title: String?,
+        listName: String?,
+        tagNames: List<String>,
+        tagIds: List<Long>,
+        asPomodoro: Boolean
+    ) {
+        viewModelScope.launch {
+            focusRepository.addManualSession(
+                startedAt = startedAt,
+                actualFocusSeconds = seconds,
+                taskId = taskId,
+                taskTitleSnapshot = title,
+                listNameSnapshot = listName,
+                tagNamesSnapshot = FocusTagSnapshot.encode(tagNames),
+                tagIdsSnapshot = FocusTagSnapshot.encodeIds(tagIds),
+                mode = if (asPomodoro) FocusMode.POMODORO else FocusMode.COUNTDOWN
+            )
+        }
+    }
+
     /** 删掉一条历史记录（用户主动删这一条）。 */
     fun deleteSession(sessionId: Long) {
         viewModelScope.launch { focusRepository.deleteSession(sessionId) }

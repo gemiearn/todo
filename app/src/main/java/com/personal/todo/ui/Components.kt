@@ -466,13 +466,20 @@ fun TaskCard(
         Spacer(Modifier.width(2.dp))
 
         Column(Modifier.weight(1f)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = titleColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = titleColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (task.repeatRule != null || task.recurrenceSourceId != null) {
+                    Spacer(Modifier.width(4.dp))
+                    RepeatMark()
+                }
+            }
             if (subtaskCount > 0) {
                 Text(
                     text = stringResource(R.string.task_subtask_count, subtaskCount),
@@ -534,6 +541,22 @@ fun TaskCard(
             }
         }
     }
+}
+
+/**
+ * 重复任务的小标记：标题末尾一个循环符号，不占一整行。
+ *
+ * 规则源（`repeatRule != null`）与它生成的那一次（`recurrenceSourceId != null`）都算
+ * 重复任务，用户在一长串任务里一眼能认出来。
+ */
+@Composable
+internal fun RepeatMark(modifier: Modifier = Modifier) {
+    val label = stringResource(R.string.task_repeat_mark)
+    Text(
+        text = "🔁",
+        fontSize = 12.sp,
+        modifier = modifier.semantics { contentDescription = label }
+    )
 }
 
 /**

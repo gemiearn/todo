@@ -17,6 +17,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.room.Room
 import com.personal.todo.data.FocusRepository
@@ -26,8 +27,10 @@ import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusTagSnapshot
 import com.personal.todo.ui.theme.TodoPomodoroTheme
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Rule
@@ -269,6 +272,11 @@ class TodoAppSmokeTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag(FocusStatsTag).assertExists()
+        // 等概览卡真正组合出来再退回：sessions 是冷流，统计页还没画完就关库会留下
+        // 一条「connection pool closed」的未捕获异常，冒到下一个测试去。
+        compose.waitUntilNodeCount(hasText("专注概览"), 1, TimeoutMillis)
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.waitForIdle()
     }
 
     /** 设置页是推入页：从更多进去，主题三选都在。 */
@@ -392,12 +400,48 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("专注记录").performSemanticsAction(SemanticsActions.OnClick)
         repeat(20) { compose.waitForIdle() }
 
-        // 记录页：那条记录整行都在，写的是「开始–结束 · 结果」，没有计时模式。
+        // 记录页：那条记录整行都在；开始 / 结束时刻分列在左边，没有计时模式。
         compose.waitUntilNodeCount(hasText("写季度报告"), 1, TimeoutMillis)
         compose.onNodeWithTag(FocusRecordsTag).assertExists()
         compose.onNodeWithText("已完成", substring = true).assertExists()
-        compose.onNodeWithText("–", substring = true).assertExists()
         compose.onNodeWithText("番茄钟", substring = true).assertDoesNotExist()
+    }
+
+    /** 补记：没开计时器也能在记录页手动加一条，日期默认今天、时长写 30 分钟。 */
+    @Test
+    fun aManualRecordCanBeAddedFromTheRecordsPage() {
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("打开清单列表").performClick()
+        repeat(20) { compose.waitForIdle() }
+        compose.onNodeWithText("专注记录").performSemanticsAction(SemanticsActions.OnClick)
+        repeat(20) { compose.waitForIdle() }
+        compose.waitUntilNodeCount(hasText("还没有专注记录"), 1, TimeoutMillis)
+
+        compose.onNodeWithTag(RecordAddTag).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(RecordAddMinutesFieldTag).performTextReplacement("30")
+        // ModalBottomSheet 是独立窗口，坐标点击落不到按钮上（与记录页 ⋮ 同一个坑）。
+        compose.onNodeWithText("保存").performSemanticsAction(SemanticsActions.OnClick)
+
+        // 保存是 view model 里的协程，界面先收起弹层、记录稍后才落库；等库里有这一条。
+        val deadline = System.currentTimeMillis() + TimeoutMillis
+        while (runBlocking { focus.observeSessions().first().isEmpty() }) {
+            if (System.currentTimeMillis() >= deadline) {
+                throw AssertionError("补记没有写进库里")
+            }
+            compose.waitForIdle()
+        }
+        assertEquals(
+            "补记的时长要按输入框里的 30 分钟落库",
+            1_800,
+            runBlocking { focus.observeSessions().first().single().actualFocusSeconds }
+        )
+        compose.waitUntilNodeCount(hasText("未关联任务"), 1, TimeoutMillis)
+        // 等补记协程和底部弹层的收起动画都跑完再结束，否则 @After 关库时它还在订阅。
+        compose.mainClock.advanceTimeBy(500)
+        repeat(10) { compose.waitForIdle() }
     }
 
     /** 记录可以删：⋮ → 删除 → 确认之后它就离开历史，页面回到空态。 */

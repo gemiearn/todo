@@ -472,6 +472,37 @@ class FocusRepositoryTest {
         assertEquals(1, onlySession().actualFocusSeconds)
     }
 
+    /** 补记：不开计时器也能写一条完整记录，时间段与时长自洽，且不留下 active_timer。 */
+    @Test
+    fun aManualSessionIsRecordedWithoutStartingATimer() = runBlocking {
+        val start = wallClock
+        val seconds = 40 * 60
+        val id = focus.addManualSession(
+            startedAt = start,
+            actualFocusSeconds = seconds,
+            taskId = null,
+            taskTitleSnapshot = "补记的专注",
+            listNameSnapshot = null,
+            tagNamesSnapshot = FocusTagSnapshot.encode(listOf("工作")),
+            tagIdsSnapshot = FocusTagSnapshot.encodeIds(listOf(7L)),
+            mode = FocusMode.POMODORO
+        )
+
+        assertNull("补记不该起计时器", activeTimer())
+        val session = requireNotNull(db.focusDao().getSessionById(id))
+        assertEquals(start, session.startedAt)
+        assertEquals(start + seconds * 1_000L, session.endedAt)
+        assertEquals(seconds, session.actualFocusSeconds)
+        assertEquals(seconds, session.plannedSeconds)
+        assertEquals(FocusMode.POMODORO, session.mode)
+        assertEquals(FocusStatus.COMPLETED, session.status)
+        assertEquals(
+            "40 分钟这一段要能画进时间线",
+            "$start-${start + seconds * 1_000L}",
+            session.focusSegments
+        )
+    }
+
     @Test
     fun aDeletedSessionLeavesTheHistory() = runBlocking {
         focus.startTimer(FocusMode.POMODORO, 1_500)

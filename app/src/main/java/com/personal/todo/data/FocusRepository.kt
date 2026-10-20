@@ -289,6 +289,44 @@ class FocusRepository(
         ) > 0
     }
 
+    /**
+     * 补记一条专注：用户没开计时器，事后把一段时间手动记进来。
+     *
+     * 与真实计时写出来的记录走同一张表、同一套统计口径：时长按秒存，时间段就是
+     * [startedAt] 到 `startedAt + 时长`，[focusSegments] 只写这一段，时间线照样能画。
+     * 状态固定为完成——补记没有「中断」这个概念；是否算番茄由界面的 [mode] 决定。
+     */
+    suspend fun addManualSession(
+        startedAt: Long,
+        actualFocusSeconds: Int,
+        taskId: Long?,
+        taskTitleSnapshot: String?,
+        listNameSnapshot: String?,
+        tagNamesSnapshot: String?,
+        tagIdsSnapshot: String?,
+        mode: FocusMode
+    ): Long = db.withTransaction {
+        require(startedAt > 0L) { "补记的开始时刻不合法" }
+        val seconds = actualFocusSeconds.coerceIn(MinRecordedSeconds, MaxRecordedSeconds)
+        val endedAt = startedAt + seconds * 1_000L
+        focusDao.insertSession(
+            FocusSession(
+                taskId = taskId,
+                taskTitleSnapshot = taskTitleSnapshot,
+                listNameSnapshot = listNameSnapshot,
+                tagNamesSnapshot = tagNamesSnapshot,
+                tagIdsSnapshot = tagIdsSnapshot,
+                mode = mode,
+                startedAt = startedAt,
+                endedAt = endedAt,
+                plannedSeconds = seconds,
+                actualFocusSeconds = seconds,
+                focusSegments = FocusSegments.append(null, startedAt, endedAt),
+                status = FocusStatus.COMPLETED
+            )
+        )
+    }
+
     /** 删掉一条历史记录：这是用户**主动**删这一条，与「删任务不删专注历史」那条硬规则无关。 */
     suspend fun deleteSession(sessionId: Long): Boolean = db.withTransaction {
         focusDao.deleteSession(sessionId) > 0
@@ -350,7 +388,10 @@ class FocusRepository(
         /** Nobody focuses for less than a minute; a shorter target is a typo. */
         const val MinTimedSeconds = 60
 
-        /** 手改历史记录时允许的最小时长：0 秒的专注没有意义。 */
+        /** 手改 / 补记历史记录时允许的最小时长：0 秒的专注没有意义。 */
         const val MinRecordedSeconds = 1
+
+        /** 补记最多一天，和记录编辑的上限一致。 */
+        const val MaxRecordedSeconds = 24 * 60 * 60
     }
 }

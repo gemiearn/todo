@@ -323,6 +323,10 @@ private fun TaskHeader(
             maxLines = 3,
             overflow = TextOverflow.Ellipsis
         )
+        if (task.repeatRule != null || task.recurrenceSourceId != null) {
+            Spacer(Modifier.height(7.dp))
+            RepeatPill()
+        }
 
         task.notes?.takeIf { it.isNotBlank() }?.let { notes ->
             Spacer(Modifier.height(12.dp))
@@ -469,6 +473,27 @@ private fun PriorityPill(label: String, color: Color) {
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+/** 「重复任务」小签：符号 + 文字，详情页比列表多这一句说明。 */
+@Composable
+private fun RepeatPill() {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(colors.groupHeader.copy(alpha = 0.55f))
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RepeatMark()
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = stringResource(R.string.task_repeat_mark),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.dateMuted
         )
     }
 }

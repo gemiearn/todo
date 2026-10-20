@@ -244,6 +244,7 @@
     <string name="task_detail_title">任务详情</string>
     <string name="task_status_open">未完成</string>
     <string name="task_status_completed">已完成</string>
+    <string name="task_repeat_mark">重复任务</string>
     <string name="task_property_list">清单</string>
     <string name="task_property_priority">优先级</string>
     <string name="task_property_planned">计划</string>
@@ -484,14 +485,26 @@
     <string name="focus_drawer_auto_none">不自动打卡</string>
     <string name="focus_drawer_no_habits">还没有习惯，先去习惯页建一个</string>
     <string name="focus_drawer_open_habits">去习惯页</string>
-    <!-- 记录行只留「时刻 · 结果」：用户说不需要区分是正计时 / 倒计时 / 番茄钟 -->
-    <string name="focus_session_subtitle">%1$s · %2$s</string>
     <string name="focus_duration_seconds">%1$d 秒</string>
     <string name="focus_duration_minutes">%1$d 分钟</string>
     <string name="focus_duration_minutes_seconds">%1$d 分 %2$d 秒</string>
 
     <!-- 专注记录页：逐条记录可以改关联任务与时长、也可以删掉 -->
     <string name="records_empty">还没有专注记录</string>
+    <string name="record_add">补记专注</string>
+    <string name="record_add_title">补记专注</string>
+    <string name="record_add_subtitle">没开计时器？把这段时间补记进来</string>
+    <string name="record_add_date">日期</string>
+    <string name="record_add_time">开始时间</string>
+    <string name="record_add_count_as">计入</string>
+    <string name="record_add_normal">普通专注</string>
+    <string name="record_add_pomodoro">番茄</string>
+    <string name="record_add_future">不能补记未来的时间</string>
+    <string name="record_add_confirm">保存</string>
+    <string name="record_tag_filter_all">全部</string>
+    <string name="record_tag_filter_empty">这个标签下还没有记录</string>
+    <string name="record_tag_filter_clear">查看全部</string>
+    <string name="record_day_summary">%1$d 段 · %2$s</string>
     <string name="record_more">更多操作</string>
     <string name="record_edit_title">修改记录</string>
     <string name="record_task_label">关联任务</string>
