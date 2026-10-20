@@ -438,6 +438,19 @@ class FocusScreenSmokeTest {
         assertEquals(FocusSound.RAIN, store.read().sound)
     }
 
+    /** 标题旁边那颗「关闭」是安静，不是第五个声音：点了要真的关掉。 */
+    @Test
+    fun theAmbienceCanBeTurnedOffFromTheHeader() {
+        val store = FocusSettingsStore(RuntimeEnvironment.getApplication())
+        store.write(store.read().copy(sound = FocusSound.RAIN))
+        launchFocus(FocusViewModel(focus, tasks, store))
+
+        compose.onNodeWithText("关闭").performClick()
+        compose.waitForIdle()
+
+        assertEquals(FocusSound.NONE, store.read().sound)
+    }
+
     @Test
     fun theRunningTimerComposesAndCanBeStoppedEarly() {
         launchFocus()

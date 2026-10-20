@@ -1,6 +1,8 @@
 # Build output
 build/
 .gradle/
+# 本地出包/截图（APK 已经由下面的 *.apk 忽略，截图也不进版本库）
+target/
 
 # 本地工具目录（构建/助手留下的，不进版本库）
 .kotlin/

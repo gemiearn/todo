@@ -3,8 +3,10 @@ package com.personal.todo.ui
 import android.animation.ValueAnimator
 import android.media.MediaPlayer
 import android.view.animation.DecelerateInterpolator
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -23,8 +25,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -41,6 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -70,6 +75,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.FocusSettings
@@ -790,7 +796,6 @@ private fun ParameterCard(
 }
 
 /** The ambient loops a session can play; 关闭 means silence. */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SoundPicker(selected: FocusSound, onSelect: (FocusSound) -> Unit) {
     val colors = LocalTodoColors.current
@@ -815,36 +820,184 @@ private fun SoundPicker(selected: FocusSound, onSelect: (FocusSound) -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.focus_sound_title),
-            style = MaterialTheme.typography.labelMedium,
-            color = colors.dateMuted
-        )
-        Spacer(Modifier.height(6.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FocusSound.entries.forEach { sound ->
-                FilterChip(
-                    selected = sound == selected,
-                    onClick = {
-                        onSelect(sound)
-                        preview = sound
-                    },
-                    label = { Text(stringResource(sound.labelRes)) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = colors.focusSurface,
-                        selectedLabelColor = colors.focusAccent
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = colors.card,
+        border = BorderStroke(1.dp, colors.groupHeader.copy(alpha = 0.6f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(colors.focusSurface),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "🎧", fontSize = 18.sp)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.focus_sound_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
                     )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = if (selected == FocusSound.NONE) {
+                            stringResource(R.string.focus_sound_quiet)
+                        } else {
+                            stringResource(
+                                R.string.focus_sound_selected,
+                                stringResource(selected.labelRes)
+                            )
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.dateMuted
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                SoundOffPill(
+                    selected = selected == FocusSound.NONE,
+                    onClick = {
+                        onSelect(FocusSound.NONE)
+                        preview = null
+                    }
                 )
             }
+
+            Spacer(Modifier.height(12.dp))
+
+            // 四个声音排成 2×2：比一排五个小胶囊好按，也不会在窄屏上掉行。
+            val choices = listOf(
+                FocusSound.RAIN,
+                FocusSound.WAVES,
+                FocusSound.CAFE,
+                FocusSound.FIRE
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(choices.take(2), choices.drop(2)).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { sound ->
+                            SoundTile(
+                                sound = sound,
+                                selected = sound == selected,
+                                onClick = {
+                                    onSelect(sound)
+                                    preview = sound
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(
+                    if (selected == FocusSound.NONE) {
+                        R.string.focus_sound_hint_quiet
+                    } else {
+                        R.string.focus_sound_hint
+                    }
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.dateMuted,
+                modifier = Modifier.padding(start = 2.dp)
+            )
         }
-        Spacer(Modifier.height(4.dp))
+    }
+}
+
+/** 「关闭」那颗小胶囊：和四个声音的方块分开，安静是另一种选择，不是第五个声音。 */
+@Composable
+private fun SoundOffPill(selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalTodoColors.current
+    val shape = RoundedCornerShape(50)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .background(if (selected) colors.focusSurface else Color.Transparent)
+            .border(
+                width = 1.dp,
+                color = if (selected) {
+                    colors.focusAccent.copy(alpha = 0.35f)
+                } else {
+                    colors.dateMuted.copy(alpha = 0.4f)
+                },
+                shape = shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
         Text(
-            text = stringResource(R.string.focus_sound_hint),
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.dateMuted
+            text = stringResource(
+                if (selected) R.string.focus_sound_off else R.string.focus_sound_none
+            ),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) {
+                colors.focusAccent
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
         )
     }
+}
+
+/** 一个声音方块：emoji 认脸，名字认字，选中的那一块用番茄色描边并打勾。 */
+@Composable
+private fun SoundTile(
+    sound: FocusSound,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTodoColors.current
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(if (selected) colors.focusSurface else colors.groupHeader.copy(alpha = 0.4f))
+            .border(
+                width = 1.dp,
+                color = if (selected) colors.focusAccent.copy(alpha = 0.55f) else Color.Transparent,
+                shape = shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = sound.emoji(), fontSize = 18.sp)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = stringResource(sound.labelRes),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) colors.focusAccent else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
+        )
+        Spacer(Modifier.weight(1f))
+        if (selected) {
+            Text(
+                text = "✓",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = colors.focusAccent
+            )
+        }
+    }
+}
+
+private fun FocusSound.emoji(): String = when (this) {
+    FocusSound.NONE -> "🔇"
+    FocusSound.RAIN -> "🌧️"
+    FocusSound.WAVES -> "🌊"
+    FocusSound.CAFE -> "☕"
+    FocusSound.FIRE -> "🔥"
 }
 
 /**

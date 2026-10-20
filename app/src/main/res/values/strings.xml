@@ -447,7 +447,11 @@
     <!-- 背景白噪音 -->
     <string name="focus_sound_title">背景白噪音</string>
     <string name="focus_sound_hint">点一下就能试听，计时开始后会循环播放</string>
+    <string name="focus_sound_hint_quiet">选一个声音，让专注时有点背景</string>
+    <string name="focus_sound_quiet">安静专注，不播放环境声</string>
+    <string name="focus_sound_selected">已选：%1$s</string>
     <string name="focus_sound_none">关闭</string>
+    <string name="focus_sound_off">已关闭</string>
     <string name="focus_sound_rain">雨声</string>
     <string name="focus_sound_waves">海浪</string>
     <string name="focus_sound_cafe">咖啡馆</string>
