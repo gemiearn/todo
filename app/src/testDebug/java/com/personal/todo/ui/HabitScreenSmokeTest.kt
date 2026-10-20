@@ -45,6 +45,9 @@ class HabitScreenSmokeTest {
     private val TimeoutMillis = 15_000L
 
     @get:Rule
+    val idleTimeout = shortIdleTimeout()
+
+    @get:Rule
     val compose = createComposeRule()
 
     private lateinit var db: TodoDatabase

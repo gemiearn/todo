@@ -3,10 +3,11 @@ package com.personal.todo.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,17 +15,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -711,29 +707,18 @@ fun TextInputDialog(
 ) {
     var value by remember { mutableStateOf(initialValue) }
     var icon by remember { mutableStateOf(initialIcon) }
-    val colors = LocalTodoColors.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            // 图标格子换成一个有高度的网格后，弹层在横屏 / 小屏上可能装不下：整块可滚。
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = { value = it },
-                    label = { Text(label) },
-                    singleLine = true
-                )
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = stringResource(R.string.icon_label),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.dateMuted
-                )
-                Spacer(Modifier.height(6.dp))
-                IconPicker(selected = icon, onPick = { icon = it })
-            }
+            TextInputDialogBody(
+                label = label,
+                value = value,
+                onValueChange = { value = it },
+                icon = icon,
+                onIconChange = { icon = it }
+            )
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(value, icon) }, enabled = value.isNotBlank()) {
@@ -746,8 +731,67 @@ fun TextInputDialog(
     )
 }
 
+/**
+ * [TextInputDialog] 弹层里的内容：名称输入 + 按种类选的图标。
+ *
+ * 单独抽出来，是为了让单测可以直接组合它：Robolectric 上 `TextField` 一旦进了
+ * `Dialog`（第二个窗口），那个窗口的测量就永远收敛不了——`setContent` 会一直等到
+ * Espresso 的 60 秒空闲超时，抛 `AppNotIdleException`（报的却是 "infinite composition
+ * loop"）。这一条与页面代码无关：Robolectric 4.14.1 与 4.17、native 与 legacy 图形模式
+ * 全都一样卡，所以它不能当「代码坏了」的信号，只能把弹层那一层留在真机上验。
+ *
+ * 内容本身只用非懒加载的布局（见 [IconPicker] 的注释），也别在外面再套
+ * `verticalScroll`：`AlertDialog` 自己就把 `text` 槽限高并在内部滚动，外面再套一层会跟
+ * 里面的横向滚动互相等尺寸，构成真正的测量循环。
+ */
+@Composable
+internal fun TextInputDialogBody(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    icon: String,
+    onIconChange: (String) -> Unit
+) {
+    val colors = LocalTodoColors.current
+    Column {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            singleLine = true
+        )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = stringResource(R.string.icon_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.dateMuted
+        )
+        Spacer(Modifier.height(6.dp))
+        // 给图标区一个上限：15 类 × 20 个全放出来能有几百 dp 高，弹层得反复
+        // 「先量内容、再按剩余空间裁剪」。钉一个上限之后高度输入是常数，弹层一次就
+        // 算得定，超出的部分由它内部滚。
+        IconPicker(
+            selected = icon,
+            onPick = onIconChange,
+            modifier = Modifier.heightIn(max = IconGridMaxHeight)
+        )
+    }
+}
+
 private val IconChipSize = 40.dp
 private val IconChipGap = 6.dp
+
+/**
+ * 一行最多几个图标。
+ *
+ * `FlowRow` 本来会按实际可用宽度自己换行，这个上限只是给行数封个顶：弹层很宽时（比如
+ * 横屏）不至于把 20 个图标全摊在一行、每行只剩薄薄一条。定死比按宽度算更好预测，也省掉
+ * 一次测量（见 [IconPicker] 里关于测量循环的注释）。
+ */
+private const val IconsPerRow = 6
+
+/** 图标区在弹层里的高度上限：够看 4 行，再多就交给弹层自己滚。 */
+private val IconGridMaxHeight = 240.dp
 
 /**
  * 按**种类**浏览图标：上面一排是「工作 / 学习 / 饮食……」页签，下面是这个种类的图标格子，
@@ -755,9 +799,14 @@ private val IconChipGap = 6.dp
  *
  * 只负责「选中了哪个」，落库时机由上层决定（清单弹层是点 ✓ 才写，习惯弹层同理）。
  *
- * 格子高度按当前种类的图标数算：每类 14 个 + 「无」= 15 格，常见宽度下 3 行，弹层不会
- * 被撑到屏幕外；页签本身横向滚动，15 个种类也不会挤成两行。
+ * 格子按种类铺开：每类 20 个，常见的窄弹层下 6 列 4 行；整块不滚——高度交给调用方，
+ * 弹层场景由 `AlertDialog` 自己限高并滚动。
+ *
+ * 这一整个组件刻意只用「非懒加载」的布局（`Row` + `FlowRow`）：它会被放进弹层的滚动
+ * 容器里，懒加载容器跟外层滚动互相等尺寸会构成测量循环，在 CI 的 Robolectric 上表现为
+ * `AppNotIdleException`，而本地全绿也照样中招。详见下面两处的注释。
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun IconPicker(
     selected: String,
@@ -768,20 +817,23 @@ internal fun IconPicker(
     val initialCategory = IconCategory.entries.firstOrNull { selected in it.icons }
         ?: preferredCategory
     var category by remember { mutableStateOf(initialCategory) }
-    val tabState = rememberLazyListState()
-    // 打开时把当前图标所在的页签滚到能看见的位置（动物、节日这些排在后面的种类）。
-    LaunchedEffect(initialCategory) {
-        tabState.scrollToItem(initialCategory.ordinal)
-    }
     val colors = LocalTodoColors.current
     Column(modifier = modifier.fillMaxWidth()) {
-        LazyRow(
-            state = tabState,
-            modifier = Modifier.fillMaxWidth(),
+        // 种类页签用普通 `Row` + `horizontalScroll`，不是 `LazyRow`。
+        //
+        // 15 个页签每个都是两三个字的短标签，一次性全量画出来没有任何负担；但 `LazyRow` 会
+        // 自己测量可见区并按滚动位置反复重排。放进弹层时（弹层内部本来就带滚动），懒加载
+        // 容器跟外层滚动会互相等对方定尺寸，构成测量循环——正是 Espresso 报的
+        // "infinite composition loop"，在 CI 上表现为 60 秒 `AppNotIdleException`，本地却
+        // 全绿。普通 `Row` 不做可见区裁剪，尺寸一次算完，这个环就不存在了。
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            items(IconCategory.entries, key = { it.name }) { option ->
+            IconCategory.entries.forEach { option ->
                 TextButton(
                     onClick = { category = option },
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
@@ -805,41 +857,36 @@ internal fun IconPicker(
         } else {
             category.icons
         }
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            // 一行能放几格：按实际宽度算，弹层 / 底部弹层宽度不同也不会留一条空边。
-            val columns = ((maxWidth + IconChipGap) / (IconChipSize + IconChipGap))
-                .toInt()
-                .coerceAtLeast(1)
-            val cells = icons.size + 1
-            val rows = (cells + columns - 1) / columns
-            val gridHeight = IconChipSize * rows + IconChipGap * (rows - 1)
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(gridHeight),
-                horizontalArrangement = Arrangement.spacedBy(IconChipGap),
-                verticalArrangement = Arrangement.spacedBy(IconChipGap),
-                userScrollEnabled = false
-            ) {
-                items(count = cells) { index ->
-                    if (index == 0) {
-                        IconChoiceChip(
-                            text = stringResource(R.string.icon_none),
-                            emoji = false,
-                            selected = selected.isEmpty(),
-                            onPick = { onPick(NoIcon) }
-                        )
-                    } else {
-                        val icon = icons[index - 1]
-                        IconChoiceChip(
-                            text = icon,
-                            emoji = true,
-                            selected = selected == icon,
-                            onPick = { onPick(icon) }
-                        )
-                    }
-                }
+        // 这里用 `FlowRow` 而不是 `LazyVerticalGrid`。
+        //
+        // 原来的写法是 `BoxWithConstraints` 量出宽度 → 算出列数 → 用列数算出一个固定高度
+        // → 把它当 `LazyVerticalGrid` 的 `height`。可这个 `IconPicker` 是放在弹层里的，
+        // 于是「外层等内层定高、内层定高又回头依赖外层给的宽度」构成**测量循环**。真机上
+        // 多数时候能收敛，Robolectric 的测量后端收敛不了，就无限重排，Espresso 直接报
+        // `AppNotIdleException`（它自己给的提示就是 "measure/layout lambdas … infinite
+        // layout loop"）。这类 bug 只在 CI 上冒出来，本地全绿也照样中招。
+        //
+        // `FlowRow` 自己按内容决定高度，也不引入第二个滚动容器：这个环就没有了。
+        // 放不下时由弹层自己限高并滚动。
+        FlowRow(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(IconChipGap),
+            verticalArrangement = Arrangement.spacedBy(IconChipGap),
+            maxItemsInEachRow = IconsPerRow
+        ) {
+            IconChoiceChip(
+                text = stringResource(R.string.icon_none),
+                emoji = false,
+                selected = selected.isEmpty(),
+                onPick = { onPick(NoIcon) }
+            )
+            icons.forEach { icon ->
+                IconChoiceChip(
+                    text = icon,
+                    emoji = true,
+                    selected = selected == icon,
+                    onPick = { onPick(icon) }
+                )
             }
         }
     }
