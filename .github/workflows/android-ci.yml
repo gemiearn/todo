@@ -19,7 +19,11 @@ concurrency:
 jobs:
   build:
     name: Build, unit test and lint
-    runs-on: ubuntu-latest
+    # Pin the runner image: ubuntu-latest began migrating to Ubuntu 26 on
+    # 2026-10-19, and the Compose/Robolectric smoke tests started hanging with
+    # AppNotIdleException on that image. Ubuntu 24.04 is the image the suite is
+    # known-green on.
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
