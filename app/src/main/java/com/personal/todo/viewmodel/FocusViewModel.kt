@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -409,16 +410,25 @@ class FocusViewModel(
             // happened while the process was gone is counted (spec section 5.2),
             // but the timer itself is not parked on 暂停.
             focusRepository.recoverTimer()
-            while (isActive) {
-                val nowElapsed = focusRepository.elapsedMillis()
-                tick.value = nowElapsed
-                val active = timer.value
-                if (active != null && active.running &&
-                    FocusTiming.reachedTarget(focusRepository.stateOf(active), nowElapsed)
-                ) {
-                    finishAndMaybeBreak()
+            // Do not keep a permanent one-second coroutine alive while the focus
+            // screen is idle.  Besides doing needless work, that leaves a steady
+            // stream of main-dispatcher wakeups in Compose/Robolectric and can
+            // make an otherwise idle test fail with AppNotIdleException.  The
+            // ticker only exists for a running timer and is cancelled as soon as
+            // the Room flow reports pause/finish/clear.
+            timer.collectLatest { active ->
+                if (active?.running != true) return@collectLatest
+                while (isActive) {
+                    val nowElapsed = focusRepository.elapsedMillis()
+                    tick.value = nowElapsed
+                    val current = timer.value
+                    if (current?.running != true) break
+                    if (FocusTiming.reachedTarget(focusRepository.stateOf(current), nowElapsed)) {
+                        finishAndMaybeBreak()
+                        break
+                    }
+                    delay(TickMillis)
                 }
-                delay(TickMillis)
             }
         }
     }
