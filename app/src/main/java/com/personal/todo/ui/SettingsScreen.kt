@@ -294,7 +294,7 @@ private fun SettingsEntry(
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
-                .background(colors.accent.copy(alpha = 0.08f)),
+                .background(entryIconTint(icon).copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
             Text(text = icon, fontSize = 15.sp, maxLines = 1)

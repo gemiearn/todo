@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
@@ -28,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -81,51 +83,61 @@ fun FilterSheet(
                 modifier = Modifier.padding(vertical = 12.dp)
             )
 
-            FilterSection(stringResource(R.string.filter_dimension_list)) {
-                lists.forEach { list ->
-                    ToggleChip(
-                        label = list.name,
-                        selected = list.id in filter.listIds,
-                        accent = colors.accent,
-                        onClick = {
-                            onFilterChange(filter.copy(listIds = filter.listIds.toggle(list.id)))
-                        }
-                    )
-                }
-            }
-
-            FilterSection(stringResource(R.string.filter_dimension_priority)) {
-                Priority.entries.forEach { priority ->
-                    ToggleChip(
-                        label = priorityLabel(priority),
-                        selected = priority in filter.priorities,
-                        accent = priorityColor(priority),
-                        onClick = {
-                            onFilterChange(
-                                filter.copy(priorities = filter.priorities.toggle(priority))
-                            )
-                        }
-                    )
-                }
-            }
-
-            FilterSection(stringResource(R.string.filter_dimension_tag)) {
-                if (tags.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.tags_empty_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.dateMuted
-                    )
-                } else {
-                    tags.forEach { tag ->
+            SheetGroupCard {
+                FilterSection(stringResource(R.string.filter_dimension_list)) {
+                    lists.forEach { list ->
                         ToggleChip(
-                            label = tag.name,
-                            selected = tag.id in filter.tagIds,
-                            accent = Color(tag.color),
+                            label = list.name,
+                            selected = list.id in filter.listIds,
+                            accent = colors.accent,
                             onClick = {
-                                onFilterChange(filter.copy(tagIds = filter.tagIds.toggle(tag.id)))
+                                onFilterChange(filter.copy(listIds = filter.listIds.toggle(list.id)))
                             }
                         )
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                SheetGroupDivider()
+                Spacer(Modifier.height(10.dp))
+
+                FilterSection(stringResource(R.string.filter_dimension_priority)) {
+                    Priority.entries.forEach { priority ->
+                        ToggleChip(
+                            label = priorityLabel(priority),
+                            selected = priority in filter.priorities,
+                            accent = priorityColor(priority),
+                            onClick = {
+                                onFilterChange(
+                                    filter.copy(priorities = filter.priorities.toggle(priority))
+                                )
+                            }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                SheetGroupDivider()
+                Spacer(Modifier.height(10.dp))
+
+                FilterSection(stringResource(R.string.filter_dimension_tag)) {
+                    if (tags.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.tags_empty_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.dateMuted
+                        )
+                    } else {
+                        tags.forEach { tag ->
+                            ToggleChip(
+                                label = tag.name,
+                                selected = tag.id in filter.tagIds,
+                                accent = Color(tag.color),
+                                onClick = {
+                                    onFilterChange(filter.copy(tagIds = filter.tagIds.toggle(tag.id)))
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -148,10 +160,42 @@ fun FilterSheet(
     }
 }
 
+/**
+ * 面板里的一个维度（或日历显示设置那一段）装进的圆角卡片：与更多页 / 设置页同一套
+ * 视觉语言——卡片底、轻投影、行间淡分隔线。原来三组裸排在白底上，和弹层底色糊在一起。
+ */
+@Composable
+private fun SheetGroupCard(content: @Composable ColumnScope.() -> Unit) {
+    val colors = LocalTodoColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .shadow(
+                elevation = 1.5.dp,
+                shape = RoundedCornerShape(18.dp),
+                ambientColor = Color.Black.copy(alpha = 0.05f),
+                spotColor = Color.Black.copy(alpha = 0.07f)
+            )
+            .clip(RoundedCornerShape(18.dp))
+            .background(colors.groupHeader.copy(alpha = 0.32f))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        content = content
+    )
+}
+
+/** 卡片内两个维度之间的淡分隔线。 */
+@Composable
+private fun SheetGroupDivider() {
+    HorizontalDivider(
+        color = LocalTodoColors.current.dateMuted.copy(alpha = 0.14f)
+    )
+}
+
 /** One dimension of the panel: its name, then the chips of that dimension. */
 @Composable
 private fun FilterSection(title: String, content: @Composable () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = title,
             style = MaterialTheme.typography.labelMedium,
@@ -179,7 +223,7 @@ fun DisplaySettingsSection(
     onChange: (CalendarSettings) -> Unit
 ) {
     val colors = LocalTodoColors.current
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    SheetGroupCard {
         Text(
             text = stringResource(R.string.calendar_display_settings),
             style = MaterialTheme.typography.labelMedium,

@@ -859,10 +859,10 @@ internal fun subtaskCheckTag(taskId: Long): String = "subtask-check-$taskId"
  * 全局统一的小菜单。
  *
  * 各处右上角的 ⋮ / ▾ 以前直接用 material3 的 [DropdownMenu]：默认是直角白块、无阴影层次，
- * 和这套圆角卡片的界面不是一个味儿。这里统一成：16dp 圆角、卡片底色（随色系 / 背景 /
- * 深色主题走）、一点投影、每项前后留足空隙；[items] 里给了 [TodoMenuItem.selected] 的那项
- * 在行尾画一个强调色勾，给了 danger 的那项文字标红——清单排序这种「单选」菜单和
- * 记录 / 习惯 ⋮ 里的「删除」从此长得一模一样。
+ * 和这套圆角卡片的界面不是一个味儿。这里只做轻度的收敛：12dp 圆角、卡片底色（随色系 /
+ * 背景 / 深色主题走）、一点投影；选中项文字用强调色并在行尾打勾，danger 项标红。
+ * 画风向 app 靠但**不另起炉灶**——不加分隔线、不放大间距、字号仍是 Material 默认那档
+ * （用户 2026-10-20：上一版 16dp 圆角 + 分隔线的做法「不太契合」，这版收回来）。
  */
 @Composable
 internal fun TodoDropdownMenu(
@@ -876,17 +876,17 @@ internal fun TodoDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         containerColor = colors.card,
-        shadowElevation = 6.dp,
+        shadowElevation = 3.dp,
         tonalElevation = 0.dp
     ) {
-        items.forEachIndexed { index, item ->
+        items.forEach { item ->
             DropdownMenuItem(
                 text = {
                     Text(
                         text = item.label,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = when {
                             item.danger -> colors.dateOverdue
                             item.selected -> colors.accent
@@ -896,8 +896,8 @@ internal fun TodoDropdownMenu(
                 },
                 leadingIcon = item.icon?.let { icon ->
                     {
-                        Box(modifier = Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-                            Text(text = icon, fontSize = 16.sp, maxLines = 1)
+                        Box(modifier = Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+                            Text(text = icon, fontSize = 14.sp, maxLines = 1)
                         }
                     }
                 },
@@ -908,14 +908,14 @@ internal fun TodoDropdownMenu(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
                                 tint = colors.accent,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         } else {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                 contentDescription = null,
                                 tint = colors.dateMuted,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
@@ -926,21 +926,7 @@ internal fun TodoDropdownMenu(
                     onDismissRequest()
                     item.onClick()
                 },
-                // 项与项之间来一条淡淡的分隔线（最后一条后面不画）：纯靠留白分不出两项。
-                modifier = (item.tag?.let { Modifier.testTag(it) } ?: Modifier).then(
-                    if (index != items.lastIndex) {
-                        Modifier.drawBehind {
-                            drawLine(
-                                color = colors.dateMuted.copy(alpha = 0.15f),
-                                start = Offset(0f, size.height),
-                                end = Offset(size.width, size.height),
-                                strokeWidth = 1.dp.toPx()
-                            )
-                        }
-                    } else {
-                        Modifier
-                    }
-                )
+                modifier = item.tag?.let { Modifier.testTag(it) } ?: Modifier
             )
         }
     }
@@ -1343,5 +1329,27 @@ fun ListPicker(
                 )
             }
         )
+    }
+}
+
+/**
+ * 功能入口行首图标的底色（更多页 / 设置页共用）：每个功能一个主题色，全部取自现成的
+ * 象限色 / 标签色板 / 专注番茄红，不引入新色。与任务卡左边的色条同一套语言——
+ * 「图标位也是这个功能自己的颜色」。
+ */
+@Composable
+internal fun entryIconTint(icon: String): Color {
+    val colors = LocalTodoColors.current
+    val q = colors.quadrants
+    return when (icon) {
+        "⚙️" -> colors.dateMuted
+        "⏱️" -> colors.focusAccent
+        "📊" -> q.importantNotUrgent
+        "🏷️" -> com.personal.todo.ui.theme.TagPalette[4].copy(alpha = 1f)
+        "✅" -> colors.success
+        "🗑️" -> q.notImportantUrgent
+        "🐞" -> q.importantUrgent
+        "📤" -> q.importantNotUrgent
+        else -> colors.accent
     }
 }

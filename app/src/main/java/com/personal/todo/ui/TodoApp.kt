@@ -1118,10 +1118,8 @@ internal fun MainScreen(
                             nav.resetTo(target)
                         }
                     },
-                    onNewList = { showNewListDialog = true },
                     modifier = Modifier.padding(innerPadding)
                 )
-
                 else -> TaskCollectionContent(
                     collection = collection,
                     tasks = visibleTasks,
@@ -1305,7 +1303,6 @@ internal fun MoreScreen(
     lists: List<TaskList>,
     openTaskCounts: Map<Long, Int>,
     onOpen: (String) -> Unit,
-    onNewList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
@@ -1380,19 +1377,6 @@ internal fun MoreScreen(
                 }
             }
         }
-
-        TextButton(
-            onClick = onNewList,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.action_new_list))
-        }
     }
 }
 
@@ -1454,12 +1438,13 @@ private fun MoreEntry(
             .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 行首的 32dp 图标位：与抽屉行同一个语言，一眼认出「这一行是去哪的」。
+        // 行首的 32dp 图标位：每个功能一个主题色圆底（见 [entryIconTint]），
+        // 一眼认出「这一行是去哪的」，也与任务卡色条同一套取色语言。
         Box(
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
-                .background(colors.accent.copy(alpha = 0.08f)),
+                .background(entryIconTint(icon).copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
             Text(text = icon, fontSize = 15.sp, maxLines = 1)
