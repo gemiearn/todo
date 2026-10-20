@@ -75,7 +75,7 @@ jobs:
                   name = f"{case.get('classname')}.{case.get('name')}"
                   message = (failure.get("message") or "").strip().splitlines()
                   first = message[0][:300] if message else ""
-                  print(f"::error title=FAILED {name}::{first}")
+                  print(f"::error title=FAILED::{name} — {first}")
                   print(f"- ❌ `{name}` — {first}")
           if not found:
               print("::warning title=Unit tests::No JUnit XML with failures was found")
