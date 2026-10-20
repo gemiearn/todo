@@ -571,7 +571,11 @@ private fun PlannedRing(
  *
  * 只认圆环的描边那一带（半径从 `外沿 − 1.5 条描边` 到外沿），圆心那一大片留给页面
  * 滚动——按在圆环上才改时长，按在中间照旧上下滚页。角度映射：一整圈 360° 正好覆盖
- * 5–300 分钟，每 5 分钟吸附一档，只认「从按下的那一点转过了多少度」。
+ * 5–300 分钟，每 5 分钟吸附一档。
+ *
+ * 角度是**一段一段累加**的，不是每次拿当前位置和按下点比：从按下点转过半圈以后，
+ * 两点的最短夹角会翻到另一侧（+180° 变 −180°），时长就会突然跳回起点。逐段累加
+ * 可以连续转很多圈，也不会在正上方/正下方那个交界处回弹。
  */
 @Composable
 private fun Modifier.ringBandDrag(minutes: Int, onMinutes: (Int) -> Unit): Modifier {
@@ -592,16 +596,22 @@ private fun Modifier.ringBandDrag(minutes: Int, onMinutes: (Int) -> Unit): Modif
                     val radius = ringRadius(down.position, size.width, size.height)
                     if (radius < inner || radius > outer) return@awaitEachGesture
 
-                    val startAngle = ringAngle(down.position, size.width, size.height)
-                    val startMinutes = latestMinutes.value
+                    // 上一帧的角度和「还没吸附的连续分钟数」都留在手势里：每一帧只加
+                    // 这一小段转过的角度，跨过 ±180° 时不会把之前转过的全丢掉。
+                    var lastAngle = ringAngle(down.position, size.width, size.height)
+                    var rawMinutes = latestMinutes.value.toFloat()
                     drag(down.id) { change ->
-                        val turned = degreesBetween(
-                            from = startAngle,
-                            to = ringAngle(change.position, size.width, size.height)
-                        )
-                        latestOnMinutes.value(
-                            roundToStep(startMinutes + turned / 360f * MinutesPerTurn)
-                        )
+                        val angle = ringAngle(change.position, size.width, size.height)
+                        val turned = degreesBetween(from = lastAngle, to = angle)
+                        lastAngle = angle
+                        // 走到 5 / 300 分钟就停在边界上（多转的角度不累计），这样一反向
+                        // 就能立刻往回转，不用先把「看不见的过量」退回来。
+                        rawMinutes = (rawMinutes + turned / 360f * MinutesPerTurn)
+                            .coerceIn(
+                                FocusDurations.MinMinutes.toFloat(),
+                                FocusDurations.MaxMinutes.toFloat()
+                            )
+                        latestOnMinutes.value(roundToStep(rawMinutes))
                         change.consume()
                     }
                 }

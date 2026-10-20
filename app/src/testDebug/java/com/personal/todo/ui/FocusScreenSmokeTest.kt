@@ -292,6 +292,39 @@ class FocusScreenSmokeTest {
         assertEquals("时长仍然落在 5 分钟一档上", 0, planned!! % 300)
     }
 
+    /**
+     * 从 12 点顺时针拖过 9 点：这时离按下点已经转过 270°。
+     *
+     * 以前每次拿「当前位置 − 按下点」取最短夹角，转过半圈后 +180° 会翻成 −180°，
+     * 时长瞬间跳回 5 分钟；现在逐帧累加，应该继续往上涨。
+     */
+    @Test
+    fun draggingPastHalfATurnKeepsGrowingInsteadOfSnappingBack() {
+        launchFocus()
+        compose.onNodeWithTag(focusModeTag(FocusMode.COUNTDOWN)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("15:00").assertExists()
+
+        compose.onNodeWithTag(FocusLengthRingTag).performTouchInput {
+            val radius = width / 2f * 0.9f
+            down(Offset(center.x, center.y - radius))       // 12 点
+            moveTo(Offset(center.x + radius, center.y))     // 3 点
+            moveTo(Offset(center.x, center.y + radius))     // 6 点
+            moveTo(Offset(center.x - radius, center.y))     // 9 点，累计 270°
+            up()
+        }
+        compose.waitForIdle()
+
+        pickTask("写季度报告")
+        clickStart()
+        compose.waitUntilNodeCount(hasText("专注中"), 1, TimeoutMillis)
+
+        // 15 + 270/360 × 295 = 236.25 → 吸附到 235 分钟。
+        val planned = runBlocking { focus.observeActiveTimer().first()?.plannedSeconds }
+        assertTrue("转过半圈后时长应继续变大，实际是 $planned", planned != null && planned >= 200 * 60)
+        assertEquals("时长仍然落在 5 分钟一档上", 0, planned!! % 300)
+    }
+
     /** 按在圆环中间（不是那一圈）拖动不改时长：圆心那一片是留给页面滚动的。 */
     @Test
     fun draggingInsideTheRingLeavesTheLengthAlone() {
