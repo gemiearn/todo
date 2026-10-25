@@ -316,8 +316,17 @@ fun focusDailyAverage(totals: FocusPeriodTotals, period: FocusPeriod): Int =
 
 /**
  * 排行里的一行。[label] 为空表示那条记录本来就没有关联任务（或者没有清单快照）。
+ *
+ * [taskId] 只在按任务排行时有值（按清单归并的那几行是 null）：它是这一行的**身份**，
+ * 「专注占比」页点中某一块之后，下面那块记录列表就按它筛——同一秒里改过名的两个任务
+ * 不该被并成一行，同名但不同的两个任务也不该。
  */
-data class FocusRankEntry(val label: String?, val seconds: Int, val sessions: Int)
+data class FocusRankEntry(
+    val label: String?,
+    val seconds: Int,
+    val sessions: Int,
+    val taskId: Long? = null
+)
 
 /** [period] 里的专注排行，按 [by] 归并，时长多的排前面，最多留 [limit] 条。 */
 fun focusRanking(
@@ -351,12 +360,88 @@ fun focusRanking(
         entries[key] = FocusRankEntry(
             label = seen?.label ?: label,
             seconds = (seen?.seconds ?: 0) + session.actualFocusSeconds,
-            sessions = (seen?.sessions ?: 0) + 1
+            sessions = (seen?.sessions ?: 0) + 1,
+            taskId = seen?.taskId ?: session.taskId.takeIf { by == FocusRankBy.TASK }
         )
     }
 
     return entries.values.sortedByDescending { it.seconds }.take(limit)
 }
+
+/**
+ * 「专注占比」页顶上那张饼图的一块：哪个任务、多少秒、占这天的百分之几。
+ *
+ * [taskId] 是这块的身份，任务当时没有关联时是 null；[others] 为 true 表示「前几名之外的
+ * 其他任务」——图例塞不下那么多行，剩下的合成一块。与 [FocusRankEntry] 的区别是**分母是
+ * 那一天的真实总时长**，所以「其他」永远等于差额，不会凭空多出来一块。
+ */
+data class FocusSliceShare(
+    val taskId: Long?,
+    val label: String?,
+    val seconds: Int,
+    val fraction: Float,
+    val others: Boolean = false
+)
+
+/** 饼图最多分几块：再多图例就比图还长，剩下的归到「其他」。 */
+const val DayShareSlices = 4
+
+/**
+ * [day] 这一天按任务切开的专注占比，按时长降序，最多 [limit] 块（多出来的合成「其他」）。
+ *
+ * 这一天没有记录时返回空列表，页面据此画空态而不是一个空环。
+ */
+fun focusDayShares(
+    sessions: List<FocusSession>,
+    day: LocalDate,
+    zone: ZoneId,
+    limit: Int = DayShareSlices
+): List<FocusSliceShare> {
+    val period = FocusPeriod(day, day)
+    val ranking = focusRanking(sessions, period, zone, FocusRankBy.TASK, limit = limit)
+    if (ranking.isEmpty()) return emptyList()
+
+    val total = focusPeriodTotals(sessions, period, zone).seconds
+    if (total <= 0) return emptyList()
+
+    val ranked = ranking.sumOf { it.seconds }
+    val shares = ranking.map { entry ->
+        FocusSliceShare(
+            taskId = entry.taskId,
+            label = entry.label,
+            seconds = entry.seconds,
+            fraction = entry.seconds.toFloat() / total
+        )
+    }.toMutableList()
+    if (total > ranked) {
+        shares += FocusSliceShare(
+            taskId = null,
+            label = null,
+            seconds = total - ranked,
+            fraction = (total - ranked).toFloat() / total,
+            others = true
+        )
+    }
+    return shares
+}
+
+/**
+ * [day] 那一天的逐条专注记录，新的在前。
+ *
+ * 「专注占比」页饼图下面那块列表用它：日期按**开始时刻**所在的那一天算（与记录页、统计页
+ * 同一口径）。[taskId] 给了就只留那个任务的那几条——点中饼图的一块之后，用户想看的就是
+ * 「这一天这件事的每一段」。选了「其他」那一块时页面会把筛子清掉（它是几件事的合体），
+ * 所以这里只认一个具体的 taskId。
+ */
+fun focusDayRecords(
+    sessions: List<FocusSession>,
+    day: LocalDate,
+    zone: ZoneId,
+    taskId: Long? = null
+): List<FocusSession> = sessions
+    .filter { localDateOf(it.startedAt, zone) == day }
+    .filter { taskId == null || it.taskId == taskId }
+    .sortedByDescending { it.startedAt }
 
 /**
  * 时间线上的一段专注：分钟数从当天 0 点算起。跨天的 session 会被拆成两天各一段，

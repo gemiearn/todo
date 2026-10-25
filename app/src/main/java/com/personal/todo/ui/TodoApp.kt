@@ -34,6 +34,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -101,7 +102,6 @@ import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
-import com.personal.todo.data.db.FocusSession
 import com.personal.todo.data.db.Habit
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskList
@@ -143,6 +143,7 @@ private const val ROUTE_LIST = "list"
 private const val ROUTE_FUTURE = "future"
 private const val ROUTE_OVERDUE = "overdue"
 private const val ROUTE_STATS = "stats"
+private const val ROUTE_RATIO = "ratio"
 private const val ROUTE_RECORDS = "records"
 private const val ROUTE_CRASH = "crash"
 private const val ROUTE_DEV = "dev"
@@ -383,6 +384,16 @@ fun TodoApp(
             today = repository.today(),
             // 「按标签筛」那一行胶囊就是这些标签；页面内部按 id 认人，改名后老记录仍归位。
             tags = allTags,
+            onBack = { nav.pop() }
+        )
+
+        // 专注占比是一页自己的东西（用户 2026-10-25）：饼图、按任务排行、那一天的逐条记录
+        // 读的是同一个日期，切到哪天就看哪天；改记录仍然去「专注记录」。
+        ROUTE_RATIO -> FocusRatioScreen(
+            sessions = focusViewModel.sessions,
+            zone = focusRepository.zone,
+            today = repository.today(),
+            onOpenRecords = { nav.push(ROUTE_RECORDS) },
             onBack = { nav.pop() }
         )
 
@@ -845,18 +856,18 @@ internal fun MainScreen(
                         onNewList = { showNewListDialog = true }
                     )
 
-                    // 专注页的面板只放**入口**：一行「专注记录」，点它推进记录页（逐条
-                    // 记录可以在那里改关联任务与时长、也能删）。原来把整页统计塞进来，
-                    // 拉出来就顶掉半屏、也看不出能跳到哪，用户 2026-10-19 让改掉。
+                    // 专注页的面板只放**入口**，一行一个目的地：「专注占比」是一页自己的
+                    // 东西（饼图 + 按任务排行 + 那一天的逐条记录），「专注记录」负责逐条
+                    // 记录的改 / 补 / 删。原来把整张饼图塞在面板里，拉出来顶掉半屏，切了
+                    // 日期也看不到下面的记录（用户 2026-10-25 让改成独立页）。
                     DrawerMode.FOCUS -> FocusDrawer(
-                        // 抽屉里那块「这一天」饼图要读专注记录；走专注页那份 StateFlow
-                        // （与统计页、记录页同一份），不另开一条 Room 查询。
-                        sessions = focusViewModel.sessions,
-                        zone = focusViewModel.zone,
-                        today = today,
                         habits = habits,
                         autoCheckInHabitId = autoCheckInHabitId,
                         onSelectAutoCheckIn = onSelectAutoCheckIn,
+                        onOpenRatio = {
+                            nav.push(ROUTE_RATIO)
+                            scope.launch { drawerState.close() }
+                        },
                         onOpenRecords = {
                             nav.push(ROUTE_RECORDS)
                             scope.launch { drawerState.close() }
@@ -1015,37 +1026,29 @@ internal fun MainScreen(
             floatingActionButton = {
                 val listId = targetListId
                 if (listId != null) {
-                    // 「+ 新建任务」：一枚带字的胶囊，而不是孤零零一个圆加号（用户
-                    // 2026-10-21 要的「加号增加任务的 UI 和布局」）。字让第一次用的人
-                    // 也知道它是什么；投影压得比默认低一点，压在列表上不抢戏。
+                    // 就一个「＋」：带字的胶囊在首页还行，到四象限那种满屏看板的地方，
+                    // 「新建任务」四个字直接压住半列卡片（用户 2026-10-21 指出的）。
+                    // 换成 56dp 的圆钮，投影保留，谁也不会挡住谁。
                     val newTaskLabel = stringResource(R.string.action_new_task)
-                    ExtendedFloatingActionButton(
+                    FloatingActionButton(
                         onClick = { openNewTaskSheet(listId) },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        },
-                        text = {
-                            Text(
-                                text = newTaskLabel,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        },
-                        // 字在左、图标在左，语义上仍叫「新建任务」：读屏与冒烟测试
-                        // （按 contentDescription 找它）都不用改。
+                        // 语义仍叫「新建任务」：读屏与冒烟测试（按 contentDescription
+                        // 找它）都不用改。
                         modifier = Modifier.semantics { contentDescription = newTaskLabel },
-                        shape = RoundedCornerShape(20.dp),
+                        shape = CircleShape,
                         containerColor = LocalTodoColors.current.accent,
                         contentColor = Color.White,
                         elevation = FloatingActionButtonDefaults.elevation(
-                            defaultElevation = 5.dp,
-                            pressedElevation = 1.dp
+                            defaultElevation = 6.dp,
+                            pressedElevation = 2.dp
                         )
-                    )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
                 }
             },
             snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -1067,8 +1070,6 @@ internal fun MainScreen(
                         displaySettings = calendarSettings,
                         filter = calendarFilter,
                         tagIdsByTask = tagIdsByTask,
-                        lists = lists,
-                        tags = allTags,
                         onOpenDisplayOptions = { calendarOptionsOpen = true },
                         onSelectDate = onSelectDate,
                         onOpenLists = { scope.launch { drawerState.open() } },
@@ -1162,8 +1163,8 @@ internal fun MainScreen(
                         // tab target resets the stack instead, which is what a
                         // bottom bar is expected to do.
                         if (target == ROUTE_CRASH || target == ROUTE_STATS ||
-                            target == ROUTE_TAGS || target == ROUTE_HABITS ||
-                            target == ROUTE_SETTINGS
+                            target == ROUTE_RATIO || target == ROUTE_TAGS ||
+                            target == ROUTE_HABITS || target == ROUTE_SETTINGS
                         ) {
                             nav.push(target)
                         } else {
@@ -1386,6 +1387,14 @@ internal fun MoreScreen(
                 onClick = { onOpen(ROUTE_STATS) }
             )
             MoreDivider()
+            // 「专注占比」是统计的另一种问法（这一天的时间花在哪些任务上），从这一组进
+            // 比从专注页抽屉进更好找：用户 2026-10-25 提到「占比不该是单独一页吗」。
+            MoreEntry(
+                icon = "🍩",
+                label = stringResource(R.string.focus_ratio_title),
+                onClick = { onOpen(ROUTE_RATIO) }
+            )
+            MoreDivider()
             MoreEntry(
                 icon = "🏷️",
                 label = stringResource(R.string.more_entry_tags),
@@ -1394,6 +1403,9 @@ internal fun MoreScreen(
         }
 
         // 任务视图：已完成 / 回收站 一组。
+        //
+        // 崩溃日志不在这儿了（用户 2026-10-21：要「默认不显示，只能从类似安卓开发者入口
+        // 的地方进去」）：它现在只在「设置 → 开发者声明（连点五下）→ 开发者选项」里。
         MoreCard(shape = cardShape, modifier = Modifier.padding(top = 10.dp)) {
             MoreEntry(
                 icon = "✅",
@@ -1405,12 +1417,6 @@ internal fun MoreScreen(
                 icon = "🗑️",
                 label = stringResource(R.string.nav_trash),
                 onClick = { onOpen(ROUTE_TRASH) }
-            )
-            MoreDivider()
-            MoreEntry(
-                icon = "🐞",
-                label = stringResource(R.string.crash_log_title),
-                onClick = { onOpen(ROUTE_CRASH) }
             )
         }
 
@@ -1707,25 +1713,22 @@ private fun ListsDrawer(
 /**
  * 专注页左滑出来的那块面板：一个**导航面板**，只放能跳过去的入口（用户 2026-10-19）。
  *
- * 2026-10-21 又加了一块：面板顶部先给一张「这一天」的甜甜圈——按任务切开的专注占比，
- * 上面那对箭头能翻到前一天 / 后一天（用户要的「饼图之类的东西，可以查看某天的专注」）。
- * 它只画图，不改任何记录；要改记录仍然走下面那一行「专注记录」。
+ * 上面一行「专注占比」、下面一行「专注记录」，各自是**一整页**（用户 2026-10-25：占比
+ * 不该是塞在抽屉里的一张小卡片，「切到某一天点进去还是一样」正是塞在抽屉里造成的）。
+ * 占比那页自带那一天的逐条记录，所以想看时间花在哪儿就进它；要改某一条记录再去「专注
+ * 记录」。统计图表仍走顶栏右上角那个图标。
  */
 @Composable
 private fun FocusDrawer(
-    sessions: Flow<List<FocusSession>>,
-    zone: ZoneId,
-    today: LocalDate,
     habits: List<Habit>,
     autoCheckInHabitId: Long?,
     onSelectAutoCheckIn: (Long?) -> Unit,
+    onOpenRatio: () -> Unit,
     onOpenRecords: () -> Unit,
     onOpenHabits: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
-    // 与专注页 / 统计页 / 记录页同一份 StateFlow，不另开一条查询。
-    val allSessions by sessions.collectAsStateWithLifecycle(initialValue = emptyList())
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1760,14 +1763,12 @@ private fun FocusDrawer(
         }
 
         SectionHeader(stringResource(R.string.focus_drawer_section_records))
-        // 「这一天」的专注占比（饼图）：只在抽屉里看，翻日期不动任何记录。
-        FocusDayDonutCard(
-            sessions = allSessions,
-            today = today,
-            zone = zone,
-            onOpenRecords = onOpenRecords
+        DrawerRow(
+            label = stringResource(R.string.focus_ratio_title),
+            selected = false,
+            icon = "🍩",
+            onClick = onOpenRatio
         )
-        Spacer(Modifier.height(4.dp))
         DrawerRow(
             label = stringResource(R.string.focus_history_title),
             selected = false,

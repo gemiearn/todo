@@ -413,4 +413,95 @@ class FocusReportTest {
         assertTrue(!FocusTagSnapshot.matches(snapshot, "个"))
         assertTrue("没有标签的记录不会被任何一个标签选中", !FocusTagSnapshot.matches(null, "工作"))
     }
+
+    // ------------------------------------------------------- 专注占比（独立页）
+
+    /**
+     * 这一天按任务切开的占比：分母是这一天**真实的总时长**，所以每一块的占比加起来是 1，
+     * 「其他」永远等于差额——这一页是用户判断「今天时间花在哪儿」的地方，百分比加起来
+     * 不等于 100% 会直接让人不信这页的数。
+     */
+    @Test
+    fun theDaySharesSplitTheRealDayTotal() {
+        val sessions = listOf(
+            session(seconds = 3_000, taskId = 1L, title = "写季度报告"),
+            session(seconds = 1_800, taskId = 2L, title = "整理周报"),
+            session(seconds = 1_200, taskId = 3L, title = "回邮件"),
+            session(seconds = 900, taskId = 4L, title = "开会"),
+            session(seconds = 600, taskId = 5L, title = "看文档"),
+            // 昨天的不该混进来
+            session(seconds = 9_999, day = today.minusDays(1), taskId = 1L, title = "写季度报告")
+        )
+
+        val shares = focusDayShares(sessions, today, zone, limit = 4)
+
+        assertEquals("前 4 条 + 一条「其他」", 5, shares.size)
+        assertEquals("写季度报告", shares.first().label)
+        assertTrue(shares.last().others)
+        // 这一天共 7500 秒，前四名 3000+1800+1200+900 = 6900，差额 600 归到「其他」。
+        assertEquals("其他 = 这一天总时长 - 前几名的和", 600, shares.last().seconds)
+        assertEquals(
+            "每一块的占比加起来是 1（分母是这一天的真实总时长）",
+            1.0,
+            shares.sumOf { it.fraction.toDouble() },
+            0.0001
+        )
+        assertEquals("排序按时长降序", listOf("写季度报告", "整理周报", "回邮件", "开会"), shares.dropLast(1).map { it.label })
+    }
+
+    /** 没有记录的那一天：空列表，页面画空态，而不是一个空环。 */
+    @Test
+    fun theDaySharesAreEmptyWhenNothingWasFocused() {
+        assertTrue(focusDayShares(emptyList(), today, zone).isEmpty())
+        assertTrue(
+            "昨天的记录不算今天",
+            focusDayShares(listOf(session(day = today.minusDays(1))), today, zone).isEmpty()
+        )
+    }
+
+    /** 「其他」那一块没有 taskId：它是几件事的合体，点它没有「只看这件事」可言。 */
+    @Test
+    fun theOthersShareHasNoTaskToFilterBy() {
+        val sessions = (1L..6L).map { id -> session(seconds = 600, taskId = id, title = "任务$id") }
+
+        val shares = focusDayShares(sessions, today, zone, limit = 3)
+
+        assertTrue(shares.dropLast(1).all { it.taskId != null })
+        assertNull(shares.last().taskId)
+    }
+
+    /**
+     * 饼图下面那块记录列表与图读同一个日期：切到哪天就只列那天开始的记录，再按任务收窄。
+     * 这就是用户 2026-10-25 说的「选了什么点进去都一样」要修的那件事。
+     */
+    @Test
+    fun theDayRecordsFollowTheSameDayAndTheTaskFilter() {
+        val sessions = listOf(
+            session(seconds = 600, taskId = 1L, startMinuteOfDay = 9 * 60),
+            session(seconds = 900, taskId = 1L, startMinuteOfDay = 15 * 60),
+            session(seconds = 1_200, taskId = 2L, startMinuteOfDay = 11 * 60),
+            session(seconds = 1_500, taskId = 1L, day = today.minusDays(1))
+        )
+
+        val all = focusDayRecords(sessions, today, zone)
+        assertEquals("只列今天开始的那几条", 3, all.size)
+        val dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        assertEquals("新的在前", 15 * 60, ((all.first().startedAt - dayStart) / 60_000L).toInt())
+
+        val onlyTaskOne = focusDayRecords(sessions, today, zone, taskId = 1L)
+        assertEquals(2, onlyTaskOne.size)
+        assertTrue(onlyTaskOne.all { it.taskId == 1L })
+
+        assertTrue("换到没有记录的一天就是空的", focusDayRecords(sessions, today.plusDays(3), zone).isEmpty())
+    }
+
+    /** 排行里的 taskId 只在按任务归并时有值：按清单归并的那几行没有「哪个任务」可言。 */
+    @Test
+    fun theRankingCarriesTheTaskIdOnlyWhenGroupedByTask() {
+        val sessions = listOf(session(seconds = 600, taskId = 7L, title = "写季度报告", listName = "工作"))
+        val period = focusPeriodOf(FocusPeriodUnit.DAY, today)
+
+        assertEquals(7L, focusRanking(sessions, period, zone, FocusRankBy.TASK).single().taskId)
+        assertNull(focusRanking(sessions, period, zone, FocusRankBy.LIST).single().taskId)
+    }
 }

@@ -66,6 +66,7 @@ import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
 import com.personal.todo.data.db.TaskFocusTotals
 import com.personal.todo.data.db.TaskList
+import com.personal.todo.model.TaskSeries
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import java.time.Instant
@@ -102,19 +103,38 @@ fun TaskDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val deletedMessage = stringResource(R.string.message_task_deleted)
+    val seriesDeletedMessage = stringResource(R.string.message_series_deleted)
     val undoLabel = stringResource(R.string.action_undo)
     val deleteLabel = stringResource(R.string.action_delete)
     val addFailedMessage = stringResource(R.string.message_add_subtask_failed)
 
-    // Deleting a parent that still has subtasks asks once before: the subtasks
-    // go to the trash together with it (spec section 4.3). A plain task is
-    // deleted straight away and can be undone from the snackbar (section 4.2).
+    // 删重复任务时用户要能分清「只删这一次」和「以后都不再重复了」（用户 2026-10-25）：
+    // 详情页删除先问库一次（这条还在不在重复），再决定弹哪个框——重复任务弹「这一次 /
+    // 整条」，带子任务的普通任务弹原来那句「子任务会一起删」（说明文档 4.3），两者都不
+    // 成立时照旧一键删除 + 撤销（4.2）。
     var confirmDelete by remember { mutableStateOf(false) }
+    var deleteIsSeries by remember { mutableStateOf(false) }
+
+    /** 只删这一条（连带子任务），并给一次撤销。 */
     val deleteWithUndo: () -> Unit = {
         viewModel.delete()
         scope.launch {
             val result = snackbarHostState.showSnackbar(deletedMessage, undoLabel)
-            if (result == SnackbarResult.ActionPerformed) viewModel.restore()
+            if (result == SnackbarResult.ActionPerformed) viewModel.restore(series = false)
+        }
+    }
+
+    /**
+     * 删掉整条重复系列，并给一次撤销。
+     *
+     * 撤销恢复的也是**整条**：只恢复被点的那一条的话，下一轮生成会把后面的每一次重新补
+     * 出来，用户会觉得「撤销没生效」。
+     */
+    val deleteSeriesWithUndo: () -> Unit = {
+        viewModel.deleteSeries()
+        scope.launch {
+            val result = snackbarHostState.showSnackbar(seriesDeletedMessage, undoLabel)
+            if (result == SnackbarResult.ActionPerformed) viewModel.restore(series = true)
         }
     }
 
@@ -170,7 +190,20 @@ fun TaskDetailScreen(
                     onRestore = { viewModel.restore() },
                     onEdit = onEdit,
                     onDelete = {
-                        if (subtasks.isNotEmpty()) confirmDelete = true else deleteWithUndo()
+                        // 先问清这条任务现在能不能按「整条系列」删，再决定是弹框让人选、
+                        // 还是直接删。**不能**用一条异步流的当前值来判：流还没查完时它
+                        // 等于「不属于重复任务」，慢一帧就会走成直接删掉，用户再也看不到
+                        // 「整条系列」这个选项——那正是这个功能存在的意义。
+                        scope.launch {
+                            // Room 的挂起查询本来就跑在自己的执行器上，不必再切线程。
+                            val seriesDelete = viewModel.canDeleteAsSeries()
+                            if (seriesDelete || subtasks.isNotEmpty()) {
+                                deleteIsSeries = seriesDelete
+                                confirmDelete = true
+                            } else {
+                                deleteWithUndo()
+                            }
+                        }
                     }
                 )
             }
@@ -237,15 +270,32 @@ fun TaskDetailScreen(
 
     val deleteTarget = task
     if (confirmDelete && deleteTarget != null) {
-        DeleteTaskConfirmDialog(
-            taskTitle = deleteTarget.title,
-            subtaskCount = subtasks.size,
-            onConfirm = {
-                confirmDelete = false
-                deleteWithUndo()
-            },
-            onDismiss = { confirmDelete = false }
-        )
+        // 两个动作都要说清各自删掉什么：删除重复任务弹「这一次 / 整条」，其余仍走原来那句
+        // 「子任务会一起删」。哪个框由点删除那一刻问出来的 `deleteIsSeries` 决定。
+        if (deleteIsSeries) {
+            RepeatDeleteDialog(
+                taskTitle = deleteTarget.title,
+                onDeleteThisOnly = {
+                    confirmDelete = false
+                    deleteWithUndo()
+                },
+                onDeleteSeries = {
+                    confirmDelete = false
+                    deleteSeriesWithUndo()
+                },
+                onDismiss = { confirmDelete = false }
+            )
+        } else {
+            DeleteTaskConfirmDialog(
+                taskTitle = deleteTarget.title,
+                subtaskCount = subtasks.size,
+                onConfirm = {
+                    confirmDelete = false
+                    deleteWithUndo()
+                },
+                onDismiss = { confirmDelete = false }
+            )
+        }
     }
 }
 
@@ -323,7 +373,7 @@ private fun TaskHeader(
             maxLines = 3,
             overflow = TextOverflow.Ellipsis
         )
-        if (task.repeatRule != null || task.recurrenceSourceId != null) {
+        if (TaskSeries.belongsToSeries(task)) {
             Spacer(Modifier.height(7.dp))
             RepeatPill()
         }

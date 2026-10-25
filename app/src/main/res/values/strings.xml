@@ -239,6 +239,8 @@
 
     <!-- 任务字段 -->
     <string name="task_title_label">标题</string>
+    <!-- 编辑器标题框里的占位文字：这一行本身就是「叫什么」，不必再顶一行「新建任务」 -->
+    <string name="task_title_placeholder">要做什么？</string>
     <string name="task_title_required">标题不能为空</string>
     <string name="task_priority_label">优先级</string>
     <string name="task_list_label">所属清单</string>
@@ -368,6 +370,13 @@
     <string name="dialog_delete_task_title">删除任务</string>
     <string name="dialog_delete_task_message">“%1$s”下有 %2$d 个子任务，删除父任务会一并删除这些子任务。之后可以从回收站恢复。</string>
     <string name="dialog_delete_task_confirm">删除</string>
+    <!-- 重复任务的删除弹层：只删这一次，还是整条系列都不再重复 -->
+    <string name="dialog_delete_repeat_title">删除重复任务</string>
+    <string name="dialog_delete_repeat_message">“%1$s”是一条重复任务。只删这一次，还是删掉整条重复规则？</string>
+    <string name="dialog_delete_repeat_this_only">只删这一次</string>
+    <string name="dialog_delete_repeat_series">删除整条系列</string>
+    <string name="dialog_delete_repeat_series_hint">整条系列（这条规则和它生成过的每一次）会一起移入回收站，之后可以从回收站恢复。</string>
+    <string name="message_series_deleted">整条重复任务已移入回收站</string>
     <string name="message_task_deleted">任务已移入回收站</string>
     <string name="message_task_completed">任务已完成</string>
     <string name="message_list_deleted">清单已删除，其中的任务已移入收件箱</string>
@@ -488,7 +497,7 @@
     <string name="focus_stats_week">本周 %1$s</string>
     <string name="focus_history_title">专注记录</string>
     <string name="focus_drawer_subtitle">把专注和习惯连在一起</string>
-    <string name="focus_drawer_section_records">记录</string>
+    <string name="focus_drawer_section_records">记录与占比</string>
     <string name="focus_drawer_section_auto">自动打卡</string>
     <string name="focus_drawer_auto_hint">每次开始专注，顺手给这个习惯记一次</string>
     <string name="focus_drawer_auto_none">不自动打卡</string>
@@ -530,15 +539,9 @@
     <string name="filter_active_badge">已启用 %1$d 项筛选</string>
     <string name="filter_section_all">全部</string>
     <string name="filter_sheet_subtitle">维度之间是「且」，同一个维度里是「或」</string>
-    <string name="filter_summary_empty">全部任务</string>
-    <string name="filter_summary_lists">清单 · %1$s</string>
-    <string name="filter_summary_priorities">优先级 · %1$d</string>
-    <string name="filter_summary_tags">标签 · %1$d</string>
-    <string name="new_task_sheet_subtitle">写个标题就能存，日期和优先级之后再加</string>
 
-    <!-- 日历页的「看哪些任务」筛选条 -->
-    <string name="calendar_filter_title">看哪些任务</string>
-    <string name="calendar_filter_hint">清单 / 优先级 / 标签</string>
+    <!-- 日历页的「看哪些任务」筛选条已撤（2026-10-21）：筛子只从 ⋮ 进 -->
+    <!-- 新建任务弹层顶部那行「新建任务 + 一行说明」也撤了（2026-10-22）：标题框自己说话 -->
 
     <!-- 首页（今天）顶部的小结卡 -->
     <string name="today_summary_left">还剩 %1$d 件</string>
@@ -548,12 +551,30 @@
 
     <!-- 专注抽屉里的「这一天」饼图 -->
     <string name="focus_donut_title">专注占比</string>
+    <!-- 饼图卡片自己的标题：页面顶栏已经写着「专注占比」了，卡片里再写一遍只是重复 -->
+    <string name="focus_donut_card_title">这一天</string>
     <string name="focus_donut_empty">这一天还没有专注记录</string>
     <string name="focus_donut_other">其他</string>
     <string name="focus_donut_total">这一天共 %1$s</string>
+    <string name="focus_donut_tap_to_clear">再看一次「%1$s」可以取消筛选</string>
+    <!-- 图例那几行的读屏说明：它看起来只是一行字，要说清点下去会发生什么 -->
+    <string name="focus_donut_filter_on">只看「%1$s」这一天的记录</string>
+    <string name="focus_donut_filter_off">取消只看「%1$s」</string>
     <string name="focus_donut_prev">前一天</string>
     <string name="focus_donut_next">后一天</string>
-    <string name="focus_donut_open_records">查看记录</string>
+
+    <!-- 专注占比（独立页，2026-10-25）：饼图 + 按任务排行 + 这一天的逐条记录 -->
+    <string name="focus_ratio_title">专注占比</string>
+    <string name="focus_ratio_open_records">专注记录</string>
+    <string name="focus_ratio_rank_title">按任务</string>
+    <string name="focus_ratio_rank_total">这一天 %1$s</string>
+    <string name="focus_ratio_records_title">这一天的记录</string>
+    <string name="focus_ratio_records_summary">%1$d 条</string>
+    <string name="focus_ratio_records_empty">这一天还没有专注记录</string>
+    <string name="focus_ratio_records_empty_filtered">这个任务在这一天没有别的记录</string>
+    <string name="focus_ratio_filtered_by">只看「%1$s」</string>
+    <string name="focus_ratio_filter_clear">看全部</string>
+    <string name="focus_ratio_next_day">次日 %1$s</string>
 
     <!-- 开发者选项：设置里连点「开发者声明」五下解锁 -->
     <string name="settings_developer_statement">开发者声明</string>

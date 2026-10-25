@@ -81,6 +81,7 @@ import com.personal.todo.model.DateLabel
 import com.personal.todo.model.Priority
 import com.personal.todo.model.Schedule
 import com.personal.todo.model.TaskEventType
+import com.personal.todo.model.TaskSeries
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.DayOfWeek
 import java.time.Instant
@@ -505,7 +506,7 @@ fun TaskCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                if (task.repeatRule != null || task.recurrenceSourceId != null) {
+                if (TaskSeries.belongsToSeries(task)) {
                     Spacer(Modifier.width(4.dp))
                     RepeatMark()
                 }
@@ -1280,6 +1281,56 @@ fun DeleteTaskConfirmDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
+    )
+}
+
+/**
+ * 删一条**重复任务**之前的确认（用户 2026-10-25）：只删这一次，还是整条系列都不再重复。
+ *
+ * 两个按钮说清各自删掉什么：左边是「只删这一次」（明天那一次还会照常出现），右边是
+ * 「删除整条系列」（规则和它生成过的每一次一起进回收站，从此不再长出来）。取消放中间
+ * 那一行的左边，不与这两个动作挤在同一行——三个等宽按钮里「删除整条系列」会被挤成两行。
+ */
+@Composable
+fun RepeatDeleteDialog(
+    taskTitle: String,
+    onDeleteThisOnly: () -> Unit,
+    onDeleteSeries: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalTodoColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dialog_delete_repeat_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.dialog_delete_repeat_message, taskTitle))
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.dialog_delete_repeat_series_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.dateMuted
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDeleteSeries) {
+                Text(
+                    text = stringResource(R.string.dialog_delete_repeat_series),
+                    color = colors.dateOverdue
+                )
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+                TextButton(onClick = onDeleteThisOnly) {
+                    Text(stringResource(R.string.dialog_delete_repeat_this_only))
+                }
+            }
         }
     )
 }

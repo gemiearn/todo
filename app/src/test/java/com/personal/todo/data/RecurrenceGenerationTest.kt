@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -179,5 +180,130 @@ class RecurrenceGenerationTest {
         val dates = db.taskDao().getOccurrencesOf(sourceId).mapNotNull { it.plannedDate }
         assertEquals("一年里每天一次（源自己占第一天）", 365, dates.size)
         assertEquals(today.plusDays(365), dates.max())
+    }
+
+    // ------------------------------------------------ 删整条系列（2026-10-25）
+
+    /**
+     * 「删除整条系列」要把规则源和它生成过的每一次一起收进回收站，而且**从此不再长出来**：
+     * 只删当前这一次的话，第二天生成器又把下一次补上，用户会觉得根本删不掉。
+     */
+    @Test
+    fun deletingTheSeriesTakesTheSourceAndEveryOccurrence() = runBlocking {
+        val sourceId = dailyTask()
+        repository.materializeRecurrences(today, window)
+        val before = db.taskDao().getSeriesRows(sourceId).size
+        assertEquals("源 + 14 次", 15, before)
+
+        val removed = repository.deleteSeries(sourceId)
+
+        assertEquals(15, removed)
+        assertTrue(
+            "整串一行都不剩（在打开态里）",
+            db.taskDao().getSeriesRows(sourceId).all { it.deletedAt != null }
+        )
+        assertEquals("再跑生成器也补不出来", 0, repository.materializeRecurrences(today.plusDays(1), window))
+    }
+
+    /** 从**某一实例**发起整串删除，也一样把源一起带走：那才是「以后都不再重复了」。 */
+    @Test
+    fun deletingTheSeriesFromOneOccurrenceAlsoTakesTheSource() = runBlocking {
+        val sourceId = dailyTask()
+        repository.materializeRecurrences(today, window)
+        val occurrence = db.taskDao().getOccurrencesOf(sourceId).first()
+
+        repository.deleteSeries(occurrence.id)
+
+        assertNotNull("源也被删了", repository.getTask(sourceId)?.deletedAt)
+        assertTrue(
+            "整串一行都不剩（在打开态里）",
+            db.taskDao().getSeriesRows(sourceId).all { it.deletedAt != null }
+        )
+    }
+
+    /**
+     * 撤销整串删除：随那次一起进回收站的那些行原样回来，而**先前单独删掉**的那一次不动——
+     * 撤销的是刚才那一下，不是回收站里的全部。
+     */
+    @Test
+    fun restoringTheSeriesBringsBackExactlyWhatThatDeleteTook() = runBlocking {
+        val sourceId = dailyTask()
+        repository.materializeRecurrences(today, window)
+        val occurrences = db.taskDao().getOccurrencesOf(sourceId)
+        val deletedOnItsOwn = occurrences.first().id
+        repository.deleteTask(deletedOnItsOwn)
+        advanceClock()
+
+        repository.deleteSeries(sourceId)
+        val restored = repository.restoreSeries(sourceId)
+
+        assertEquals("源 + 其余 13 次回来，单独删的那次不回来", 14, restored)
+        assertNull(repository.getTask(sourceId)?.deletedAt)
+        assertNotNull("单独删的那次仍在回收站里", repository.getTask(deletedOnItsOwn)?.deletedAt)
+        assertNull(repository.getTask(occurrences[1].id)?.deletedAt)
+    }
+
+    /** 撤销之后系列照旧会继续生成：源回来了，规则也还在。 */
+    @Test
+    fun aRestoredSeriesKeepsGenerating() = runBlocking {
+        val sourceId = dailyTask()
+        repository.materializeRecurrences(today, window)
+        repository.deleteSeries(sourceId)
+        repository.restoreSeries(sourceId)
+
+        val created = repository.materializeRecurrences(today.plusDays(20), window)
+
+        assertTrue("源回来了，后面那几天会接着生成", created > 0)
+    }
+
+    /**
+     * 回收站里点「恢复」一条整串删除的实例，回来的也是整串：用户的心里那件事还在重复，
+     * 只恢复一条的话明天照样是孤零零的一条。
+     */
+    @Test
+    fun restoringOneOccurrenceOfASeriesDeleteRestoresTheWholeSeries() = runBlocking {
+        val sourceId = dailyTask()
+        repository.materializeRecurrences(today, window)
+        val occurrence = db.taskDao().getOccurrencesOf(sourceId).first()
+        repository.deleteSeries(sourceId)
+
+        val restored = repository.restoreTask(occurrence.id)
+
+        assertEquals("回收站里点一条就恢复整串", 15, restored)
+        assertNull(repository.getTask(sourceId)?.deletedAt)
+        assertNull(repository.getTask(occurrence.id)?.deletedAt)
+    }
+
+    /** 只删这一次（普通删除）不该碰后面的每一次。 */
+    @Test
+    fun deletingOneOccurrenceLeavesTheRestOfTheSeriesAlone() = runBlocking {
+        val sourceId = dailyTask()
+        repository.materializeRecurrences(today, window)
+        val occurrence = db.taskDao().getOccurrencesOf(sourceId).first()
+
+        repository.deleteTask(occurrence.id)
+
+        assertNull("源还好好的", repository.getTask(sourceId)?.deletedAt)
+        assertEquals(
+            "其余实例都还在",
+            14,
+            db.taskDao().getSeriesRows(sourceId).count { it.deletedAt == null }
+        )
+    }
+
+    /** 源已经被删掉的那串不再算「还在重复」：详情页据此不给「删除整条系列」。 */
+    @Test
+    fun aSeriesWhoseSourceIsGoneIsNoLongerLive() = runBlocking {
+        val sourceId = dailyTask()
+        repository.materializeRecurrences(today, window)
+        val occurrence = db.taskDao().getOccurrencesOf(sourceId).first()
+
+        assertTrue(repository.isInLiveSeries(occurrence.id))
+        repository.deleteTask(sourceId)
+        assertTrue("源没了，残留的实例不再属于一串还在重复的任务", !repository.isInLiveSeries(occurrence.id))
+    }
+
+    private fun advanceClock(millis: Long = 1_000L) {
+        clock += millis
     }
 }

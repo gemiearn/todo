@@ -11,6 +11,7 @@ import com.personal.todo.model.Priority
 import com.personal.todo.model.RepeatRule
 import com.personal.todo.model.Schedule
 import com.personal.todo.model.TaskEventType
+import com.personal.todo.model.TaskSeries
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -743,6 +744,93 @@ class TaskRepository(
     }
 
     /**
+     * 删掉一整串重复任务：规则源和它生成过的每一次一起进回收站。
+     *
+     * 用户看到的是一件事在重复（说明文档 4.5），所以「以后都不再重复了」必须一次把整串
+     * 收走——只删当前这一次的话，第二天它又长回来，看起来就像删不掉。
+     *
+     * 每次删除都只作用在**还活着**的行上：用户先前单独删掉的那一次已经有自己的 DELETED
+     * 事件，不该被这次算进去，恢复整串时也就不会把它带回来（与父任务连带子任务的口径
+     * 一致）。被这次删掉的每一行都在事件里留一个 `seriesSourceId` 记号，恢复据此还原
+     * 同一批行，不必再另存一张表。
+     *
+     * @return 这次实际移入回收站的条数（含规则源自己）。
+     */
+    suspend fun deleteSeries(taskId: Long): Int = db.withTransaction {
+        val task = taskDao.getById(taskId) ?: return@withTransaction 0
+        if (task.deletedAt != null) return@withTransaction 0
+        val sourceId = TaskSeries.sourceIdOf(task) ?: return@withTransaction deleteTask(taskId)
+        val time = now()
+        val rows = taskDao.getSeriesRows(sourceId).filter { it.deletedAt == null }
+        rows.forEach { row ->
+            val subtasks = taskDao.getLiveSubtasks(row.id)
+            if (taskDao.markDeleted(row.id, time) > 0) {
+                recordEvent(
+                    row.id,
+                    TaskEventType.DELETED,
+                    row.title,
+                    time,
+                    detailsJson = encodeSeriesDeletion(sourceId, subtasks.map { it.id })
+                )
+                // 整串删除对一个实例来说，也把它的子任务一起带走：子任务只在父任务详情里
+                // 看得到，父任务没了却留着子任务，就等于把它们藏了起来。
+                subtasks.forEach { subtask ->
+                    if (taskDao.markDeleted(subtask.id, time) > 0) {
+                        recordEvent(
+                            subtask.id,
+                            TaskEventType.DELETED,
+                            subtask.title,
+                            time,
+                            detailsJson = encodeSeriesDeletion(sourceId, emptyList())
+                        )
+                    }
+                }
+            }
+        }
+        rows.size
+    }
+
+    /**
+     * 恢复一整串重复任务：把「随整串一起删掉」的那些行原样带回来，连同它们的子任务。
+     *
+     * 判据是每一行自己最新的 DELETED 事件上的 `seriesSourceId` 记号：单独被删过的那一次
+     * 没有这个记号，所以它留在回收站里——撤销的是刚才那一次整串删除，不是回收站里的所有
+     * 东西。
+     *
+     * @return 恢复的行数（含子任务）；[taskId] 不属于重复任务时退回单条语义。
+     */
+    suspend fun restoreSeries(taskId: Long): Int = db.withTransaction {
+        val task = taskDao.getById(taskId) ?: return@withTransaction 0
+        val sourceId = TaskSeries.sourceIdOf(task) ?: return@withTransaction restoreTask(taskId)
+        val time = now()
+        var restored = 0
+        taskDao.getSeriesRows(sourceId)
+            .filter { it.deletedAt != null }
+            .filter { seriesMarkOf(it.id) == sourceId }
+            .forEach { row ->
+                restored += restoreOne(row, time)
+                cascadedSubtaskIdsOf(row.id).forEach { subtaskId ->
+                    taskDao.getById(subtaskId)
+                        ?.takeIf { it.deletedAt != null }
+                        ?.let { subtask -> restored += restoreOne(subtask, time) }
+                }
+            }
+        restored
+    }
+
+    /**
+     * 这一条属于一串**还在重复**的任务吗：它有源，而且那个源还活着、身上还带着规则。
+     *
+     * 详情页据此决定删除弹层里要不要给出「删除整条系列」——源已经被删掉的那些残留实例，
+     * 后面不会再长出来了，那时「整条系列」这个选项只会让人多删几条历史。
+     */
+    suspend fun isInLiveSeries(taskId: Long): Boolean {
+        val task = taskDao.getById(taskId) ?: return false
+        val sourceId = TaskSeries.sourceIdOf(task) ?: return false
+        return taskDao.countLiveRepeatSource(sourceId) > 0
+    }
+
+    /**
      * Restores a soft deleted task.
      *
      * Restoring a parent brings back the subtasks that were deleted with it.
@@ -750,12 +838,20 @@ class TaskRepository(
      * deleted, so a visible subtask never hangs under an invisible parent.
      * Siblings are left untouched.
      *
+     * 一个属于重复任务的实例若带着「随整串删除」的记号，恢复它就把整串带回来：用户在
+     * 回收站里点的是「撤销那次删除」，心里想的就是那件事还在重复。
+     *
      * @return the number of tasks (including the requested one) that were
      * restored.
      */
     suspend fun restoreTask(taskId: Long): Int = db.withTransaction {
         val task = taskDao.getById(taskId) ?: return@withTransaction 0
         if (task.deletedAt == null) return@withTransaction 0
+        // 只有「属于某一串」的行才谈得上恢复整串：子任务也可能带着整串删除的记号，但它
+        // 不属于那串任务，按单条恢复（连带它的父任务）就够了，也不必绕回 [restoreSeries]。
+        if (TaskSeries.sourceIdOf(task) != null && seriesMarkOf(taskId) != null) {
+            return@withTransaction restoreSeries(taskId)
+        }
         val time = now()
         var restored = 0
 
@@ -774,6 +870,16 @@ class TaskRepository(
         }
         restored
     }
+
+    /**
+     * 这一行最新的 DELETED 事件上写的「随哪一串一起删除」；单独删的那次没有这个记号，
+     * 返回 null。
+     */
+    private suspend fun seriesMarkOf(taskId: Long): Long? =
+        eventDao.getForTask(taskId)
+            .lastOrNull { it.eventType == TaskEventType.DELETED }
+            ?.detailsJson
+            ?.let { SeriesSourcePattern.find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
 
     /**
      * The subtask ids that were cascaded with [taskId], read from its latest
@@ -797,6 +903,14 @@ class TaskRepository(
 
     private fun encodeSubtaskIds(ids: List<Long>): String? =
         ids.takeIf { it.isNotEmpty() }?.let { """{"subtaskIds":[${it.joinToString(",")}]}""" }
+
+    /** 整串删除时留在每一行 DELETED 事件上的记号，恢复整串时按它认人。 */
+    private fun encodeSeriesDeletion(sourceId: Long, subtaskIds: List<Long>): String = buildString {
+        append("""{"seriesSourceId":$sourceId""")
+        // 子任务 id 用现成的 subtaskIds 口径，恢复那一条的连坐子任务仍然读得出来。
+        if (subtaskIds.isNotEmpty()) append(""","subtaskIds":[${subtaskIds.joinToString(",")}]""")
+        append('}')
+    }
 
     private suspend fun restoreOne(task: Task, time: Long): Int {
         val changed = taskDao.markRestored(task.id, time)
@@ -827,5 +941,8 @@ class TaskRepository(
     private companion object {
         /** Matches the id array of a `{"subtaskIds":[1,2]}` payload. */
         val SubtaskIdsPattern = Regex("""\[([0-9,]*)\]""")
+
+        /** Matches the source id of a `{"seriesSourceId":7}` marker. */
+        val SeriesSourcePattern = Regex("\"seriesSourceId\"\\s*:\\s*(\\d+)")
     }
 }

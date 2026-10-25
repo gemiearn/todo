@@ -68,6 +68,15 @@ class TaskDetailViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * 这一条现在能不能按「整条系列」删：属于某串、而且那串的规则源还活着。
+     *
+     * 详情页在**点删除的那一刻**问它（suspend，一次库查询）：先问清再决定是「弹框让人选」
+     * 还是「直接删」，就不会出现「流还没查完 → 走成直接删掉 → 整条系列再也点不到」；
+     * 源已经被删掉的残留实例也会如实返回 false，不会给出一个误导人的「整条系列」选项。
+     */
+    suspend fun canDeleteAsSeries(): Boolean = repository.isInLiveSeries(taskId)
+
     val subtasks: StateFlow<List<Task>> = repository.observeSubtasks(taskId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -103,8 +112,26 @@ class TaskDetailViewModel(
         viewModelScope.launch { repository.deleteTask(taskId) }
     }
 
+    /**
+     * 删掉这一条所属的**整条重复系列**：规则源和它生成过的每一次一起进回收站，
+     * 从今往后再也不会长出新的那一次（说明文档 4.5）。
+     */
+    fun deleteSeries() {
+        viewModelScope.launch { repository.deleteSeries(taskId) }
+    }
+
     fun restore() {
         viewModelScope.launch { repository.restoreTask(taskId) }
+    }
+
+    /**
+     * 撤销刚才那次删除。[series] 为 true 表示刚删的是整条系列，恢复的也得是整条——
+     * 只恢复一条的话，第二轮生成又会把后面的每一次补回来，「撤销」看着像没生效。
+     */
+    fun restore(series: Boolean) {
+        viewModelScope.launch {
+            if (series) repository.restoreSeries(taskId) else repository.restoreTask(taskId)
+        }
     }
 
     fun restoreSubtask(subtaskId: Long) {

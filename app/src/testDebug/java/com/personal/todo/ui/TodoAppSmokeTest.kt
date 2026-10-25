@@ -9,6 +9,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodes
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -30,9 +31,12 @@ import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusTagSnapshot
+import com.personal.todo.model.RepeatKind
+import com.personal.todo.model.RepeatRule
 import com.personal.todo.ui.theme.TodoPomodoroTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import java.time.LocalTime
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -387,8 +391,8 @@ class TodoAppSmokeTest {
     }
 
     /**
-     * 逐条专注记录在它自己的那一页，入口在专注页左滑面板里：面板只放一行「专注记录」，
-     * 点它才推进记录页（记录行只留开始时刻与结果，不写计时模式）。
+     * 专注页的左滑面板里有两行入口：一行「专注占比」（独立页），一行「专注记录」。点记录那行
+     * 推进记录页：逐条记录只留开始时刻与结果，不写计时模式。
      */
     @Test
     fun theRecordListLivesOnItsOwnPageReachedFromTheFocusDrawer() {
@@ -417,6 +421,7 @@ class TodoAppSmokeTest {
         repeat(20) { compose.waitForIdle() }
 
         // 记录页：那条记录整行都在；开始 / 结束时刻分列在左边，没有计时模式。
+        // 饼图 2026-10-25 搬到独立页之后，任务名在这一页只出现一次（记录行自己）。
         compose.waitUntilNodeCount(hasText("写季度报告"), 1, TimeoutMillis)
         compose.onNodeWithTag(FocusRecordsTag).assertExists()
         compose.onNodeWithText("已完成", substring = true).assertExists()
@@ -454,10 +459,51 @@ class TodoAppSmokeTest {
             1_800,
             runBlocking { focus.observeSessions().first().single().actualFocusSeconds }
         )
+        // 记录页里那条记录只出现一次（饼图 2026-10-25 搬到「专注占比」独立页了）。
         compose.waitUntilNodeCount(hasText("未关联任务"), 1, TimeoutMillis)
         // 等补记协程和底部弹层的收起动画都跑完再结束，否则 @After 关库时它还在订阅。
         compose.mainClock.advanceTimeBy(500)
         repeat(10) { compose.waitForIdle() }
+    }
+
+    /**
+     * 「专注占比」是一页自己的东西（用户 2026-10-25）：从专注页左滑面板点进去，饼图、
+     * 按任务排行、那一天的逐条记录一起画出来；改动日期时，下面的记录也跟着那天走。
+     */
+    @Test
+    fun theFocusRatioPageOpensFromTheFocusDrawer() {
+        runBlocking {
+            val taskId = tasks.createTask("写季度报告", tasks.ensureInbox(), plannedDate = tasks.today())
+            focus.startTimer(
+                mode = FocusMode.POMODORO,
+                plannedSeconds = 1_500,
+                taskId = taskId,
+                taskTitleSnapshot = "写季度报告",
+                listNameSnapshot = "收件箱"
+            )
+            focus.finishTimer()
+        }
+
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.Focus)).performClick()
+        compose.waitForIdle()
+        openDrawer()
+        // 抽屉是 ModalDrawerSheet，坐标点击落不到它的行上，所以走语义动作（同记录页那条）。
+        compose.onNodeWithText("专注占比").performSemanticsAction(SemanticsActions.OnClick)
+        repeat(20) { compose.waitForIdle() }
+
+        compose.onNodeWithTag(FocusRatioTag).assertExists()
+        // 饼图图例 + 按任务排行：这一天那件事在上半页出现两次（同一个任务、同一个数）。
+        compose.waitUntilNodeCount(hasText("写季度报告"), 2, TimeoutMillis)
+        compose.onNodeWithText("按任务").assertExists()
+
+        // 下半页是这一天的逐条记录：它是懒列表里的一项，先滚过去再断言，否则很可能还没
+        // 被组合出来（那不代表页面错了）。
+        compose.onNodeWithTag(FocusRatioTag).performScrollToNode(hasText("这一天的记录"))
+        compose.waitForIdle()
+        compose.onNodeWithText("这一天的记录").assertExists()
+        // 记录行本身也带上任务名：此时一共三处。
+        compose.waitUntilNodeCount(hasText("写季度报告"), 3, TimeoutMillis)
     }
 
     /** 记录可以删：⋮ → 删除 → 确认之后它就离开历史，页面回到空态。 */
@@ -482,6 +528,7 @@ class TodoAppSmokeTest {
         repeat(20) { compose.waitForIdle() }
         compose.onNodeWithText("专注记录").performSemanticsAction(SemanticsActions.OnClick)
         repeat(20) { compose.waitForIdle() }
+        // 任务名只出现一次：记录行本身（饼图在「专注占比」独立页里）。
         compose.waitUntilNodeCount(hasText("写季度报告"), 1, TimeoutMillis)
 
         // 记录行最右那个 ⋮ 是「修改 / 删除」；弹出菜单与对话框里的按钮同样走语义动作。
@@ -515,6 +562,55 @@ class TodoAppSmokeTest {
 
         compose.onNodeWithText("今天的专注对象").assertExists()
         compose.onNodeWithText("先选一个要专注的任务").assertDoesNotExist()
+    }
+
+    /**
+     * 详情页删一条**重复任务**时先弹选择（用户 2026-10-25）：只删这一次，还是整条系列。
+     * 这里点「删除整条系列」，规则源与它生成过的每一次一起进回收站，后面的日子不再补。
+     */
+    @Test
+    fun aRepeatTaskCanBeDeletedWithItsWholeSeries() {
+        val sourceId = runBlocking {
+            val id = tasks.createTask(
+                title = "每天跑步",
+                listId = tasks.ensureInbox(),
+                plannedDate = tasks.today(),
+                plannedTime = LocalTime.of(7, 0),
+                repeatRule = RepeatRule(RepeatKind.DAILY)
+            )
+            tasks.materializeRecurrences(tasks.today(), horizonDays = 5)
+            id
+        }
+
+        launchApp()
+        compose.onNodeWithTag(tabTag(HomeTab.Today)).performClick()
+        compose.waitForIdle()
+        compose.waitUntilNodeCount(hasText("每天跑步"), 1, TimeoutMillis)
+        compose.onNodeWithText("每天跑步").performClick()
+        compose.waitForIdle()
+
+        // 详情页「删除」→ 弹层里选「删除整条系列」（弹层按钮走语义动作，与别的弹层一致）。
+        //
+        // 点删除之后详情页会先查一次库（这条还在不在重复），查完才弹框，所以这里等节点
+        // 出现，而不是数固定次数的 waitForIdle——那是「等几帧」不是「等结果」。
+        compose.onNodeWithText("删除").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntilNodeCount(hasText("删除重复任务"), 1, TimeoutMillis)
+        compose.onNodeWithText("只删这一次").assertExists()
+        compose.onNodeWithText("删除整条系列").performSemanticsAction(SemanticsActions.OnClick)
+
+        // 整串都不在了：规则源与它生成过的每一次都被软删。删除本身是 view model 里的协程，
+        // 同样等到库里真的变了再断言。
+        val deadline = System.currentTimeMillis() + TimeoutMillis
+        while (!runBlocking {
+                db.taskDao().getSeriesRows(sourceId).all { it.deletedAt != null }
+            }
+        ) {
+            if (System.currentTimeMillis() >= deadline) {
+                throw AssertionError("整条系列没有全部进回收站")
+            }
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(100)
+        }
     }
 
     /**

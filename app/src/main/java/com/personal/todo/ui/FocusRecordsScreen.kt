@@ -218,6 +218,8 @@ fun FocusRecordsScreen(
                     )
                 }
             }
+            // 饼图不在这页了（用户 2026-10-25）：它连同「按任务」的排行和那一天的记录一起
+            // 成了独立的一页「专注占比」。这一页只做它擅长的两件事——逐条记录，以及改 / 补 / 删。
             if (visible.isEmpty()) {
                 item(key = "filter-empty") {
                     Column(

@@ -285,6 +285,32 @@ class MainScreenSmokeTest {
         compose.onNodeWithText("先选一个要专注的任务").assertExists()
     }
 
+    /**
+     * 「专注占比」是一页自己的东西（用户 2026-10-25）：页面画得出来；一条记录都没有时，
+     * 饼图和下面那块记录列表都说实话，而不是画一个空环。
+     *
+     * 这一页是由壳层（TodoApp）推入的路由，不是 `MainScreen` 的一种 kind，所以这里像
+     * [DayTimelineScreen] 那样直接组合它。
+     */
+    @Test
+    fun theFocusRatioPageComposes() {
+        compose.setContent {
+            TodoPomodoroTheme {
+                FocusRatioScreen(
+                    sessions = flowOf(emptyList()),
+                    zone = ZoneId.systemDefault(),
+                    today = tasks.today(),
+                    onOpenRecords = {},
+                    onBack = {}
+                )
+            }
+        }
+
+        compose.onNodeWithTag(FocusRatioTag).assertExists()
+        assertSomewhereOnScreen("专注占比")
+        assertSomewhereOnScreen("这一天还没有专注记录")
+    }
+
     /** An empty day reads the way the reference screenshot has it. */
     @Test
     fun theEmptyTimelineSaysThereIsNothingToDo() {
@@ -339,7 +365,9 @@ class MainScreenSmokeTest {
         launch(HomeTab.More.route, HomeTab.More.route)
 
         assertSomewhereOnScreen("更多")
-        assertSomewhereOnScreen("崩溃日志")
+        // 崩溃日志那一行已按用户要求移进「开发者选项」，更多页不再有它；
+        // 换一个稳定的入口来确认这一页真的画出来了。
+        assertSomewhereOnScreen("标签管理")
     }
 
     @Test

@@ -121,21 +121,14 @@ fun filterByRange(
 fun nearestOpenOccurrencePerSeries(tasks: List<Task>): List<Task> {
     val nearest = mutableMapOf<Long, Task>()
     tasks.forEach { task ->
-        val series = seriesIdOf(task) ?: return@forEach
+        val series = TaskSeries.sourceIdOf(task) ?: return@forEach
         val current = nearest[series]
         if (current == null || isEarlierThan(task, current)) nearest[series] = task
     }
     return tasks.filter { task ->
-        val series = seriesIdOf(task) ?: return@filter true
+        val series = TaskSeries.sourceIdOf(task) ?: return@filter true
         nearest[series]?.id == task.id
     }
-}
-
-/** 一条任务属于哪一串重复任务；不重复的任务是 null，永远单独出现。 */
-private fun seriesIdOf(task: Task): Long? = when {
-    task.recurrenceSourceId != null -> task.recurrenceSourceId
-    task.repeatRule != null -> task.id
-    else -> null
 }
 
 /** 同一个串里挑「最近那一条」：先比计划日期，再比 id，结果才是确定的。 */

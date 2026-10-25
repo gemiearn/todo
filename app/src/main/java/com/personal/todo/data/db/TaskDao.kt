@@ -393,6 +393,15 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     fun observeById(id: Long): Flow<Task?>
 
+    /**
+     * 一串重复任务的**全部行**：规则源自己 + 由它生成的每一次，进过回收站的也算。
+     *
+     * 删整条系列与恢复整条系列都要读它：前者要知道该把哪些行一起送进回收站，后者要知道
+     * 哪一次是用户当初主动删掉的（那一次不该跟着整串回来）。
+     */
+    @Query("SELECT * FROM tasks WHERE id = :sourceId OR recurrenceSourceId = :sourceId")
+    suspend fun getSeriesRows(sourceId: Long): List<Task>
+
     @Query("SELECT * FROM tasks WHERE parentTaskId = :parentTaskId AND deletedAt IS NULL")
     suspend fun getLiveSubtasks(parentTaskId: Long): List<Task>
 
@@ -419,4 +428,14 @@ interface TaskDao {
 
     @Query("UPDATE tasks SET deletedAt = NULL, updatedAt = :at WHERE id = :id AND deletedAt IS NOT NULL")
     suspend fun markRestored(id: Long, at: Long): Int
+
+    /**
+     * 「这条任务是不是真有一条规则在给它生成后面的每一次」。
+     *
+     * 删整串之前复核：规则源被另一次整串删除带走之后，库里剩下的实例虽然还带着
+     * `recurrenceSourceId`，那串其实已经结束了——这时再删「整串」只会多删几条历史，
+     * 用户该看到的是「只删这一次」。
+     */
+    @Query("SELECT COUNT(*) FROM tasks WHERE id = :sourceId AND repeatRule IS NOT NULL AND deletedAt IS NULL")
+    suspend fun countLiveRepeatSource(sourceId: Long): Int
 }
