@@ -339,6 +339,14 @@ class FocusRepository(
         // being skipped).
         if (!timer.phase.isBreak) {
             val wall = now()
+            // 和 [updateSession] / [addManualSession] 同一条口径：至少记 1 秒。
+            //
+            // 计时器刚开始就被结束（或者两次 elapsed 读到同一毫秒）时算出来是 0 秒。这样的
+            // 记录会出现在「这一天的记录」里，却不进饼图与按任务排行（那两处按秒数聚合，
+            // 0 秒等于没有），同一件事在同一个页面上两种说法。夹到 1 秒之后，它至少在哪儿
+            // 都算一条真实存在过的记录。
+            val seconds = FocusTiming.recordedFocusSeconds(stateOf(timer), elapsed())
+                .coerceIn(MinRecordedSeconds, MaxRecordedSeconds)
             focusDao.insertSession(
                 FocusSession(
                     taskId = timer.taskId,
@@ -348,9 +356,10 @@ class FocusRepository(
                     tagIdsSnapshot = timer.tagIdsSnapshot,
                     mode = timer.mode,
                     startedAt = timer.startedAt,
-                    endedAt = wall,
+                    // 抬到 1 秒之后结束时刻也得跟上，否则这条记录的段长还是 0。
+                    endedAt = maxOf(wall, timer.startedAt + seconds * 1_000L),
                     plannedSeconds = timer.plannedSeconds,
-                    actualFocusSeconds = FocusTiming.recordedFocusSeconds(stateOf(timer), elapsed()),
+                    actualFocusSeconds = seconds,
                     // 真正在跑的那几小段一起带走：统计页据此摊 24 小时，暂停空档不落进去。
                     focusSegments = timer.closedSegments(wall),
                     status = status

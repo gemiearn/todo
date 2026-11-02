@@ -492,8 +492,14 @@ class TodoAppSmokeTest {
         repeat(20) { compose.waitForIdle() }
 
         compose.onNodeWithTag(FocusRatioTag).assertExists()
-        // 饼图图例 + 按任务排行：这一天那件事在上半页出现两次（同一个任务、同一个数）。
-        compose.waitUntilNodeCount(hasText("写季度报告"), 2, TimeoutMillis)
+        // 饼图图例 + 按任务排行：这一天那件事在上半页至少出现两次（同一个任务、同一个数）。
+        //
+        // 这里数的是「至少 2」而不是「恰好 2」：这一页内容不多，下面是懒列表，记录行在
+        // 411×891 上第一屏就已经组合出来了，所以总数可能是 2 也可能是 3。写死 2 的话，
+        // 屏幕一变高就会假失败（2026-11-03 之前就是这么红的）。
+        compose.waitUntil(TimeoutMillis) {
+            compose.onAllNodes(hasText("写季度报告")).fetchSemanticsNodes().size >= 2
+        }
         compose.onNodeWithText("按任务").assertExists()
 
         // 下半页是这一天的逐条记录：它是懒列表里的一项，先滚过去再断言，否则很可能还没
@@ -501,8 +507,10 @@ class TodoAppSmokeTest {
         compose.onNodeWithTag(FocusRatioTag).performScrollToNode(hasText("这一天的记录"))
         compose.waitForIdle()
         compose.onNodeWithText("这一天的记录").assertExists()
-        // 记录行本身也带上任务名：此时一共三处。
-        compose.waitUntilNodeCount(hasText("写季度报告"), 3, TimeoutMillis)
+        // 记录行本身也带上任务名：此时至少三处。
+        compose.waitUntil(TimeoutMillis) {
+            compose.onAllNodes(hasText("写季度报告")).fetchSemanticsNodes().size >= 3
+        }
     }
 
     /** 记录可以删：⋮ → 删除 → 确认之后它就离开历史，页面回到空态。 */
