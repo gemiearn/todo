@@ -1,12 +1,36 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
-        Phase 1 keeps every task on the device: no permissions, no network, no
-        accounts - and no Android auto backup either, so the local database is
-        never uploaded to Google's servers. allowBackup plus fullBackupContent
-        cover Android 11 and lower, dataExtractionRules covers Android 12 and
-        higher. A user controlled export is planned as a later phase.
+        提醒要的三样权限，都不涉及网络与账号：
+
+        - POST_NOTIFICATIONS：Android 13 起发通知要运行时授权。没授权时 App 照常能用，
+          只是提醒不会弹——设置页会显示「未开启」，不会假装已经设好了。
+        - SCHEDULE_EXACT_ALARM：Android 12 起的精确闹钟。默认走非精确调度，只有用户在
+          设置页打开「准点提醒」时才会用到它；用户随时可以在系统设置里收回。
+        - RECEIVE_BOOT_COMPLETED：重启后把闹钟重新排上，否则重启一次就再也不响。
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+        lint 的 ProtectedPermissions 把这一条判成「只授予系统应用」，是误报：SCHEDULE_EXACT_ALARM
+        在 Android 12 起是普通权限，用户可以在系统设置里授予，也可以随时收回（我们正是靠
+        canScheduleExactAlarms() 检测它）。所以这里显式忽略那一条，而不是改用 Play 上受限的
+        USE_EXACT_ALARM。
+    -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+        Phase 1 keeps every task on the device: no network, no accounts - and no
+        Android auto backup either, so the local database is never uploaded to
+        Google's servers. allowBackup plus fullBackupContent cover Android 11 and
+        lower, dataExtractionRules covers Android 12 and higher. A user controlled
+        export is planned as a later phase.
+
+        上面那三样权限只服务于本地提醒，没有一个会把数据发出去。
     -->
     <application
         android:name=".TodoApplication"
@@ -37,6 +61,34 @@
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.TodoPomodoro" />
+
+        <!--
+            提醒的三个广播接收器：
+
+            - ReminderReceiver：闹钟到点，发通知。显式 Intent 唤起，不需要 exported。
+            - ReminderActionReceiver：通知上的「完成」「稍后 10 分钟」两个按钮。
+            - ReminderBootReceiver：开机、App 更新、改时区、改系统时间之后重排闹钟。
+              这几件事都会让系统清掉或算错已经设好的闹钟，不重排的话界面上还写着
+              「提醒 20:00」，到点却一声不响。
+        -->
+        <receiver
+            android:name=".notification.ReminderReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".notification.ReminderActionReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".notification.ReminderBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <!-- 默认那版：B·计时环（也就是安装后桌面上看到的第一个图标）。 -->
         <activity-alias

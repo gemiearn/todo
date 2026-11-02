@@ -70,6 +70,7 @@ import com.personal.todo.model.TaskSeries
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskDetailViewModel
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.launch
@@ -427,6 +428,20 @@ private fun TaskHeader(
                 modifier = Modifier.weight(1f)
             )
         }
+        task.reminderAt?.let { reminderAt ->
+            Spacer(Modifier.height(10.dp))
+            // 提醒单独占一行：它会跨天（「提前 1 天」），塞进上面那两列会说不清它是挂在
+            // 计划日还是截止日上。已经响过的写「提醒已过」——不能让一个过去的时间看起来
+            // 还等着响。
+            DetailMetaRow(
+                icon = "🔔",
+                text = if (task.completedAt == null && reminderAt > nowMillis) {
+                    detailReminderText(reminderAt, today, zone)
+                } else {
+                    stringResource(R.string.reminder_past)
+                }
+            )
+        }
         task.completedAt?.let { completedAt ->
             Spacer(Modifier.height(10.dp))
             DetailMetaRow(
@@ -635,6 +650,18 @@ private fun SectionTitle(text: String) {
 
 /** The due time as `HH:mm`, the same shape the editor stores. */
 private fun detailTimeText(time: LocalTime): String = "%02d:%02d".format(time.hour, time.minute)
+
+/** 详情页的提醒时刻：「今天 20:00」，跨天时写成「11月5日 20:00」。 */
+@Composable
+private fun detailReminderText(at: Long, today: LocalDate, zone: ZoneId): String {
+    val moment = Instant.ofEpochMilli(at).atZone(zone).toLocalDateTime()
+    val clock = detailTimeText(moment.toLocalTime())
+    return if (moment.toLocalDate() == today) {
+        stringResource(R.string.reminder_detail_today, clock)
+    } else {
+        stringResource(R.string.reminder_moment_day, moment.monthValue, moment.dayOfMonth, clock)
+    }
+}
 
 @Composable
 private fun InfoText(text: String) {

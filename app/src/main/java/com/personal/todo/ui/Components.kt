@@ -215,6 +215,27 @@ private fun countdownText(countdown: Countdown): String? = when (countdown) {
     is Countdown.Days -> stringResource(R.string.countdown_days, countdown.days)
 }
 
+/**
+ * 卡片右侧那一行小字：「20:00 提醒」。
+ *
+ * 只在**还没响、任务也没结束**的时候显示。提醒已经过去的任务若还挂着这个时间，用户会
+ * 以为它还会响——那比不显示更糟。
+ */
+@Composable
+private fun reminderChipText(task: Task, nowMillis: Long, zone: ZoneId): String? {
+    val at = task.reminderAt ?: return null
+    if (task.completedAt != null || task.deletedAt != null) return null
+    if (at <= nowMillis) return null
+    val moment = Instant.ofEpochMilli(at).atZone(zone).toLocalDateTime()
+    val clock = "%02d:%02d".format(moment.hour, moment.minute)
+    val text = if (moment.toLocalDate() == Schedule.todayOf(nowMillis, zone)) {
+        clock
+    } else {
+        stringResource(R.string.reminder_moment_day, moment.monthValue, moment.dayOfMonth, clock)
+    }
+    return stringResource(R.string.reminder_card_chip, text)
+}
+
 private fun weekdayRes(dayOfWeek: DayOfWeek): Int = when (dayOfWeek) {
     DayOfWeek.MONDAY -> R.string.weekday_mon
     DayOfWeek.TUESDAY -> R.string.weekday_tue
@@ -450,6 +471,9 @@ fun TaskCard(
         Schedule.countdownTo(nowMillis, task.dueDate, task.dueTime, zone)
     }
     val countdownLabel = countdownText(countdown)
+    // 提醒只在不远的未来显示：已经响过的、已完成的都不再写一行，免得卡片上一直挂着
+    // 一个过去了的时间。
+    val reminderLabel = reminderChipText(task, nowMillis, zone)
 
     val barColor = priorityColor(task.priority)
     val titleColor = if (completed) colors.doneInk else MaterialTheme.colorScheme.onSurface
@@ -524,7 +548,7 @@ fun TaskCard(
             }
         }
 
-        if (dateText != null || countdownLabel != null) {
+        if (dateText != null || countdownLabel != null || reminderLabel != null) {
             Spacer(Modifier.width(8.dp))
             Column(horizontalAlignment = Alignment.End) {
                 if (dateText != null) {
@@ -532,6 +556,14 @@ fun TaskCard(
                         text = dateText,
                         style = MaterialTheme.typography.labelLarge,
                         color = dateColor,
+                        maxLines = 1
+                    )
+                }
+                if (reminderLabel != null) {
+                    Text(
+                        text = reminderLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.dateMuted,
                         maxLines = 1
                     )
                 }

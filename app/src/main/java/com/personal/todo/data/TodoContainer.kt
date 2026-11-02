@@ -3,6 +3,7 @@ package com.personal.todo.data
 import android.content.Context
 import com.personal.todo.R
 import com.personal.todo.data.db.DatabaseProvider
+import com.personal.todo.notification.ReminderScheduler
 
 /**
  * Minimal manual wiring for the app. A full DI framework is explicitly not
@@ -30,7 +31,11 @@ object TodoContainer {
             val appContext = context.applicationContext
             val created = TaskRepository(
                 db = DatabaseProvider.get(appContext),
-                inboxName = appContext.getString(R.string.list_inbox_name)
+                inboxName = appContext.getString(R.string.list_inbox_name),
+                // 提醒的闹钟由仓库在每次写完任务之后统一重新安排，所以这里注入它。
+                // 数据层只认 `ReminderGateway` 这个接口，Android 的闹钟 API 留在
+                // notification 包里。
+                reminders = ReminderScheduler(appContext)
             )
             repository = created
             return created

@@ -12,6 +12,8 @@ import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.TaskList
 import com.personal.todo.model.Priority
+import com.personal.todo.model.Reminder
+import com.personal.todo.model.ReminderKind
 import com.personal.todo.model.RepeatRule
 import java.time.LocalDate
 import java.time.LocalTime
@@ -103,6 +105,24 @@ class TaskEditorViewModel(
     var repeatRule by mutableStateOf<RepeatRule?>(null)
         private set
 
+    /**
+     * 提醒：相对哪种锚点算（准时 / 提前 15 分钟 / 自定义…），null＝不提醒。
+     *
+     * 表单里只存「怎么算」，不存算出来的绝对时刻——日期一改，落库时由
+     * [com.personal.todo.model.Reminder] 按新的日期重算。自定义时刻是唯一需要另存一个
+     * 绝对值的类型，放在 [customReminderAt]。
+     */
+    var reminderKind by mutableStateOf<ReminderKind?>(null)
+        private set
+
+    /** [ReminderKind.CUSTOM] 时用户亲手挑的那个时刻；其余类型为 null。 */
+    var customReminderAt by mutableStateOf<Long?>(null)
+        private set
+
+    /** 这条任务现在能不能设提醒：至少得有一个日期能当锚点。 */
+    val canSetReminder: Boolean
+        get() = Reminder.canRemind(plannedDate, dueDate)
+
     /** The day the pickers open on and the day 今天 / 明天 are measured from. */
     val today: LocalDate = repository.today()
 
@@ -165,6 +185,12 @@ class TaskEditorViewModel(
                     dueDate = task.dueDate
                     dueTime = task.dueTime
                     repeatRule = task.repeatRule
+                    reminderKind = task.reminderKind
+                    customReminderAt = if (task.reminderKind == ReminderKind.CUSTOM) {
+                        task.reminderAt
+                    } else {
+                        null
+                    }
                     // 标签是另一张表，单独取一次（first 拿到当前值就够，标签数很少）。
                     selectedTagIds = repository.observeTagsOf(taskId).first().map { it.id }.toSet()
                 } finally {
@@ -203,6 +229,8 @@ class TaskEditorViewModel(
         dueDate = null
         dueTime = null
         repeatRule = null
+        reminderKind = null
+        customReminderAt = null
         selectedTagIds = emptySet()
         subtaskDrafts = emptyList()
         titleHasError = false
@@ -249,6 +277,9 @@ class TaskEditorViewModel(
     fun onPlannedDateChange(value: LocalDate?) {
         plannedDate = value
         if (value == null) plannedTime = null
+        // 没有日期就没有锚点，提醒也就无从算起：跟着一起清掉，而不是留一个「看起来设了、
+        // 实际算不出时刻」的状态。
+        clearReminderWithoutAnchor()
     }
 
     fun onPlannedTimeChange(value: LocalTime?) {
@@ -259,6 +290,7 @@ class TaskEditorViewModel(
     fun onDueDateChange(value: LocalDate?) {
         dueDate = value
         if (value == null) dueTime = null
+        clearReminderWithoutAnchor()
     }
 
     fun onDueTimeChange(value: LocalTime?) {
@@ -269,6 +301,30 @@ class TaskEditorViewModel(
     fun onRepeatChange(value: RepeatRule?) {
         repeatRule = value
         if (value != null && plannedDate == null) plannedDate = today
+    }
+
+    /**
+     * 设 / 换 / 关提醒。
+     *
+     * [customAt] 只在 [ReminderKind.CUSTOM] 时有意义——那是用户在面板里挑的绝对时刻。
+     * 传 null 表示「不提醒」。
+     */
+    fun onReminderChange(kind: ReminderKind?, customAt: Long? = null) {
+        if (kind == null) {
+            reminderKind = null
+            customReminderAt = null
+            return
+        }
+        reminderKind = kind
+        customReminderAt = if (kind == ReminderKind.CUSTOM) customAt else null
+    }
+
+    /** 日期被清空后没有锚点了，提醒跟着一起清掉。 */
+    private fun clearReminderWithoutAnchor() {
+        if (!canSetReminder) {
+            reminderKind = null
+            customReminderAt = null
+        }
     }
 
     /**
@@ -339,7 +395,9 @@ class TaskEditorViewModel(
                     repeatRule = repeatRule,
                     tagIds = selectedTagIds,
                     // 草稿与父任务同一个事务：要么都在，要么都不在。
-                    subtaskTitles = subtaskDrafts
+                    subtaskTitles = subtaskDrafts,
+                    reminderKind = reminderKind,
+                    customReminderAt = customReminderAt
                 )
                 // 带规则的这条任务刚存下，立刻把后面那几次也落成独立任务，用户一回到
                 // 列表就能看见它们。这一步幂等，且失败不影响已经存好的任务字段。

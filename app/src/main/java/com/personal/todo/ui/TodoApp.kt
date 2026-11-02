@@ -100,6 +100,7 @@ import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.LauncherIcon
 import com.personal.todo.data.TaskRepository
+import com.personal.todo.notification.ReminderScheduler
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
 import com.personal.todo.data.db.Habit
@@ -229,8 +230,23 @@ fun TodoApp(
     // 冷启动先把重复任务后面两周那几次补上。生成器幂等（同一天不会生成两遍），所以
     // 每次进来跑一遍是安全的。跟着「今天」那条流跑：进程活过午夜时要再补一次，否则
     // 新那一天的实例谁也不会生成（原来只在启动时跑一遍）。
-    LaunchedEffect(repository) {
-        repository.observeToday().collect { repository.materializeRecurrences(it) }
+    //
+    // 提醒的闹钟也在这里补：`AlarmManager` 里的闹钟会被重启、改时区、被系统清后台弄丢，
+    // 而界面上的「提醒 20:00」看不出来它已经没了。
+    //
+    // 只在**日期翻页时**重排：这条流每 60 秒 tick 一次，每次都排一遍太浪费；第一次拿到
+    // 「今天」时也不排，那是冷启动，`TodoApplication` 已经做过一次兜底了。
+    val reminderContext = LocalContext.current.applicationContext
+    LaunchedEffect(repository, reminderContext) {
+        var lastDay: LocalDate? = null
+        repository.observeToday().collect { today ->
+            repository.materializeRecurrences(today)
+            val previous = lastDay
+            lastDay = today
+            if (previous != null && previous != today) {
+                runCatching { ReminderScheduler(reminderContext).rescheduleAll() }
+            }
+        }
     }
 
     val nav = rememberNavStack()

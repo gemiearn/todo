@@ -8,6 +8,8 @@ import com.personal.todo.data.db.TaskList
 import com.personal.todo.data.db.TaskTag
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.Priority
+import com.personal.todo.model.Reminder
+import com.personal.todo.model.ReminderKind
 import com.personal.todo.model.RepeatRule
 import com.personal.todo.model.Schedule
 import com.personal.todo.model.TaskEventType
@@ -84,7 +86,14 @@ class TaskRepository(
     /** [observeToday] 的重新读日期间隔；测试传 1 毫秒，这样跨天只等一次 tick。 */
     private val todayRefreshMillis: Long = TodayRefreshMillis,
     /** [observeNow] 的重新读时刻间隔；测试传 1 毫秒，这样「到点了」只等一次 tick。 */
-    private val overdueRefreshMillis: Long = OverdueRefreshMillis
+    private val overdueRefreshMillis: Long = OverdueRefreshMillis,
+    /**
+     * 提醒的闹钟出口。默认什么都不做（单测用），App 里注入真正的调度器。
+     *
+     * 挂在仓库这一层而不是界面层，是为了不漏：完成任务有五六个入口（详情页、列表勾选、
+     * 通知上的按钮、习惯自动打卡……），而它们最终都要走 [completeTask]。
+     */
+    private val reminders: ReminderGateway = NoReminderGateway
 ) {
 
     private val listDao = db.taskListDao()
@@ -479,7 +488,10 @@ class TaskRepository(
         plannedTime: LocalTime? = null,
         dueDate: LocalDate? = null,
         dueTime: LocalTime? = null,
-        repeatRule: RepeatRule? = null
+        repeatRule: RepeatRule? = null,
+        reminderKind: ReminderKind? = null,
+        /** 只有 [ReminderKind.CUSTOM] 会用它：用户亲手挑的那个时刻。 */
+        customReminderAt: Long? = null
     ): Long {
         val trimmedTitle = title.trim()
         require(trimmedTitle.isNotEmpty()) { "任务标题不能为空" }
@@ -496,8 +508,17 @@ class TaskRepository(
         }
 
         val time = now()
-        return db.withTransaction {
-            val taskId = taskDao.insert(
+        val reminderAt = Reminder.epochMillisFor(
+            kind = reminderKind,
+            customAt = customReminderAt,
+            plannedDate = plannedDate,
+            plannedTime = plannedTime,
+            dueDate = dueDate,
+            dueTime = dueTime,
+            zone = zone
+        )
+        val taskId = db.withTransaction {
+            val newId = taskDao.insert(
                 Task(
                     title = trimmedTitle,
                     notes = notes?.trim()?.ifEmpty { null },
@@ -510,12 +531,18 @@ class TaskRepository(
                     plannedTime = plannedTime,
                     dueDate = dueDate,
                     dueTime = dueTime,
-                    repeatRule = repeatRule
+                    repeatRule = repeatRule,
+                    reminderAt = reminderAt,
+                    reminderKind = reminderKind
                 )
             )
-            recordEvent(taskId, TaskEventType.CREATED, trimmedTitle, time)
-            taskId
+            recordEvent(newId, TaskEventType.CREATED, trimmedTitle, time)
+            newId
         }
+        // 落在事务之外：闹钟是系统状态，不是数据库状态，事务回滚不该把它一起带走；
+        // 反过来，先把闹钟设好再提交也有个空窗——所以放在提交之后。
+        taskDao.getById(taskId)?.let(reminders::sync)
+        return taskId
     }
 
     /**
@@ -553,20 +580,37 @@ class TaskRepository(
             rule.occurrencesIn(today, until, anchor).forEach { date ->
                 if (!taken.add(date)) return@forEach
                 val time = now()
-                val occurrenceId = taskDao.insert(
-                    source.copy(
-                        id = 0L,
-                        completedAt = null,
-                        deletedAt = null,
-                        createdAt = time,
-                        updatedAt = time,
-                        plannedDate = date,
-                        dueDate = dueOffset?.let { date.plusDays(it) },
-                        repeatRule = null,
-                        recurrenceSourceId = source.id
-                    )
+                val occurrenceDue = dueOffset?.let { date.plusDays(it) }
+                // 提醒跟着这一次的日期重算：源上是「提前 15 分钟」，铺出来的每一条都要
+                // 各自在它自己那天的 15 分钟前响，而不是全挤在源任务那一刻。
+                val occurrenceReminder = Reminder.epochMillisFor(
+                    kind = source.reminderKind,
+                    customAt = source.reminderAt,
+                    plannedDate = date,
+                    plannedTime = source.plannedTime,
+                    dueDate = occurrenceDue,
+                    dueTime = source.dueTime,
+                    zone = zone
                 )
+                val occurrence = source.copy(
+                    id = 0L,
+                    completedAt = null,
+                    deletedAt = null,
+                    createdAt = time,
+                    updatedAt = time,
+                    plannedDate = date,
+                    dueDate = occurrenceDue,
+                    repeatRule = null,
+                    recurrenceSourceId = source.id,
+                    reminderAt = occurrenceReminder
+                )
+                val occurrenceId = taskDao.insert(occurrence)
                 recordEvent(occurrenceId, TaskEventType.CREATED, source.title, time)
+                // 每条实例的闹钟各自排一份（`sync` 只排未来一个月内的，否则一条「每天」
+                // 就是三百多个闹钟，开机重排会把手机拖住）。
+                if (occurrenceReminder != null) {
+                    reminders.sync(occurrence.copy(id = occurrenceId))
+                }
                 // 标签连线跟源任务照搬过来：实例是一张独立的任务行，标签存在 task_tags
                 // 里，不复制的话按标签筛「今天 / 未来 / 日历」时这些实例根本不会出现，
                 // 专注开始的标签快照也会是空的（说明文档 4.5 与标签是同一件事）。
@@ -593,6 +637,11 @@ class TaskRepository(
      *
      * Passing null for a date clears it. Changing a date is always an explicit
      * user action; nothing here shifts a date on its own.
+     *
+     * 提醒也一样：**不传 `reminderKind` 就是「不提醒」**，会把这条任务原来的提醒清掉。
+     * 编辑一条已有任务时，调用方必须把它读到的提醒原样传回来（编辑器就是这么做的）。
+     * 之所以不用「不传＝保留」，是因为「清掉提醒」本身也是一个正常操作，两者没法靠
+     * 同一个 null 区分。
      */
     suspend fun updateTask(
         taskId: Long,
@@ -604,7 +653,10 @@ class TaskRepository(
         plannedTime: LocalTime? = null,
         dueDate: LocalDate? = null,
         dueTime: LocalTime? = null,
-        repeatRule: RepeatRule? = null
+        repeatRule: RepeatRule? = null,
+        reminderKind: ReminderKind? = null,
+        /** 只有 [ReminderKind.CUSTOM] 会用它；不传就沿用这条任务原来的时刻。 */
+        customReminderAt: Long? = null
     ) {
         val trimmedTitle = title.trim()
         require(trimmedTitle.isNotEmpty()) { "任务标题不能为空" }
@@ -615,6 +667,17 @@ class TaskRepository(
         // can be moved between lists.
         val targetListId = if (task.parentTaskId != null) task.listId else listId
         requireNotNull(listDao.getById(targetListId)) { "清单不存在: $targetListId" }
+
+        // 日期一变，相对锚点算出来的提醒就得跟着走；自定义时刻保持原样（那是用户手挑的）。
+        val reminderAt = Reminder.epochMillisFor(
+            kind = reminderKind,
+            customAt = customReminderAt ?: task.reminderAt,
+            plannedDate = plannedDate,
+            plannedTime = plannedTime,
+            dueDate = dueDate,
+            dueTime = dueTime,
+            zone = zone
+        )
 
         db.withTransaction {
             val time = now()
@@ -629,7 +692,9 @@ class TaskRepository(
                     plannedTime = plannedTime,
                     dueDate = dueDate,
                     dueTime = dueTime,
-                    repeatRule = repeatRule
+                    repeatRule = repeatRule,
+                    reminderAt = reminderAt,
+                    reminderKind = reminderKind
                 )
             )
             // 顶层任务换清单时，它的子任务跟着一起搬——否则持久化出来的父子会分属两个
@@ -639,6 +704,8 @@ class TaskRepository(
                 taskDao.moveSubtasksToList(taskId, targetListId, time)
             }
         }
+        // 取消旧闹钟 + 按新时刻重设，两步合一：`sync` 会用同一个 PendingIntent 覆盖。
+        taskDao.getById(taskId)?.let(reminders::sync)
     }
 
     /**
@@ -667,7 +734,9 @@ class TaskRepository(
         dueTime: LocalTime?,
         repeatRule: RepeatRule?,
         tagIds: Collection<Long>,
-        subtaskTitles: List<String> = emptyList()
+        subtaskTitles: List<String> = emptyList(),
+        reminderKind: ReminderKind? = null,
+        customReminderAt: Long? = null
     ): Long = db.withTransaction {
         val savedId = if (taskId == null) {
             createTask(
@@ -679,7 +748,9 @@ class TaskRepository(
                 plannedTime = plannedTime,
                 dueDate = dueDate,
                 dueTime = dueTime,
-                repeatRule = repeatRule
+                repeatRule = repeatRule,
+                reminderKind = reminderKind,
+                customReminderAt = customReminderAt
             )
         } else {
             updateTask(
@@ -692,7 +763,9 @@ class TaskRepository(
                 plannedTime = plannedTime,
                 dueDate = dueDate,
                 dueTime = dueTime,
-                repeatRule = repeatRule
+                repeatRule = repeatRule,
+                reminderKind = reminderKind,
+                customReminderAt = customReminderAt
             )
             taskId
         }
@@ -713,6 +786,8 @@ class TaskRepository(
         val time = now()
         taskDao.update(task.copy(completedAt = time, updatedAt = time))
         recordEvent(task.id, TaskEventType.COMPLETED, task.title, time)
+        // 勾掉了就不该再响：说明文档 §6 要求「完成任务后取消尚未触发的提醒」。
+        reminders.cancel(task.id)
         true
     }
 
@@ -723,6 +798,9 @@ class TaskRepository(
         val time = now()
         taskDao.update(task.copy(completedAt = null, updatedAt = time))
         recordEvent(task.id, TaskEventType.REOPENED, task.title, time)
+        // 重新打开一条任务，如果它的提醒时刻还没到，就该重新排上——否则用户会看到一条
+        // 「提醒 20:00」却再也不会响的任务。
+        reminders.sync(task.copy(completedAt = null))
         true
     }
 
@@ -748,9 +826,11 @@ class TaskRepository(
             time,
             detailsJson = encodeSubtaskIds(subtasks.map { it.id })
         )
+        reminders.cancel(task.id)
         subtasks.forEach { subtask ->
             taskDao.markDeleted(subtask.id, time)
             recordEvent(subtask.id, TaskEventType.DELETED, subtask.title, time)
+            reminders.cancel(subtask.id)
         }
         subtasks.size
     }
@@ -786,6 +866,7 @@ class TaskRepository(
                 )
                 // 整串删除对一个实例来说，也把它的子任务一起带走：子任务只在父任务详情里
                 // 看得到，父任务没了却留着子任务，就等于把它们藏了起来。
+                reminders.cancel(row.id)
                 subtasks.forEach { subtask ->
                     if (taskDao.markDeleted(subtask.id, time) > 0) {
                         recordEvent(
@@ -795,6 +876,7 @@ class TaskRepository(
                             time,
                             detailsJson = encodeSeriesDeletion(sourceId, emptyList())
                         )
+                        reminders.cancel(subtask.id)
                     }
                 }
             }
@@ -928,6 +1010,9 @@ class TaskRepository(
         val changed = taskDao.markRestored(task.id, time)
         if (changed > 0) {
             recordEvent(task.id, TaskEventType.RESTORED, task.title, time)
+            // 从回收站带回来的任务，提醒时刻要是还没到就重新排上；已经过去了就不排，
+            // 系统不会为一个昨天的提醒补响一次。
+            reminders.sync(task.copy(deletedAt = null))
         }
         return changed
     }

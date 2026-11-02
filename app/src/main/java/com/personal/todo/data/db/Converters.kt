@@ -5,6 +5,7 @@ import com.personal.todo.model.FocusMode
 import com.personal.todo.model.FocusPhase
 import com.personal.todo.model.FocusStatus
 import com.personal.todo.model.Priority
+import com.personal.todo.model.ReminderKind
 import com.personal.todo.model.RepeatRule
 import com.personal.todo.model.TaskEventType
 import java.time.LocalDate
@@ -68,6 +69,13 @@ class Converters {
 
     @TypeConverter
     fun repeatRuleFromStored(value: String?): RepeatRule? = RepeatRule.fromStored(value)
+
+    @TypeConverter
+    fun reminderKindToStored(kind: ReminderKind?): String? = kind?.name
+
+    /** 认不出来的提醒类型退回「没有提醒」：少响一次，好过整条任务读不出来。 */
+    @TypeConverter
+    fun reminderKindFromStored(value: String?): ReminderKind? = ReminderKind.fromStored(value)
 
     @TypeConverter
     fun localDateToStored(date: LocalDate?): String? = date?.toString()

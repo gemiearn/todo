@@ -408,6 +408,23 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE listId = :listId")
     suspend fun getAllInList(listId: Long): List<Task>
 
+    /**
+     * 所有还在等着响的提醒：没完成、没删除、设了提醒的任务。
+     *
+     * 开机、改时区、改系统时间之后靠它把闹钟全部重设一遍——`AlarmManager` 里的闹钟在
+     * 设备重启后就没了，不重排的话界面还显示着「提醒 20:00」，到点却一声不响。
+     */
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE completedAt IS NULL
+          AND deletedAt IS NULL
+          AND reminderAt IS NOT NULL
+        ORDER BY reminderAt ASC
+        """
+    )
+    suspend fun getPendingReminders(): List<Task>
+
     @Insert
     suspend fun insert(task: Task): Long
 

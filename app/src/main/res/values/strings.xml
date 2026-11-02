@@ -311,6 +311,36 @@
     <string name="editor_range_tab">时间段</string>
     <string name="editor_time_label">时间</string>
     <string name="editor_repeat_label">重复</string>
+    <!-- 提醒（需求文档 §6）：日期弹层里「时间 / 重复 / 提醒」三行中的第三行 -->
+    <string name="editor_reminder_label">提醒</string>
+    <string name="editor_reminder_none">不提醒</string>
+    <string name="reminder_kind_on_time">准时</string>
+    <string name="reminder_kind_before_5">提前 5 分钟</string>
+    <string name="reminder_kind_before_15">提前 15 分钟</string>
+    <string name="reminder_kind_before_30">提前 30 分钟</string>
+    <string name="reminder_kind_before_60">提前 1 小时</string>
+    <string name="reminder_kind_before_1d">提前 1 天</string>
+    <string name="reminder_kind_custom">自定义</string>
+    <!-- 只有日期、没有钟点时的锚点时刻取 09:00，界面直接显示算出来的时刻，不再另说一句 -->
+    <string name="reminder_need_date_short">先设日期</string>
+    <string name="reminder_moment_day">%1$d月%2$d日 %3$s</string>
+    <string name="reminder_card_chip">%1$s 提醒</string>
+    <string name="reminder_detail_today">今天 %1$s</string>
+    <string name="reminder_past">提醒已过</string>
+    <!-- 通知 -->
+    <string name="reminder_channel_name">任务提醒</string>
+    <string name="reminder_channel_description">任务到点时的提醒通知</string>
+    <string name="reminder_notification_text">%1$s · %2$s</string>
+    <string name="reminder_action_complete">完成</string>
+    <string name="reminder_action_snooze">稍后 %1$d 分钟</string>
+    <!-- 设置页的「提醒」分组 -->
+    <string name="settings_section_reminder">提醒</string>
+    <string name="settings_reminder_permission">通知权限</string>
+    <string name="settings_reminder_permission_on">已开启</string>
+    <string name="settings_reminder_permission_off">未开启</string>
+    <string name="settings_reminder_permission_hint">没开通知权限时，提醒到点不会弹出</string>
+    <string name="settings_reminder_exact">准点提醒</string>
+    <string name="settings_reminder_exact_hint">开启后会请求系统的「闹钟和提醒」权限，到点更准；关闭时省电策略可能让它晚几分钟</string>
     <string name="editor_value_none">无</string>
     <string name="editor_repeat_none">不重复</string>
     <string name="editor_previous_month">上个月</string>

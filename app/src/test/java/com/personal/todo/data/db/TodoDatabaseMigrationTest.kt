@@ -1284,6 +1284,104 @@ class TodoDatabaseMigrationTest {
         assertTrue(file.exists())
     }
 
+    /**
+     * v14 -> v15: 任务多了提醒的两列（`reminderAt` / `reminderKind`），两列都可空。
+     *
+     * 升级前就有的任务读出来是「不提醒」——系统不替用户猜一个时刻，也不会因为一次升级
+     * 凭空多响一声。列建好之后写得进，也进得了开机重排要用的那条查询。
+     */
+    @Test
+    fun migratingFromVersion14AddsTheReminderColumnsAndKeepsEveryTask() = runBlocking {
+        val name = "migration-14-to-15.db"
+        context.deleteDatabase(name)
+        createVersion14Database(name)
+
+        val db = Room.databaseBuilder(context, TodoDatabase::class.java, name)
+            .addMigrations(*TodoDatabase.ALL_MIGRATIONS)
+            .build()
+        try {
+            val task = requireNotNull(db.taskDao().getById(1L))
+            assertEquals("迁移前的任务", task.title)
+            assertNull("老任务没有提醒", task.reminderAt)
+            assertNull("老任务也没有提醒类型", task.reminderKind)
+
+            // 列升完就能写，而且能被「还有哪些提醒等着响」那条查询取到。
+            db.taskDao().update(
+                task.copy(
+                    reminderAt = 1_800_000_000_000L,
+                    reminderKind = com.personal.todo.model.ReminderKind.BEFORE_15
+                )
+            )
+            val pending = db.taskDao().getPendingReminders().single()
+            assertEquals(1L, pending.id)
+            assertEquals(
+                com.personal.todo.model.ReminderKind.BEFORE_15,
+                pending.reminderKind
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * Builds a file backed database exactly as version 14 would have left it: the
+     * v13 DDL plus 习惯上的关联任务与自动打卡开关。
+     */
+    private fun createVersion14Database(name: String) {
+        val file = context.getDatabasePath(name)
+        file.parentFile?.mkdirs()
+        val sqlite = SQLiteDatabase.openOrCreateDatabase(file, null)
+        try {
+            sqlite.execSQL(V13_TASK_LISTS)
+            sqlite.execSQL(V13_TASKS)
+            sqlite.execSQL(V5_TASK_EVENTS)
+            sqlite.execSQL(V12_FOCUS_SESSIONS)
+            sqlite.execSQL(V12_ACTIVE_TIMER)
+            sqlite.execSQL(V5_TAGS)
+            sqlite.execSQL(V5_TASK_TAGS)
+            sqlite.execSQL(V14_HABITS)
+            sqlite.execSQL(V10_HABIT_CHECK_INS)
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_listId` ON `tasks` (`listId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_parentTaskId` ON `tasks` (`parentTaskId`)")
+            sqlite.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_tasks_recurrenceSourceId` ON `tasks` (`recurrenceSourceId`)"
+            )
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_events_taskId` ON `task_events` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_taskId` ON `focus_sessions` (`taskId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_focus_sessions_startedAt` ON `focus_sessions` (`startedAt`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_task_tags_tagId` ON `task_tags` (`tagId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habit_check_ins_habitId` ON `habit_check_ins` (`habitId`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habit_check_ins_date` ON `habit_check_ins` (`date`)")
+            sqlite.execSQL("CREATE INDEX IF NOT EXISTS `index_habits_linkedTaskId` ON `habits` (`linkedTaskId`)")
+            sqlite.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            sqlite.execSQL("INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '$V14_IDENTITY_HASH')")
+            sqlite.execSQL(
+                "INSERT INTO task_lists (name, icon, isInbox, sortOrder, createdAt, updatedAt) " +
+                    "VALUES ('收件箱', NULL, 1, 0, 1000, 1000)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO tasks (title, notes, icon, listId, parentTaskId, priority, completedAt, deletedAt, " +
+                    "sortOrder, createdAt, updatedAt, plannedDate, plannedTime, dueDate, dueTime, " +
+                    "repeatRule, recurrenceSourceId) " +
+                    "VALUES ('迁移前的任务', NULL, NULL, 1, NULL, 'IMPORTANT_NOT_URGENT', NULL, NULL, 0, " +
+                    "1000, 1000, NULL, NULL, NULL, NULL, NULL, NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO task_events (taskId, eventAt, eventType, titleSnapshot, detailsJson) " +
+                    "VALUES (1, 1000, 'CREATED', '迁移前的任务', NULL)"
+            )
+            sqlite.execSQL(
+                "INSERT INTO habits (id, name, icon, dailyTarget, unitLabel, stepAmount, sortOrder, " +
+                    "createdAt, updatedAt, linkedTaskId, autoCheckInOnFocus) " +
+                    "VALUES (1, '喝水', '💧', 60, '分钟', 15, 0, 1000, 1000, NULL, 0)"
+            )
+            sqlite.version = 14
+        } finally {
+            sqlite.close()
+        }
+        assertTrue(file.exists())
+    }
+
     private companion object {
         const val V1_IDENTITY_HASH = "70541762c5a90c64b8db8c601824df55"
 
@@ -1511,6 +1609,17 @@ class TodoDatabaseMigrationTest {
                 "`name` TEXT NOT NULL, `icon` TEXT, `dailyTarget` INTEGER NOT NULL, `unitLabel` TEXT, " +
                 "`stepAmount` INTEGER, `sortOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
                 "`updatedAt` INTEGER NOT NULL)"
+
+        /** The identity hash `schemas/.../14.json` records for version 14. */
+        const val V14_IDENTITY_HASH = "ca02c07d890836fd20e3ae0ac2f0ba08"
+
+        /** 习惯表到版本 14：v13 的那张再加上关联任务与专注自动打卡开关。 */
+        const val V14_HABITS =
+            "CREATE TABLE IF NOT EXISTS `habits` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, `icon` TEXT, `dailyTarget` INTEGER NOT NULL, `unitLabel` TEXT, " +
+                "`stepAmount` INTEGER, `sortOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "`updatedAt` INTEGER NOT NULL, `linkedTaskId` INTEGER, " +
+                "`autoCheckInOnFocus` INTEGER NOT NULL DEFAULT 0)"
 
         const val V5_TAGS =
             "CREATE TABLE IF NOT EXISTS `tags` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +

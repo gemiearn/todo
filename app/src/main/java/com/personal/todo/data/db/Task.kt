@@ -5,6 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.personal.todo.model.Priority
+import com.personal.todo.model.ReminderKind
 import com.personal.todo.model.RepeatRule
 import java.time.LocalDate
 import java.time.LocalTime
@@ -89,5 +90,19 @@ data class Task(
     /** 重复规则。有它，这一行就是「带规则的那条任务」，规则只存在这里。 */
     val repeatRule: RepeatRule? = null,
     /** 生成这条任务的那条重复任务的 id；它就是某一次，不是源。 */
-    val recurrenceSourceId: Long? = null
+    val recurrenceSourceId: Long? = null,
+    /**
+     * 提醒时刻（epoch millis）。null = 不提醒。
+     *
+     * 这是**调度唯一依据**：闹钟只看这个绝对值，不去推算日期。它由
+     * [com.personal.todo.model.Reminder.epochMillisFor] 在保存和改期时算出来，所以
+     * 日期一变就得跟着重算一次。
+     */
+    val reminderAt: Long? = null,
+    /**
+     * 提醒是怎么算出来的（准时 / 提前 15 分钟 / 自定义…）。改期后靠它决定要不要
+     * 重算——[com.personal.todo.model.ReminderKind.CUSTOM] 用用户手挑的时刻，不跟着
+     * 日期走，其余几种按新日期重算。null 表示这条任务没有提醒。
+     */
+    val reminderKind: ReminderKind? = null
 )

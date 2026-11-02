@@ -1,5 +1,10 @@
 package com.personal.todo.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,18 +47,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.personal.todo.R
+import com.personal.todo.model.Reminder
+import com.personal.todo.model.ReminderKind
 import com.personal.todo.model.RepeatKind
 import com.personal.todo.model.RepeatRule
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
+import java.time.ZoneId
 
 /** 弹层上正在挑的那个时刻：日期页签挑计划的，时间段页签两个都能挑。 */
 private enum class SheetTimeField { PLANNED, DUE }
@@ -89,22 +100,55 @@ internal fun TaskDateSheet(
     var draftDueDate by remember { mutableStateOf(viewModel.dueDate) }
     var draftDueTime by remember { mutableStateOf(viewModel.dueTime) }
     var draftRule by remember { mutableStateOf(viewModel.repeatRule) }
+    // 提醒和日期一样走草稿：点 ✓ 才写回编辑器。`draftCustomAt` 只在「自定义」时用，
+    // 存的是用户手挑的绝对时刻；其余几种都靠 kind 在落库时按日期重算。
+    var draftReminderKind by remember { mutableStateOf(viewModel.reminderKind) }
+    var draftCustomAt by remember { mutableStateOf(viewModel.customReminderAt) }
 
     var month by remember { mutableStateOf(YearMonth.from(draftPlannedDate ?: viewModel.today)) }
     var dueMonth by remember { mutableStateOf(YearMonth.from(draftDueDate ?: draftPlannedDate ?: viewModel.today)) }
     var timeField by remember { mutableStateOf<SheetTimeField?>(null) }
     var duePickerOpen by remember { mutableStateOf(false) }
     var rulePickerOpen by remember { mutableStateOf(false) }
+    var reminderPickerOpen by remember { mutableStateOf(false) }
+    var customPickerOpen by remember { mutableStateOf(false) }
+    var customDate by remember { mutableStateOf(draftPlannedDate ?: viewModel.today) }
+    var customMonth by remember { mutableStateOf(YearMonth.from(draftPlannedDate ?: viewModel.today)) }
+    var customTime by remember { mutableStateOf(DefaultSheetTime) }
+    var customTimeOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // 点 ✓ 才把草稿写回编辑器：日期先、重复后（规则没有起点时会落到计划日）。
+    // 点 ✓ 才把草稿写回编辑器：日期先、重复后（规则没有起点时会落到计划日），提醒最后
+    // ——日期一改，编辑器会按新日期重算提醒，顺序反了会把刚设的提醒清掉。
     fun confirm() {
         viewModel.onPlannedDateChange(draftPlannedDate)
         viewModel.onPlannedTimeChange(draftPlannedTime.takeIf { draftPlannedDate != null })
         viewModel.onDueDateChange(draftDueDate)
         viewModel.onDueTimeChange(draftDueTime.takeIf { draftDueDate != null })
         viewModel.onRepeatChange(draftRule)
+        viewModel.onReminderChange(draftReminderKind, draftCustomAt)
         onDismiss()
+    }
+
+    // 有没有可以当锚点的日期。没有锚点就算不出提醒时刻，这一行要显示成「先设日期」。
+    val draftCanRemind = Reminder.canRemind(draftPlannedDate, draftDueDate)
+
+    // 通知权限只在**用户真的设了提醒**这一刻才要：一进 App 就弹是骚扰，而且那时用户还
+    // 不知道自己会不会用提醒。拒绝了也不拦着设——设置页能重新打开，详情页会说清「不会响」。
+    val context = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { /* 结果不影响这次设置：拒绝只是「到点不弹」，任务本身照常保存 */ }
+
+    fun askNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     ModalBottomSheet(
@@ -172,6 +216,23 @@ internal fun TaskDateSheet(
                         value = repeatText(draftRule),
                         onClick = { rulePickerOpen = true }
                     )
+                    // 提醒：没有日期就没有锚点，这一行点不开，字面说清为什么。
+                    SheetValueRow(
+                        label = stringResource(R.string.editor_reminder_label),
+                        value = if (!draftCanRemind) {
+                            stringResource(R.string.reminder_need_date_short)
+                        } else {
+                            reminderValueText(
+                                kind = draftReminderKind,
+                                customAt = draftCustomAt,
+                                plannedDate = draftPlannedDate,
+                                plannedTime = draftPlannedTime,
+                                dueDate = draftDueDate,
+                                dueTime = draftDueTime
+                            )
+                        },
+                        onClick = { if (draftCanRemind) reminderPickerOpen = true }
+                    )
                 }
             } else {
                 Panel {
@@ -215,6 +276,9 @@ internal fun TaskDateSheet(
                     draftDueTime = null
                     draftPlannedDate = null
                     draftPlannedTime = null
+                    // 日期全没了，提醒的锚点也没了，跟着一起清掉。
+                    draftReminderKind = null
+                    draftCustomAt = null
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -314,6 +378,97 @@ internal fun TaskDateSheet(
                 rulePickerOpen = false
             },
             onDismiss = { rulePickerOpen = false }
+        )
+    }
+
+    if (reminderPickerOpen) {
+        ReminderPickerDialog(
+            current = draftReminderKind,
+            onPick = { kind ->
+                reminderPickerOpen = false
+                if (kind != null) askNotificationPermissionIfNeeded()
+                if (kind == ReminderKind.CUSTOM) {
+                    // 自定义要挑一个具体时刻：先从锚点（或今天）起个头，再让用户改。
+                    customDate = draftPlannedDate ?: draftDueDate ?: viewModel.today
+                    customMonth = YearMonth.from(customDate)
+                    customTime = DefaultSheetTime
+                    customPickerOpen = true
+                } else {
+                    draftReminderKind = kind
+                    draftCustomAt = null
+                }
+            },
+            onDismiss = { reminderPickerOpen = false }
+        )
+    }
+
+    if (customPickerOpen) {
+        AlertDialog(
+            onDismissRequest = { customPickerOpen = false },
+            title = { Text(stringResource(R.string.reminder_kind_custom)) },
+            text = {
+                Column {
+                    MonthCalendar(
+                        month = customMonth,
+                        selected = customDate,
+                        today = viewModel.today,
+                        onSelect = { customDate = it },
+                        onStepMonth = { customMonth = customMonth.plusMonths(it) }
+                    )
+                    SheetValueRow(
+                        label = stringResource(R.string.editor_time_label),
+                        value = timeText(customTime),
+                        onClick = { customTimeOpen = true }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        draftReminderKind = ReminderKind.CUSTOM
+                        draftCustomAt = customDate.atTime(customTime)
+                            .atZone(ZoneId.systemDefault())
+                            .toInstant()
+                            .toEpochMilli()
+                        customPickerOpen = false
+                    }
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { customPickerOpen = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (customTimeOpen) {
+        val state = rememberTimePickerState(
+            initialHour = customTime.hour,
+            initialMinute = customTime.minute,
+            is24Hour = true
+        )
+        AlertDialog(
+            onDismissRequest = { customTimeOpen = false },
+            title = { Text(stringResource(R.string.dialog_time_picker_title)) },
+            text = { TimePicker(state = state) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        customTime = LocalTime.of(state.hour, state.minute)
+                        customTimeOpen = false
+                    }
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { customTimeOpen = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
         )
     }
 }
@@ -638,3 +793,149 @@ private const val DaysInMonth = 31
 
 /** The time as `HH:mm`; the picker itself works on hour and minute. */
 private fun timeText(time: LocalTime): String = "%02d:%02d".format(time.hour, time.minute)
+
+// ------------------------------------------------------------------ 提醒
+
+/** 选提醒：不提醒 + 六档相对时刻 + 自定义。 */
+@Composable
+private fun ReminderPickerDialog(
+    current: ReminderKind?,
+    onPick: (ReminderKind?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.editor_reminder_label)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                ReminderOption(
+                    label = stringResource(R.string.editor_reminder_none),
+                    selected = current == null,
+                    onClick = { onPick(null) }
+                )
+                ReminderOption(
+                    label = stringResource(R.string.reminder_kind_on_time),
+                    selected = current == ReminderKind.ON_TIME,
+                    onClick = { onPick(ReminderKind.ON_TIME) }
+                )
+                ReminderOption(
+                    label = stringResource(R.string.reminder_kind_before_5),
+                    selected = current == ReminderKind.BEFORE_5,
+                    onClick = { onPick(ReminderKind.BEFORE_5) }
+                )
+                ReminderOption(
+                    label = stringResource(R.string.reminder_kind_before_15),
+                    selected = current == ReminderKind.BEFORE_15,
+                    onClick = { onPick(ReminderKind.BEFORE_15) }
+                )
+                ReminderOption(
+                    label = stringResource(R.string.reminder_kind_before_30),
+                    selected = current == ReminderKind.BEFORE_30,
+                    onClick = { onPick(ReminderKind.BEFORE_30) }
+                )
+                ReminderOption(
+                    label = stringResource(R.string.reminder_kind_before_60),
+                    selected = current == ReminderKind.BEFORE_60,
+                    onClick = { onPick(ReminderKind.BEFORE_60) }
+                )
+                ReminderOption(
+                    label = stringResource(R.string.reminder_kind_before_1d),
+                    selected = current == ReminderKind.BEFORE_1D,
+                    onClick = { onPick(ReminderKind.BEFORE_1D) }
+                )
+                ReminderOption(
+                    label = stringResource(R.string.reminder_kind_custom),
+                    selected = current == ReminderKind.CUSTOM,
+                    onClick = { onPick(ReminderKind.CUSTOM) }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun ReminderOption(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) colors.accent else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun reminderKindText(kind: ReminderKind): String = when (kind) {
+    ReminderKind.ON_TIME -> stringResource(R.string.reminder_kind_on_time)
+    ReminderKind.BEFORE_5 -> stringResource(R.string.reminder_kind_before_5)
+    ReminderKind.BEFORE_15 -> stringResource(R.string.reminder_kind_before_15)
+    ReminderKind.BEFORE_30 -> stringResource(R.string.reminder_kind_before_30)
+    ReminderKind.BEFORE_60 -> stringResource(R.string.reminder_kind_before_60)
+    ReminderKind.BEFORE_1D -> stringResource(R.string.reminder_kind_before_1d)
+    ReminderKind.CUSTOM -> stringResource(R.string.reminder_kind_custom)
+}
+
+/**
+ * 「提醒」那一行右边显示什么：**算出来的具体时刻**跟在类型后面。
+ *
+ * 只写「提前 15 分钟」时用户还得自己心算；把 19:45 一并写出来，一眼就能确认是不是想要
+ * 的那个点。自定义时刻没有类型可言，直接显示时刻。
+ */
+@Composable
+private fun reminderValueText(
+    kind: ReminderKind?,
+    customAt: Long?,
+    plannedDate: LocalDate?,
+    plannedTime: LocalTime?,
+    dueDate: LocalDate?,
+    dueTime: LocalTime?
+): String {
+    if (kind == null) return stringResource(R.string.editor_reminder_none)
+    if (kind == ReminderKind.CUSTOM) {
+        return customAt?.let { reminderMomentText(it) }
+            ?: stringResource(R.string.reminder_kind_custom)
+    }
+    val at = Reminder.instantOf(
+        kind = kind,
+        plannedDate = plannedDate,
+        plannedTime = plannedTime,
+        dueDate = dueDate,
+        dueTime = dueTime,
+        zone = ZoneId.systemDefault()
+    ) ?: return reminderKindText(kind)
+    val label = reminderKindText(kind)
+    val moment = reminderMomentText(at.toEpochMilli())
+    return "$label · $moment"
+}
+
+/** 时刻写成「20:00」，跨天时补上「11月5日」。 */
+@Composable
+private fun reminderMomentText(epochMillis: Long): String {
+    val at = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDateTime()
+    val clock = timeText(at.toLocalTime())
+    val today = LocalDate.now(ZoneId.systemDefault())
+    return if (at.toLocalDate() == today) {
+        clock
+    } else {
+        stringResource(R.string.reminder_moment_day, at.monthValue, at.dayOfMonth, clock)
+    }
+}

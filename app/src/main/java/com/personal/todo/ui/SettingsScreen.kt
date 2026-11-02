@@ -1,5 +1,9 @@
 package com.personal.todo.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -29,11 +33,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -42,17 +49,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.personal.todo.R
 import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.ColorStyle
 import com.personal.todo.data.DevSettingsStore
 import com.personal.todo.data.LauncherIcon
+import com.personal.todo.data.ReminderSettingsStore
 import com.personal.todo.data.ThemeChoice
+import com.personal.todo.notification.ReminderScheduler
 import com.personal.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.launch
 
@@ -93,6 +107,42 @@ fun SettingsScreen(
     val colors = LocalTodoColors.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    // 提醒的授权状态不是「读一次就定」的：用户可能在这里跳去系统设置，回来时权限变了，
+    // 也可能在别处把通知关掉。所以每次回到前台都重读一遍。
+    val context = LocalContext.current
+    val reminderStore = remember(context) { ReminderSettingsStore(context) }
+    var notificationsEnabled by remember {
+        mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
+    }
+    var exactAlarmAllowed by remember {
+        mutableStateOf(ReminderScheduler(context).canScheduleExact())
+    }
+    var exactEnabled by remember {
+        mutableStateOf(reminderStore.readExactAlarm() && exactAlarmAllowed)
+    }
+    // 用户点了开关、被踢去系统设置授权：回来时若真给了，就替他把开关落下。
+    var awaitingExact by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationsEnabled =
+                    NotificationManagerCompat.from(context).areNotificationsEnabled()
+                val allowed = ReminderScheduler(context).canScheduleExact()
+                exactAlarmAllowed = allowed
+                if (awaitingExact && allowed && !reminderStore.readExactAlarm()) {
+                    reminderStore.writeExactAlarm(true)
+                }
+                if (awaitingExact && allowed) awaitingExact = false
+                // 系统收回了权限，开关就得自己回到关：显示成开、实际却不准，是骗人的。
+                exactEnabled = reminderStore.readExactAlarm() && allowed
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     val exportMessage = stringResource(R.string.settings_export_soon)
     // 距解锁还差几下；点够 [DevSettingsStore.TapsToUnlock] 下就解锁并清零。
     var devTaps by remember { mutableIntStateOf(0) }
@@ -176,6 +226,75 @@ fun SettingsScreen(
                 color = colors.dateMuted,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
             )
+
+            // 提醒：权限状态 + 准点开关。两行都不是「设一次就忘」的东西——通知权限可能被
+            // 系统收回，准点开关要跳系统设置去授权，回来这里必须能看出到底成没成。
+            SettingsGroupLabel(stringResource(R.string.settings_section_reminder))
+            SettingsCard {
+                SettingsEntry(
+                    icon = "🔔",
+                    label = stringResource(R.string.settings_reminder_permission),
+                    trailing = if (notificationsEnabled) {
+                        stringResource(R.string.settings_reminder_permission_on)
+                    } else {
+                        stringResource(R.string.settings_reminder_permission_off)
+                    },
+                    onClick = {
+                        // 直接落到本应用的通知设置页，而不是让用户自己去系统里翻。
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        runCatching { context.startActivity(intent) }
+                    }
+                )
+                SettingsDivider()
+                SettingsSwitchRow(
+                    label = stringResource(R.string.settings_reminder_exact),
+                    checked = exactEnabled,
+                    onCheckedChange = { wanted ->
+                        val store = ReminderSettingsStore(context)
+                        when {
+                            !wanted -> {
+                                store.writeExactAlarm(false)
+                                exactEnabled = false
+                                scope.launch { ReminderScheduler(context).rescheduleAll() }
+                            }
+
+                            exactAlarmAllowed -> {
+                                store.writeExactAlarm(true)
+                                exactEnabled = true
+                                scope.launch { ReminderScheduler(context).rescheduleAll() }
+                            }
+
+                            // 系统还没给「闹钟和提醒」权限：去要，回来后 [OnResume] 再判一次。
+                            else -> {
+                                awaitingExact = true
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    val intent = Intent(
+                                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                    runCatching { context.startActivity(intent) }
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+            Text(
+                text = stringResource(R.string.settings_reminder_exact_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.dateMuted,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
+            )
+            // 通知没开时单独说一句：这时提醒到点不会弹，别让人以为设了就会响。
+            if (!notificationsEnabled) {
+                Text(
+                    text = stringResource(R.string.settings_reminder_permission_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.dateOverdue,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
+                )
+            }
 
             SettingsGroupLabel(stringResource(R.string.settings_section_more))
             SettingsCard {
@@ -370,6 +489,34 @@ private fun SettingsEntry(
             contentDescription = null,
             tint = colors.dateMuted
         )
+    }
+}
+
+/**
+ * 带开关的一行。点整行也能切，不必非得戳中那个小滑块。
+ *
+ * 放在这里而不是复用 [ChoiceRow]：那一组是「几选一，选中打勾」，开关是「开 / 关」，
+ * 语义不一样，视觉上也要让人一眼看出这是可以反复拨的。
+ */
+@Composable
+private fun SettingsSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(start = 20.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

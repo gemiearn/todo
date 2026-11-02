@@ -75,6 +75,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * `autoCheckInOnFocus`（开关：为那条任务起一次专注计时就给这个习惯当天 +1）。开关是
  * `NOT NULL DEFAULT 0`：升级前就有的习惯都是关的，这正是那个默认值；关联任务为空则是
  * 它们本来就没有关联。另加一个 `linkedTaskId` 索引供触发时按任务查习惯。
+ *
+ * Version 15 给 `tasks` 加 `reminderAt`（绝对毫秒，可空）与 `reminderKind`（相对哪种
+ * 锚点算的，可空）。两列都可空，所以升级前就有的任务读出来就是「不提醒」——系统没有
+ * 义务替用户猜一个提醒时刻出来。调度只看 `reminderAt`，`reminderKind` 只决定改期后
+ * 怎么重算（说明文档 §6）。
  */
 @Database(
     entities = [
@@ -88,7 +93,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Habit::class,
         HabitCheckIn::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -374,6 +379,20 @@ abstract class TodoDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v14 -> v15: 任务的提醒。两列都可空，所以升级前就有的任务读出来就是「不提醒」；
+         * 系统不替用户猜一个时刻出来，也不会因为升级凭空多响一次。
+         *
+         * `reminderAt` 存的是绝对毫秒，调度只看它；`reminderKind` 存的是「相对哪个锚点
+         * 算的」，只用来在改期后重算（`CUSTOM` 例外，它由用户直接指定时刻）。
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `reminderAt` INTEGER")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `reminderKind` TEXT")
+            }
+        }
+
         /** Every migration the app ships, in order. */
         val ALL_MIGRATIONS: Array<Migration> = arrayOf(
             MIGRATION_1_2,
@@ -388,7 +407,8 @@ abstract class TodoDatabase : RoomDatabase() {
             MIGRATION_10_11,
             MIGRATION_11_12,
             MIGRATION_12_13,
-            MIGRATION_13_14
+            MIGRATION_13_14,
+            MIGRATION_14_15
         )
     }
 }
