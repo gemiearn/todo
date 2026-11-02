@@ -642,11 +642,16 @@ class TaskRepository(
     }
 
     /**
-     * 编辑器保存一条任务的完整业务动作：任务字段与标签关系在**同一个事务**里落库。
+     * 编辑器保存一条任务的完整业务动作：任务字段、标签关系、新建时带的子任务草稿在
+     * **同一个事务**里落库。
      *
      * 之前编辑器自己分三步调用（建/改任务 → 设标签 → 生成重复实例），标签那一步失败就
      * 会留下「任务写进去了、标签没写上」的半完成状态，界面也说不清究竟存没存。收成一个
-     * 事务后，这两步要么都成、要么都不落。重复实例生成是幂等的，仍留在事务之外单独跑。
+     * 事务后，这几步要么都成、要么都不落。重复实例生成是幂等的，仍留在事务之外单独跑。
+     *
+     * [subtaskTitles] 是「新建任务」弹层里攒下的子任务草稿：父任务这一刻才拿到 id，
+     * 所以只能挂在这里建。它们必须与父任务同一个事务，否则父任务成了、子任务丢了，
+     * 用户看到的是一条「保存成功」却少了半截的任务。
      *
      * @return 落库后的任务 id。
      */
@@ -661,7 +666,8 @@ class TaskRepository(
         dueDate: LocalDate?,
         dueTime: LocalTime?,
         repeatRule: RepeatRule?,
-        tagIds: Collection<Long>
+        tagIds: Collection<Long>,
+        subtaskTitles: List<String> = emptyList()
     ): Long = db.withTransaction {
         val savedId = if (taskId == null) {
             createTask(
@@ -691,6 +697,12 @@ class TaskRepository(
             taskId
         }
         setTaskTags(savedId, tagIds)
+        // 子任务草稿：一条一层，挂在刚存下的父任务底下。走 [addSubtask] 而不是直接
+        // createTask，是为了拿父任务**实际**落库后的清单 id（编辑子任务时传进来的
+        // listId 可能不是它真正住的那条清单）。
+        subtaskTitles.forEach { subtaskTitle ->
+            addSubtask(parentTaskId = savedId, title = subtaskTitle)
+        }
         savedId
     }
 

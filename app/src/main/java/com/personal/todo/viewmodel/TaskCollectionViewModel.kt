@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.db.Task
 import com.personal.todo.model.nearestOpenOccurrencePerSeries
@@ -89,6 +90,20 @@ class TaskCollectionViewModel(
 
     val subtaskCounts: StateFlow<Map<Long, Int>> = repository.observeSubtaskCounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * 清单小结：收件箱与用户清单各一条，其它视图是 null（那一块就不画）。
+     *
+     * 做成 StateFlow 而不是让界面自己现收一条冷流，是为了切页那一帧：冷流每次都从
+     * `initialValue = null` 起步，顶上的小结卡会先消失一帧、下面的任务卡整体上移，
+     * 等库回来再落回去——看着就是列表位置闪一下。StateFlow 把上一份留着，回来第一帧
+     * 就画对；第一次进这个视图时仍是 null，那本来也还没有内容可画。
+     */
+    val summary: StateFlow<ListSummary?> = when (collection) {
+        TaskCollection.Inbox -> repository.observeInboxSummary()
+        is TaskCollection.ListDetail -> repository.observeListSummary(collection.listId)
+        else -> flowOf<ListSummary?>(null)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
      * 列表页内联展开的子任务：**父任务 id → 那些还活着的子任务**。一条流全量供给（子任务

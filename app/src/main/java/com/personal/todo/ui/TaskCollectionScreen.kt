@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -97,7 +99,12 @@ fun TaskCollectionContent(
      * 今天是哪一天。只有首页（[TaskCollection.Today]）用它画顶上那条小结；其它视图给
      * null，就什么都不画。
      */
-    today: LocalDate? = null
+    today: LocalDate? = null,
+    /**
+     * 这份列表的滚动位置。列表页由外壳按视图各给一份（删过任务之后一份共用的偏移会
+     * 先画错一帧再被夹回来，看着就是列表位置闪一下）；日历下面那一条不传，用自己那份。
+     */
+    state: LazyListState = rememberLazyListState()
 ) {
     val foldsCompleted = when (collection) {
         TaskCollection.Inbox,
@@ -133,6 +140,7 @@ fun TaskCollectionContent(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
+        state = state,
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {

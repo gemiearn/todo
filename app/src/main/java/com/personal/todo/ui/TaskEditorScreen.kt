@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -38,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
@@ -53,6 +56,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
@@ -82,6 +87,12 @@ internal const val EditorToolbarTag = "editor-toolbar"
 
 /** The tag the smoke tests use to reach the「新建标签」入口 of the editor's 标签 group. */
 internal const val EditorNewTagTag = "editor-new-tag"
+
+/** 新建弹层里「子任务」那一行的 testTag：点它展开输入框。 */
+internal const val EditorSubtaskTag = "editor-subtask"
+
+/** 子任务输入框的 testTag：冒烟测试靠它往里敲字。 */
+internal const val EditorSubtaskInputTag = "editor-subtask-input"
 
 /**
  * 编辑器里能就地展开的三块面板：优先级 / 清单 / 备注。
@@ -348,6 +359,12 @@ internal fun TaskEditorBody(
 
                 EditorGroup.NOTES -> NotesGroup(viewModel = viewModel)
             }
+        }
+
+        // 子任务只在「新建任务」时给：改一条已有任务，子任务在详情页里加（那里本来就有
+        // 一行输入，还能逐条打勾、删掉），这里再开一个口子会让两处口径打架。
+        if (viewModel.isNewTask) {
+            SubtaskDraftSection(viewModel = viewModel)
         }
 
         // 写库失败：留在这一页，把话说出来（页面与弹层共用这一段）。
@@ -823,6 +840,157 @@ private fun NotesGroup(viewModel: TaskEditorViewModel) {
         ),
         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
     )
+}
+
+// ---------------------------------------------------------------- 子任务草稿
+
+/**
+ * 新建任务时的子任务草稿区。
+ *
+ * 为什么不做成属性行上的第五枚胶囊：那四枚等分之后每枚只剩七十来 dp，再挤一枚，
+ * 「今天 15:00」这种日期就会被压成省略号；而子任务也不是「这条任务的某个属性」，
+ * 它是一串小任务，值得自己占一行。这里刻意做得轻：一行字 + 一个「添加」，点开才出现
+ * 输入框——不点就不占高度，弹层一进来仍是标题 / 快捷日期 / 属性行那三行。
+ *
+ * 加过的草稿一直列在下面，可以逐条移除；真正的落库在保存那一步
+ * （[TaskEditorViewModel.save] → `TaskRepository.saveTask` 的同一个事务），因为父任务
+ * 这一刻还没有 id，子任务挂不上去。
+ */
+@Composable
+private fun SubtaskDraftSection(viewModel: TaskEditorViewModel) {
+    val colors = LocalTodoColors.current
+    var adding by rememberSaveable { mutableStateOf(false) }
+    var draft by rememberSaveable { mutableStateOf("") }
+    val count = viewModel.subtaskDrafts.size
+    // 点开这一行就直接能打字：不再让用户点第二下去对准输入框。
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(adding) {
+        if (adding) focusRequester.requestFocus()
+    }
+
+    val submit = {
+        viewModel.onAddSubtask(draft)
+        draft = ""
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .clickable { adding = !adding }
+                .testTag(EditorSubtaskTag)
+                .padding(horizontal = 6.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "🧩", fontSize = 12.sp)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = if (count == 0) {
+                    stringResource(R.string.task_subtasks_title)
+                } else {
+                    stringResource(R.string.task_subtask_count, count)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (count > 0) FontWeight.SemiBold else null,
+                color = if (count > 0) colors.accent else colors.dateMuted
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.action_add),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.accent
+            )
+        }
+
+        if (adding) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    cursorBrush = SolidColor(colors.accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(colors.groupHeader.copy(alpha = 0.5f))
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .testTag(EditorSubtaskInputTag),
+                    decorationBox = { innerTextField ->
+                        Box {
+                            if (draft.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.task_add_subtask_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.dateMuted
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
+                TextButton(onClick = submit, enabled = draft.isNotBlank()) {
+                    Text(stringResource(R.string.action_add))
+                }
+            }
+        }
+
+        viewModel.subtaskDrafts.forEachIndexed { index, title ->
+            SubtaskDraftRow(title = title, onRemove = { viewModel.onRemoveSubtask(index) })
+        }
+
+        if (count > 0) {
+            Text(
+                text = stringResource(R.string.editor_subtask_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.dateMuted,
+                modifier = Modifier.padding(start = 6.dp, top = 2.dp)
+            )
+        }
+    }
+}
+
+/** 草稿区里的一条：一个小圆点 + 标题 + 行尾的移除键（还没落库，删掉就是纯表单动作）。 */
+@Composable
+private fun SubtaskDraftRow(title: String, onRemove: () -> Unit) {
+    val colors = LocalTodoColors.current
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(5.dp)
+                .clip(CircleShape)
+                .background(colors.accent.copy(alpha = 0.55f))
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = stringResource(R.string.editor_subtask_remove),
+                tint = colors.dateMuted,
+                modifier = Modifier.size(15.dp)
+            )
+        }
+    }
 }
 
 /** 「明天 15:00」 / 「明天」: the text of the 日期 pill on the attribute row. */

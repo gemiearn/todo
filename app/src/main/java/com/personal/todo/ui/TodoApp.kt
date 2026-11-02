@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -98,7 +99,6 @@ import com.personal.todo.data.FocusRepository
 import com.personal.todo.data.FocusSettingsStore
 import com.personal.todo.data.HabitRepository
 import com.personal.todo.data.LauncherIcon
-import com.personal.todo.data.ListSummary
 import com.personal.todo.data.TaskRepository
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.data.ViewSettingsStore
@@ -122,9 +122,7 @@ import com.personal.todo.viewmodel.TaskDetailViewModel
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
 import java.time.ZoneId
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 // ---------------------------------------------------------------- routes
@@ -588,17 +586,6 @@ internal fun MainScreen(
     // "LifecycleRegistry cannot be cast to SaveableHolder" in rememberSaveable.
     val collection = collectionFor(kind, argument, selectedDate) ?: TaskCollection.None
 
-    // 清单小结：只有收件箱与用户清单各一条（其它视图给 null，那一行就不画）。这条 remember
-    // 对每条路由都会执行，不会让组合槽位错位；key 是 collection，换清单时换一条流。
-    val listSummaryFlow: Flow<ListSummary?> = remember(collection) {
-        when (collection) {
-            TaskCollection.Inbox -> repository.observeInboxSummary()
-            is TaskCollection.ListDetail -> repository.observeListSummary(collection.listId)
-            else -> flowOf(null)
-        }
-    }
-    val listSummary by listSummaryFlow.collectAsStateWithLifecycle(initialValue = null)
-
     // 任务卡上的「开始专注」：把这条任务挂到专注页、再切过去；到那里按「开始专注」才真的
     // 起表，所以不会点一下就产生半截会话。
     val quickFocus: (Task) -> Unit = { task ->
@@ -618,6 +605,19 @@ internal fun MainScreen(
     val completedTasks by collectionViewModel.completedTasks.collectAsStateWithLifecycle()
     val subtaskCounts by collectionViewModel.subtaskCounts.collectAsStateWithLifecycle()
     val subtasksByParent by collectionViewModel.subtasksByParent.collectAsStateWithLifecycle()
+    // 清单小结（只有收件箱与用户清单各一条，其它视图是 null）。从 view model 的 StateFlow
+    // 取，不在界面里现收冷流——理由见 [TaskCollectionViewModel.summary]。
+    val listSummary by collectionViewModel.summary.collectAsStateWithLifecycle()
+
+    // 每个视图一份自己的列表滚动位置。
+    //
+    // 原来所有列表视图共用一份（同一个组合槽位里的默认 `rememberLazyListState`）：在收件箱
+    // 滚到第 6 条再切到「今天」，那份偏移被原样套到另一份列表上；删过任务之后列表短了，
+    // 索引还可能越界，切页那一帧先按旧偏移摆一遍、下一帧再被夹回来——就是用户看到的
+    // 「任务列表位置闪一下」。按 [collectionKey] 分开之后，各页回到自己上次的位置，
+    // 也不会把一页的偏移带到另一页。key 与 view model 同口径，两者一一对应。
+    val listScroll = rememberSaveable(saver = ListScrollPositionsSaver) { ListScrollPositions() }
+
 
     // 列表页内联展开的子任务：哪张卡的子任务区开着。用 id 集合记（转屏保得住），换卡
     // 也自然复用；收起就只是把 id 拿掉，不打扰别的卡。
@@ -682,15 +682,28 @@ internal fun MainScreen(
     var deleteTarget by remember { mutableStateOf<TaskList?>(null) }
     var pendingTaskDelete by remember { mutableStateOf<Task?>(null) }
 
-    // 新建任务走底部弹层（照「创建任务UI-2」），不再是一页推入的路由。每打开一次就
-    // 换一个 view model key，免得复用上一次那个已经置上 saved 标志的实例、一进来就把
-    // 自己弹回去。
+    // 新建任务走底部弹层（照「创建任务UI-2」），不再是一页推入的路由。
+    //
+    // 表单的 view model 在这里无条件建一次、固定 key，**由「打开弹层」这个动作重置**。
+    // 原来每打开一次就给 key 里的计数器 +1、换一个新实例，可那个计数器是本页的
+    // rememberSaveable：一旦推到任务详情 / 编辑页，本页就离开组合，回来时计数器从 0 重来，
+    // 于是 "editor-sheet-1" 正好命中上一次那个实例——标题、备注、日期、勾过的标签全留着，
+    // 这就是「输入框残留上一次内容」的根。计数器治不了它：实例一直住在 activity 的
+    // view model store 里（key 撞上就拿旧的），只有把表单本身清空才可靠。
     var newTaskSheetOpen by rememberSaveable { mutableStateOf(false) }
-    var newTaskSheetVisit by rememberSaveable { mutableIntStateOf(0) }
     var newTaskSheetListId by rememberSaveable { mutableLongStateOf(0L) }
+    val newTaskEditor: TaskEditorViewModel = viewModel(
+        key = "editor-sheet",
+        factory = TaskEditorViewModel.factory(
+            repository = repository,
+            taskId = null,
+            defaultListId = newTaskSheetListId
+        )
+    )
     val openNewTaskSheet: (Long) -> Unit = { listId ->
         newTaskSheetListId = listId
-        newTaskSheetVisit++
+        // 同步重置：弹层第一帧就是空表单，不靠 effect 事后清（那会先闪一下上一份内容）。
+        newTaskEditor.startNewTask(listId)
         newTaskSheetOpen = true
     }
 
@@ -1192,7 +1205,8 @@ internal fun MainScreen(
                     onQuickFocus = quickFocus,
                     subtaskSections = subtaskSections,
                     // 首页（今天）最上面那条「还剩几件」要用它。
-                    today = today
+                    today = today,
+                    state = listScroll.stateFor(collectionKey)
                 )
             }
         }
@@ -1290,16 +1304,8 @@ internal fun MainScreen(
     }
 
     if (newTaskSheetOpen) {
-        val editorViewModel: TaskEditorViewModel = viewModel(
-            key = "editor-sheet-$newTaskSheetVisit",
-            factory = TaskEditorViewModel.factory(
-                repository = repository,
-                taskId = null,
-                defaultListId = newTaskSheetListId
-            )
-        )
         NewTaskSheet(
-            viewModel = editorViewModel,
+            viewModel = newTaskEditor,
             onSaved = { newTaskSheetOpen = false },
             onDismiss = { newTaskSheetOpen = false }
         )
@@ -1966,3 +1972,40 @@ private fun sortLabelRes(sort: TaskSort): Int = when (sort) {
     TaskSort.PRIORITY -> R.string.sort_priority
     TaskSort.CREATED -> R.string.sort_created
 }
+
+/**
+ * 每个任务列表视图各自的滚动位置：key（[MainScreen] 的 `collectionKey`，与 view model
+ * 同口径）→ 那份 [LazyListState]。
+ *
+ * 它解决的是一份 `LazyListState` 被所有列表视图轮流用的问题：各页条目数不同，共用一份
+ * 偏移会在切换落定之前先画错一帧（尤其是删过任务、列表变短、索引越界那一下），用户看到
+ * 的就是列表位置闪一下。分开之后各页互不影响。
+ *
+ * 状态本身不是 Bundle 能装的东西，所以走 [ListScrollPositionsSaver] 只存
+ * 「key + firstVisibleItemIndex + firstVisibleItemScrollOffset」，转屏后重建。
+ */
+private class ListScrollPositions {
+    private val states = mutableMapOf<String, LazyListState>()
+
+    /** 取这个视图的滚动位置；第一次要它时建一份（停在顶部）。 */
+    fun stateFor(key: String): LazyListState = states.getOrPut(key) { LazyListState() }
+
+    fun save(): List<Any> = states.flatMap { (key, state) ->
+        listOf(key, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
+    }
+
+    companion object {
+        fun restore(saved: List<Any>): ListScrollPositions = ListScrollPositions().apply {
+            // 三个一组：key、item 索引、item 内偏移。
+            saved.chunked(3).forEach { chunk ->
+                val key = chunk[0] as String
+                states[key] = LazyListState(chunk[1] as Int, chunk[2] as Int)
+            }
+        }
+    }
+}
+
+private val ListScrollPositionsSaver = listSaver<ListScrollPositions, Any>(
+    save = { it.save() },
+    restore = { ListScrollPositions.restore(it) }
+)

@@ -48,6 +48,17 @@ class TaskEditorViewModel(
     var selectedTagIds by mutableStateOf<Set<Long>>(emptySet())
         private set
 
+    /**
+     * 新建任务时攒下的子任务草稿（只有标题）。
+     *
+     * 父任务这一刻还没有 id，子任务没法提前挂上去，所以先在表单里记成一份标题清单，
+     * 保存那一步由 `TaskRepository.saveTask` 在同一个事务里把它们建成真正的行。
+     * 编辑已有任务时不走这条：那一页的子任务在详情页里加，改一条已有任务的子任务
+     * 不该从「新建」的口子进来。
+     */
+    var subtaskDrafts by mutableStateOf<List<String>>(emptyList())
+        private set
+
     var title by mutableStateOf("")
         private set
 
@@ -126,6 +137,15 @@ class TaskEditorViewModel(
      */
     private val tagCreations = mutableListOf<Job>()
 
+    /**
+     * 当前这份表单是第几次打开。
+     *
+     * [startNewTask] 每调一次就换一个代号：上一次打开时发出去、还没回来的标签写入，
+     * 回来时对不上号，就不许再把 id 塞进这张新表单（否则「上一次勾过的标签」会凭空
+     * 出现在下一条任务上）。
+     */
+    private var session = 0
+
     private val _saved = MutableStateFlow(false)
     val saved: StateFlow<Boolean> = _saved
 
@@ -155,6 +175,40 @@ class TaskEditorViewModel(
         }
     }
 
+    /**
+     * 把这份表单重置成「新建一条任务」：每次打开新建弹层都先同步调它。
+     *
+     * 这个 view model 挂在 activity 的 store 上（`viewModel(key = "editor-sheet")`），
+     * 关掉弹层、切页、推到任务详情都不会把它回收，所以下一次打开拿到的是**同一个实例**。
+     * 「输入框里残留着上一次的标题」不是输入框没清，而是这份表单没清：标题、备注、日期、
+     * 勾过的标签、攒下的子任务草稿，甚至上一次置上的 [saved] 标志全都还在（[saved] 还在
+     * 的话，弹层一进来就会自己判定「已保存」而关掉）。
+     *
+     * 这里一次性清干净，同时换一个 [session] 代号：上一次打开时发出去、还没回来的标签
+     * 写入对不上号，就不会把 id 塞进这张新表单。
+     *
+     * @param defaultListId 这次新建落在哪条清单（FAB 所在的视图决定）。
+     */
+    fun startNewTask(defaultListId: Long) {
+        session++
+        tagCreations.clear()
+        _saved.value = false
+        _saving.value = false
+        title = ""
+        notes = ""
+        priority = Priority.DEFAULT
+        listId = defaultListId
+        plannedDate = null
+        plannedTime = null
+        dueDate = null
+        dueTime = null
+        repeatRule = null
+        selectedTagIds = emptySet()
+        subtaskDrafts = emptyList()
+        titleHasError = false
+        saveFailed = false
+    }
+
     fun onTitleChange(value: String) {
         title = value
         if (titleHasError && value.isNotBlank()) titleHasError = false
@@ -162,6 +216,19 @@ class TaskEditorViewModel(
 
     fun onNotesChange(value: String) {
         notes = value
+    }
+
+    /** 往草稿里加一条子任务；空白标题直接丢掉，不占一行。 */
+    fun onAddSubtask(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        subtaskDrafts = subtaskDrafts + trimmed
+    }
+
+    /** 从草稿里去掉第 [index] 条（还没落库，纯表单动作）。 */
+    fun onRemoveSubtask(index: Int) {
+        if (index !in subtaskDrafts.indices) return
+        subtaskDrafts = subtaskDrafts.filterIndexed { i, _ -> i != index }
     }
 
     /** 打开 / 关掉「重要」这一维，另一维保持不变。 */
@@ -214,9 +281,11 @@ class TaskEditorViewModel(
         if (name.isBlank()) return
         // 清掉已经跑完的，列表不随用得久而无界增长；剩下的都是「还没回填 id」的。
         tagCreations.removeAll { it.isCompleted }
+        // 记下这一笔属于哪一次打开：中途 [startNewTask] 换了表单，回来就不认了。
+        val createdFor = session
         tagCreations += viewModelScope.launch {
             val tagId = repository.createTag(name, color)
-            selectedTagIds = selectedTagIds + tagId
+            if (createdFor == session) selectedTagIds = selectedTagIds + tagId
         }
     }
 
@@ -248,6 +317,9 @@ class TaskEditorViewModel(
         }
         saveFailed = false
         _saving.value = true
+        // 这一笔属于哪一次打开：落库回来时如果弹层已经重新打开（[startNewTask] 换过代号），
+        // 就不要再把「已保存」推给新表单——那会一进来就自己关掉。
+        val savingFor = session
         viewModelScope.launch {
             try {
                 // 刚在编辑器里新建的标签可能还在落库：**全部**等回来，否则这次勾选会漏掉。
@@ -265,22 +337,24 @@ class TaskEditorViewModel(
                     dueDate = dueDate,
                     dueTime = dueTime,
                     repeatRule = repeatRule,
-                    tagIds = selectedTagIds
+                    tagIds = selectedTagIds,
+                    // 草稿与父任务同一个事务：要么都在，要么都不在。
+                    subtaskTitles = subtaskDrafts
                 )
                 // 带规则的这条任务刚存下，立刻把后面那几次也落成独立任务，用户一回到
                 // 列表就能看见它们。这一步幂等，且失败不影响已经存好的任务字段。
                 if (repeatRule != null) repository.materializeRecurrences(today)
                 // 只有全部写完才算保存成功：中途出错时留在编辑页，绝不先关页面。
-                _saved.value = true
+                if (savingFor == session) _saved.value = true
             } catch (e: CancellationException) {
                 // 页面销毁 / 作用域取消：这是取消，不是保存失败，原样抛出去继续传播。
                 throw e
             } catch (e: Exception) {
                 // 写库中途失败：留在编辑页把错误说出来（照 addSubtask 那处的做法，
                 // 不让异常冒成崩溃，用户至少还能重试）。
-                saveFailed = true
+                if (savingFor == session) saveFailed = true
             } finally {
-                _saving.value = false
+                if (savingFor == session) _saving.value = false
             }
         }
     }
