@@ -4,7 +4,9 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.room.withTransaction
 import com.personal.todo.data.ReminderGateway
 import com.personal.todo.data.ReminderSettingsStore
@@ -22,7 +24,10 @@ import java.time.ZoneId
 class ReminderScheduler(
     context: Context,
     private val database: () -> TodoDatabase = { DatabaseProvider.get(context) },
-    private val now: () -> Long = System::currentTimeMillis
+    private val now: () -> Long = System::currentTimeMillis,
+    private val bootCount: () -> Int = {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, 0)
+    }
 ) : ReminderGateway {
     private val appContext = context.applicationContext
     private val alarmManager = appContext.getSystemService(AlarmManager::class.java)
@@ -65,7 +70,7 @@ class ReminderScheduler(
         }
     }
 
-    /** 只有真正收到系统闹钟才发送到期通知。开机/冷启动仅排未来，绝不补发过期事项。 */
+    /** 只有系统闹钟投递才发通知；冷启动保留待投递窗口，设备重启则只排未来。 */
     suspend fun dispatch(windowStart: Long) {
         val db = database()
         db.withTransaction {
@@ -74,9 +79,16 @@ class ReminderScheduler(
             db.taskDao().getPendingReminders().forEach { task ->
                 val at = effectiveAt(task) ?: return@forEach
                 if (at in windowStart..time && !settings.wasDelivered(task.id, at)) {
-                    ReminderNotifications.show(appContext, task.id, at, db, time)
-                    settings.markDelivered(task.id, at)
+                    if (ReminderNotifications.show(appContext, task.id, at, db, time)) {
+                        settings.markDelivered(task.id, at)
+                    }
                 }
+            }
+            // 先确认旧窗口已处理，下一次调度才不会把已经执行的 PendingIntent 当作仍在等。
+            // 迟到的旧广播不能清除另一个更新的窗口。
+            settings.readScheduledAlarm()?.takeIf { it.at == windowStart }?.let {
+                cancelDispatchAlarm(it.at)
+                settings.clearScheduledAlarm()
             }
             scheduleNext(db)
         }
@@ -128,33 +140,62 @@ class ReminderScheduler(
 
     private suspend fun scheduleNext(db: TodoDatabase) {
         val time = now()
-        val at = db.taskDao().getPendingReminders().mapNotNull { task ->
-            effectiveAt(task)?.takeIf { it > time && !settings.wasDelivered(task.id, it) }
-        }.minOrNull()
+        val currentBoot = bootCount()
+        val previous = settings.readScheduledAlarm()
+        val outstanding = db.taskDao().getPendingReminders().mapNotNull { task ->
+            effectiveAt(task)?.takeUnless { settings.wasDelivered(task.id, it) }
+        }
+        // 非精确闹钟可被系统延迟。到点后打开应用、生成重复任务、保存其他任务或修改设置，
+        // 都不能取消尚未投递的窗口。重启后的旧窗口不保留，避免补发关机期间错过的提醒。
+        val waitingAt = previous?.takeIf { alarm ->
+            alarm.bootCount == currentBoot && alarm.at <= time &&
+                outstanding.any { it in alarm.at..time }
+        }?.at
+        val at = waitingAt ?: outstanding.filter { it > time }.minOrNull()
+        var exact = settings.readExactAlarm() && canScheduleExact()
+        // 清理 0.5.3 使用的可变 extras PendingIntent。新窗口以 URI 区分，不能被下一次改写。
+        cancelDispatchAlarm(null)
+        if (previous != null && (previous.at != at || previous.bootCount != currentBoot)) {
+            cancelDispatchAlarm(previous.at)
+        }
         if (at == null) {
-            PendingIntent.getBroadcast(appContext, 0, dispatchIntent(),
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)?.let {
-                alarmManager?.cancel(it)
-            }
+            settings.clearScheduledAlarm()
+            return
+        }
+        if (waitingAt != null && previous?.exact == exact &&
+            PendingIntent.getBroadcast(appContext, 0, dispatchIntent(at),
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE) != null) {
+            // 不反复重新启动一个已经晚到的普通闹钟，否则系统的省电配额会再次推迟它。
             return
         }
         val pending = PendingIntent.getBroadcast(appContext, 0,
-            dispatchIntent().putExtra(ReminderReceiver.EXTRA_REMINDER_AT, at),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            dispatchIntent(at).putExtra(ReminderReceiver.EXTRA_REMINDER_AT, at),
+            PendingIntent.FLAG_IMMUTABLE)
         val manager = alarmManager ?: return
         try {
-            if (settings.readExactAlarm() && canScheduleExact()) {
+            if (exact) {
                 manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
             } else {
                 manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
             }
         } catch (_: SecurityException) {
             manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+            exact = false
         }
+        settings.writeScheduledAlarm(at, currentBoot, exact)
     }
 
-    private fun dispatchIntent() = Intent(appContext, ReminderReceiver::class.java)
+    private fun dispatchIntent(at: Long?) = Intent(appContext, ReminderReceiver::class.java)
         .setAction(ReminderReceiver.ACTION_DISPATCH)
+        .apply { if (at != null) data = Uri.parse("todo://reminders/$at") }
+
+    private fun cancelDispatchAlarm(at: Long?) {
+        PendingIntent.getBroadcast(appContext, 0, dispatchIntent(at),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)?.let {
+            alarmManager?.cancel(it)
+            it.cancel()
+        }
+    }
 
     private fun cancelLegacyAlarm(taskId: Long) {
         val pending = PendingIntent.getBroadcast(appContext, taskId.toInt(),

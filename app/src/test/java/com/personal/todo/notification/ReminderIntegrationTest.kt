@@ -39,6 +39,7 @@ class ReminderIntegrationTest {
     private lateinit var settings: ReminderSettingsStore
     private var now = System.currentTimeMillis()
     private var inboxId = 0L
+    private var bootCount = 1
 
     @Before
     fun setUp() = runBlocking {
@@ -60,7 +61,8 @@ class ReminderIntegrationTest {
         db.close()
     }
 
-    private fun newScheduler() = ReminderScheduler(context, database = { db }, now = { now })
+    private fun newScheduler() = ReminderScheduler(context, database = { db }, now = { now },
+        bootCount = { bootCount })
 
     private suspend fun task(at: Long = now + 60_000L): Task {
         val id = repository.createTask(
@@ -112,6 +114,82 @@ class ReminderIntegrationTest {
         assertEquals(next.reminderAt, scheduledAt())
         repository.deleteTask(next.id)
         assertEquals(now + 180_000L, scheduledAt())
+    }
+
+    @Test
+    fun openingTheAppAfterTheDueTimeKeepsTheDelayedAlarmAndItsOriginalWindow() = runBlocking {
+        val first = task()
+        val firstAt = requireNotNull(first.reminderAt)
+        val pending = requireNotNull(shadowOf(manager).scheduledAlarms.single().operation)
+        val next = task(now + 120_000L)
+        now = firstAt + 10_000L
+        newScheduler().rescheduleAll() // Application startup while Android is delaying the broadcast.
+        assertEquals(firstAt, scheduledAt())
+        assertEquals(firstAt, shadowOf(pending).savedIntent.getLongExtra(ReminderReceiver.EXTRA_REMINDER_AT, -1))
+        scheduler.dispatch(firstAt)
+        assertNotNull(shadowOf(notifications).getNotification(first.id.toInt()))
+        assertEquals(next.reminderAt, scheduledAt())
+    }
+
+    @Test
+    fun savingAnotherTaskAfterTheDueTimeDoesNotCancelTheWaitingReminder() = runBlocking {
+        val first = task()
+        val at = requireNotNull(first.reminderAt)
+        now = at + 10_000L
+        task(now + 180_000L)
+        assertEquals(at, scheduledAt())
+        scheduler.dispatch(at)
+        assertNotNull(shadowOf(notifications).getNotification(first.id.toInt()))
+    }
+
+    @Test
+    fun aPreviouslyDispatchedIntentCannotBeRewrittenBySchedulingTheNextWindow() = runBlocking {
+        val first = task()
+        val at = requireNotNull(first.reminderAt)
+        val pending = requireNotNull(shadowOf(manager).scheduledAlarms.single().operation)
+        val next = task(now + 120_000L)
+        repository.completeTask(first.id)
+        assertEquals(next.reminderAt, scheduledAt())
+        assertEquals(at, shadowOf(pending).savedIntent.getLongExtra(ReminderReceiver.EXTRA_REMINDER_AT, -1))
+    }
+
+    @Test
+    fun rebootDropsTheOldWaitingWindowWithoutBackfillingMissedReminders() = runBlocking {
+        val first = task()
+        val next = task(now + 120_000L)
+        now = requireNotNull(first.reminderAt) + 10_000L
+        bootCount++
+        newScheduler().rescheduleAll()
+        assertEquals(next.reminderAt, scheduledAt())
+        assertTrue(shadowOf(notifications).allNotifications.isEmpty())
+    }
+
+    @Test
+    fun blockedNotificationsAreNotMarkedDeliveredAndCanBeRetriedAfterPermissionReturns() = runBlocking {
+        val task = task()
+        val at = requireNotNull(task.reminderAt)
+        now = at
+        shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertFalse(ReminderNotifications.areEnabled(context))
+        scheduler.dispatch(at)
+        assertFalse(settings.wasDelivered(task.id, at))
+        assertNull(shadowOf(notifications).getNotification(task.id.toInt()))
+        shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        scheduler.dispatch(at)
+        assertTrue(settings.wasDelivered(task.id, at))
+        assertNotNull(shadowOf(notifications).getNotification(task.id.toInt()))
+    }
+
+    @Test
+    fun disablingTheChannelDoesNotMarkADueReminderAsDelivered() = runBlocking {
+        val task = task()
+        val at = requireNotNull(task.reminderAt)
+        now = at
+        notifications.createNotificationChannel(NotificationChannel(ReminderNotifications.CHANNEL_ID,
+            "任务提醒", NotificationManager.IMPORTANCE_NONE))
+        scheduler.dispatch(at)
+        assertFalse(settings.wasDelivered(task.id, at))
+        assertTrue(shadowOf(notifications).allNotifications.isEmpty())
     }
 
     @Test

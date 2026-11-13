@@ -67,17 +67,17 @@ object ReminderNotifications {
         expectedAt: Long? = null,
         db: TodoDatabase = DatabaseProvider.get(context),
         nowMillis: Long = System.currentTimeMillis()
-    ) {
-        val task = db.taskDao().getById(taskId) ?: return
-        if (task.deletedAt != null || task.completedAt != null) return
-        val originalAt = task.reminderAt ?: return
+    ): Boolean {
+        val task = db.taskDao().getById(taskId) ?: return false
+        if (task.deletedAt != null || task.completedAt != null) return false
+        val originalAt = task.reminderAt ?: return false
         val at = ReminderSettingsStore(context).readSnooze(taskId, originalAt) ?: originalAt
         // 防止已派发的旧闹钟在用户改期之后仍弹通知。正常的省电延迟允许晚到。
-        if (expectedAt != null && expectedAt != at) return
-        if (at > nowMillis) return
+        if (expectedAt != null && expectedAt != at) return false
+        if (at > nowMillis) return false
         ensureChannel(context)
         val listName = db.taskListDao().getById(task.listId)?.name
-        notify(context, taskId, build(context, task, listName, at))
+        return notify(context, taskId, build(context, task, listName, at))
     }
 
     fun cancel(context: Context, taskId: Long) {
@@ -86,7 +86,10 @@ object ReminderNotifications {
 
     /** 应用总开关和单独的「任务提醒」渠道都必须开启。 */
     fun areEnabled(context: Context): Boolean =
-        NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+        (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED) &&
+            NotificationManagerCompat.from(context).areNotificationsEnabled() &&
             context.getSystemService(NotificationManager::class.java)
                 ?.getNotificationChannel(CHANNEL_ID)?.importance != NotificationManager.IMPORTANCE_NONE
 
@@ -151,16 +154,22 @@ object ReminderNotifications {
         )
 
     @SuppressLint("MissingPermission")
-    private fun notify(context: Context, taskId: Long, notification: Notification) {
+    private fun notify(context: Context, taskId: Long, notification: Notification): Boolean {
         // Android 13 起通知要运行时授权；没授权时系统会静默丢弃，这里先挡一下，
         // 免得在一个没有权限的机器上反复构造通知。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            return
+            return false
         }
-        if (!areEnabled(context)) return
-        NotificationManagerCompat.from(context).notify(taskId.toInt(), notification)
+        if (!areEnabled(context)) return false
+        return try {
+            NotificationManagerCompat.from(context).notify(taskId.toInt(), notification)
+            true
+        } catch (_: SecurityException) {
+            // 权限可能在检查后被收回，不得把这次记为已投递。
+            false
+        }
     }
 }

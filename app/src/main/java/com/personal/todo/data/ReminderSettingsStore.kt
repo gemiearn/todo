@@ -63,6 +63,24 @@ class ReminderSettingsStore(context: Context) {
         prefs.edit().putBoolean("sharedAlarm", true).apply()
     }
 
+    /** 记录仍在等待系统投递的窗口；不能仅因到点就把它当成已经执行。 */
+    data class ScheduledAlarm(val at: Long, val bootCount: Int, val exact: Boolean)
+
+    fun readScheduledAlarm(): ScheduledAlarm? {
+        if (!prefs.contains("scheduled_at")) return null
+        return ScheduledAlarm(prefs.getLong("scheduled_at", 0L), prefs.getInt("scheduled_boot", -1),
+            prefs.getBoolean("scheduled_exact", false))
+    }
+
+    fun writeScheduledAlarm(at: Long, bootCount: Int, exact: Boolean) {
+        prefs.edit().putLong("scheduled_at", at).putInt("scheduled_boot", bootCount)
+            .putBoolean("scheduled_exact", exact).apply()
+    }
+
+    fun clearScheduledAlarm() {
+        prefs.edit().remove("scheduled_at").remove("scheduled_boot").remove("scheduled_exact").apply()
+    }
+
     companion object {
         private const val Name = "reminder_settings"
         private const val KeyExactAlarm = "exactAlarm"
