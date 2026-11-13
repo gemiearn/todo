@@ -652,8 +652,9 @@ class TodoAppSmokeTest {
         compose.onNodeWithText("今天的专注对象").performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithText("专注小结").assertExists()
-        compose.onNodeWithText("专注 1 次", substring = true).assertExists()
+        // 路由的 Room 数据和专注聚合分别异步加载，Compose 空闲不代表查询已经返回。
+        compose.waitUntilNodeCount(hasText("专注小结"), 1, TimeoutMillis)
+        compose.waitUntilNodeCount(hasText("专注 1 次", substring = true), 1, TimeoutMillis)
         compose.onNodeWithText("还没有专注记录").assertDoesNotExist()
     }
 
