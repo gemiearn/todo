@@ -493,27 +493,19 @@ private fun FocusTaskRow(
                 color = colors.dateMuted
             )
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Column {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = colors.focusAccent,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .clip(RoundedCornerShape(50))
-                        .background(colors.focusSurface)
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 listName?.let { name ->
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         text = stringResource(R.string.focus_task_list, name),
                         style = MaterialTheme.typography.bodySmall,
-                        color = colors.dateMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 10.dp)
+                        color = colors.dateMuted
                     )
                 }
             }

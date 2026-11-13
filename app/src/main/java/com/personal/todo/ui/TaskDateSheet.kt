@@ -408,6 +408,11 @@ internal fun TaskDateSheet(
             title = { Text(stringResource(R.string.reminder_kind_custom)) },
             text = {
                 Column {
+                    if (draftRule != null) {
+                        Text(stringResource(R.string.reminder_custom_repeat_hint),
+                            style = MaterialTheme.typography.bodySmall, color = colors.dateMuted)
+                        Spacer(Modifier.height(12.dp))
+                    }
                     MonthCalendar(
                         month = customMonth,
                         selected = customDate,

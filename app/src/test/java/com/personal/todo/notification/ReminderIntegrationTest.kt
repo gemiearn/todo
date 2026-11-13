@@ -5,6 +5,8 @@ import android.app.AlarmManager
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import androidx.room.Room
 import com.personal.todo.MainActivity
 import com.personal.todo.data.ReminderSettingsStore
@@ -77,6 +79,61 @@ class ReminderIntegrationTest {
     }
 
     @Test
+    fun hundredsOfRemindersShareOneAlarmAndLateDeliveryAdvancesWithoutDuplicates() = runBlocking {
+        val firstAt = now + 60_000L
+        val first = task(firstAt)
+        val secondId = db.taskDao().insert(first.copy(id = 0L))
+        repeat(600) { index ->
+            db.taskDao().insert(first.copy(id = 0L, reminderAt = firstAt + (index + 1) * 60_000L))
+        }
+        scheduler.rescheduleAll()
+        assertEquals(firstAt, scheduledAt()) // single() also checks the system alarm count.
+
+        now = firstAt + 90_000L // The system delivered late: both elapsed slots must notify.
+        scheduler.dispatch(firstAt)
+        assertEquals(3, shadowOf(notifications).allNotifications.size)
+        assertNotNull(shadowOf(notifications).getNotification(first.id.toInt()))
+        assertNotNull(shadowOf(notifications).getNotification(secondId.toInt()))
+        assertEquals(firstAt + 120_000L, scheduledAt())
+
+        notifications.cancelAll()
+        newScheduler().dispatch(firstAt) // Duplicate broadcast, even after process recreation.
+        assertTrue(shadowOf(notifications).allNotifications.isEmpty())
+        assertEquals(firstAt + 120_000L, scheduledAt())
+    }
+
+    @Test
+    fun editingOrDeletingTheNearestReminderSchedulesTheNextTask() = runBlocking {
+        val nearest = task(now + 60_000L)
+        val next = task(now + 120_000L)
+        repository.updateTask(nearest.id, nearest.title, nearest.notes, nearest.priority, nearest.listId,
+            plannedDate = nearest.plannedDate, reminderKind = ReminderKind.CUSTOM,
+            customReminderAt = now + 180_000L)
+        assertEquals(next.reminderAt, scheduledAt())
+        repository.deleteTask(next.id)
+        assertEquals(now + 180_000L, scheduledAt())
+    }
+
+    @Test
+    fun upgradingRemovesLegacyAlarmsAndOnlyClearsCopiedCustomRecurrenceReminders() = runBlocking {
+        val source = task()
+        val copiedId = db.taskDao().insert(source.copy(id = 0L, recurrenceSourceId = source.id))
+        val editedId = db.taskDao().insert(source.copy(id = 0L, recurrenceSourceId = source.id,
+            reminderAt = now + 120_000L))
+        listOf(source.id, copiedId, editedId).forEach { id ->
+            val pending = PendingIntent.getBroadcast(context, id.toInt(),
+                Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.ACTION_REMIND),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            manager.set(AlarmManager.RTC_WAKEUP, now + 30_000L, pending)
+        }
+        scheduler.rescheduleAll()
+        assertEquals(source.reminderAt, scheduledAt())
+        assertNull(db.taskDao().getById(copiedId)?.reminderAt)
+        assertEquals(now + 120_000L, db.taskDao().getById(editedId)?.reminderAt)
+        assertEquals(source.reminderAt, db.taskDao().getById(source.id)?.reminderAt)
+    }
+
+    @Test
     fun editingATimeReplacesTheOldAlarm() = runBlocking {
         val task = task()
         repository.updateTask(
@@ -136,6 +193,7 @@ class ReminderIntegrationTest {
         scheduler.sync(changed)
         assertEquals(changed.reminderAt, scheduledAt())
         // 再改回旧时刻，也不能让已经失效的推迟记录复活。
+        db.taskDao().update(task)
         scheduler.sync(task)
         assertTrue(shadowOf(manager).scheduledAlarms.isEmpty())
     }

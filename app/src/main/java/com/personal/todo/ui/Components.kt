@@ -82,6 +82,7 @@ import com.personal.todo.model.Priority
 import com.personal.todo.model.Schedule
 import com.personal.todo.model.TaskEventType
 import com.personal.todo.model.TaskSeries
+import com.personal.todo.ui.theme.TodoDimensions
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.DayOfWeek
 import java.time.Instant
@@ -94,7 +95,7 @@ import kotlinx.coroutines.delay
 /** Date pattern is a formatting detail, the surrounding labels live in strings.xml. */
 private val TimestampFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
-private val CardShape = RoundedCornerShape(16.dp)
+private val CardShape = TodoDimensions.CardShape
 
 /** Width of the coloured bar along the left edge of a task card. */
 private val BarWidth = 3.dp
@@ -109,10 +110,10 @@ private val BarInset = 13.dp
 private val CheckSize = 22.dp
 
 /** 勾选钮的触控区：图标只画 22dp，外面这一圈是给手指点的。 */
-private val CheckTouchSize = 32.dp
+private val CheckTouchSize = TodoDimensions.TouchTarget
 
-/** 卡片内联子任务行勾选钮的触控区（比主卡的略小，行距才压得住）。 */
-private val subtaskCheckTouchSize = 28.dp
+/** 卡片内联子任务行勾选钮使用同样的最小触控区。 */
+private val subtaskCheckTouchSize = TodoDimensions.TouchTarget
 
 /** How often the "now" used by the date labels and countdowns is refreshed. */
 private const val NowRefreshMillis = 30_000L
@@ -216,7 +217,7 @@ private fun countdownText(countdown: Countdown): String? = when (countdown) {
 }
 
 /**
- * 卡片右侧那一行小字：「20:00 提醒」。
+ * 卡片标题下的提醒小字：「20:00 提醒」。
  *
  * 只在**还没响、任务也没结束**的时候显示。提醒已经过去的任务若还挂着这个时间，用户会
  * 以为它还会响——那比不显示更糟。
@@ -425,14 +426,14 @@ fun ToggleChip(
 
 /**
  * One task as the screenshots show it: a white rounded card with a coloured bar
- * on its left edge, a square checkbox, the title, and on the right the date the
- * task belongs to - blue when that date is today, grey otherwise, red once it is
- * overdue - with the remaining time below it while a due moment is still ahead.
+ * on its left edge, a round checkbox and the title. Dates, reminder time and
+ * countdown wrap beneath the title so narrow screens keep room for the text.
  *
  * [onCheckedChange] null means "no checkbox" (the trash lists rows that cannot be
  * toggled), [actionLabel]/[onAction] add the single secondary action of the
  * current view (delete / restore / reopen).
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun TaskCard(
     task: Task,
@@ -504,8 +505,7 @@ fun TaskCard(
         Row(
             modifier = Modifier
                 .clickable(onClick = onClick)
-                // 色条现在只有 3dp，左边的内边距也收窄一点；上下各降 2dp，抵消勾选钮
-                // 那圈 32dp 触控区带来的高度增长，卡片总高基本不变。
+                // 内边距与 48dp 勾选触控区共同保证卡片容易点选。
                 .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -535,6 +535,24 @@ fun TaskCard(
                     RepeatMark()
                 }
             }
+            // 时间信息随标题列换行，避免右侧无界长日期挤掉任务标题。
+            if (dateText != null || reminderLabel != null || countdownLabel != null) {
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    dateText?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = dateColor)
+                    }
+                    reminderLabel?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = colors.dateMuted)
+                    }
+                    countdownLabel?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = colors.dateMuted)
+                    }
+                }
+            }
             if (subtaskCount > 0 && onToggleSubtasks == null) {
                 Text(
                     text = stringResource(R.string.task_subtask_count, subtaskCount),
@@ -545,36 +563,6 @@ fun TaskCard(
             if (tags.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 TagChipRow(tags = tags)
-            }
-        }
-
-        if (dateText != null || countdownLabel != null || reminderLabel != null) {
-            Spacer(Modifier.width(8.dp))
-            Column(horizontalAlignment = Alignment.End) {
-                if (dateText != null) {
-                    Text(
-                        text = dateText,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = dateColor,
-                        maxLines = 1
-                    )
-                }
-                if (reminderLabel != null) {
-                    Text(
-                        text = reminderLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.dateMuted,
-                        maxLines = 1
-                    )
-                }
-                if (countdownLabel != null) {
-                    Text(
-                        text = countdownLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.dateMuted,
-                        maxLines = 1
-                    )
-                }
             }
         }
 
@@ -753,7 +741,7 @@ internal fun RepeatMark(modifier: Modifier = Modifier) {
 }
 
 /**
- * 任务卡上的勾选钮：一个 22dp 的圆形描边钮，勾上就填成实心，外面留一圈 32dp 的触控区
+ * 任务卡上的勾选钮：一个 22dp 的圆形描边钮，勾上就填成实心，外面留一圈 48dp 的触控区
  * （Material3 的方形 Checkbox 自带最小触控区，换成自画的方框就得自己补回来）。
  *
  * 用它替掉 Material3 的方形 Checkbox——稿子⑤里方形滑块跟这套圆角卡片不是一路。

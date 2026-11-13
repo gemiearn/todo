@@ -111,6 +111,7 @@ import com.personal.todo.model.TaskSort
 import com.personal.todo.model.filterByRange
 import com.personal.todo.model.filterTasks
 import com.personal.todo.model.sortTasks
+import com.personal.todo.ui.theme.TodoDimensions
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.ui.theme.TagPalette
 import com.personal.todo.viewmodel.AppShellViewModel
@@ -1121,7 +1122,7 @@ internal fun MainScreen(
                         // 没有它，上面那块日历和下面的任务糊成一片，看不出这是两个区。
                         HorizontalDivider(
                             color = LocalTodoColors.current.dateMuted.copy(alpha = 0.2f),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = TodoDimensions.PageInset, vertical = 6.dp)
                         )
                         // 稿子④：日程区顶部先给一条「哪一天 · 几条」的标题，下面那些卡片
                         // 就不再是凭空出现的了。
@@ -1392,7 +1393,7 @@ internal fun MoreScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTodoColors.current
-    val cardShape = RoundedCornerShape(18.dp)
+    val cardShape = TodoDimensions.CardShape
     Column(modifier = modifier.fillMaxSize()) {
         // 功能入口：一张圆角卡片把「设置 / 专注 / 统计 / 标签」装在一起，行首加一个小
         // 图标、行间一条淡分隔线——与清单抽屉同一个视觉语言，不再是裸的一列字。

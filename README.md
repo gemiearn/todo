@@ -34,7 +34,7 @@
 | compileSdk / targetSdk | 35（Android 15，可运行于 Android 15 / 16 真机） |
 | minSdk | 26（Android 8.0） |
 | applicationId | `com.personal.todo` |
-| versionCode / versionName | 45 / 0.5.2（在 `gradle.properties` 中集中管理） |
+| versionCode / versionName | 46 / 0.5.3（在 `gradle.properties` 中集中管理） |
 | 数据库 schema | v15（`app/schemas/`，随每次模型变化提交） |
 
 `versionCode` 与 `versionName` 统一写在 [gradle.properties](gradle.properties) 的 `appVersionCode` / `appVersionName`，CI 读取 `appVersionName` 用于生成 artifact 名称。
@@ -104,6 +104,8 @@
 ## 提醒使用与验证
 
 新建或编辑任务 → 日期 → 设定日期和时间 → 提醒 → 选择「准时」等选项 → 确认并保存。首次设置时允许通知；需要更准时可到「更多 → 设置 → 提醒」开启准点提醒并授权。只有日期时默认以 09:00 为锚点，截止日期优先。
+
+提醒使用一个系统闹钟统一安排下一次，同一时间的多项任务分别通知，避免重复日程产生过多闹钟。重复任务的「准时／提前」提醒跟随每次日期；「自定义」只用于当前这一次，不复制给未来实例。
 
 提示音、震动及锁屏显示由系统「任务提醒」渠道控制。省电策略可能延迟普通提醒；系统强行停止应用后需重新打开，关机期间错过的提醒不补发。真机需验证锁屏到点、通知按钮、重启后提醒和厂商后台限制。
 

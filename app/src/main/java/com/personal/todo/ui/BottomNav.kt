@@ -55,7 +55,7 @@ enum class HomeTab(val route: String, @StringRes val labelRes: Int) {
 internal fun tabTag(tab: HomeTab): String = "tab-${tab.route}"
 
 /** The box every tab icon is centred in, so all four line up. */
-private val TabHeight = 40.dp
+private val TabHeight = 48.dp
 
 /**
  * The bottom bar of the screenshots: no labels, one rounded square icon per

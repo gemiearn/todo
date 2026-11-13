@@ -19,12 +19,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
+import com.personal.todo.ui.theme.TodoDimensions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,7 +64,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -105,6 +114,7 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val colors = LocalTodoColors.current
+    var appearancePicker by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -176,66 +186,27 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .testTag(SettingsScreenTag)
         ) {
-            SettingsGroupLabel(stringResource(R.string.settings_section_theme))
+            SettingsGroupLabel(stringResource(R.string.settings_section_appearance))
             SettingsCard {
-                ThemeChoice.entries.forEachIndexed { index, choice ->
-                    if (index > 0) SettingsDivider()
-                    ChoiceRow(
-                        label = stringResource(themeLabelRes(choice)),
-                        selected = choice == themeChoice,
-                        onClick = { onThemeChoiceChange(choice) }
-                    )
-                }
+                SettingsEntry(Icons.Default.Settings, stringResource(R.string.settings_section_theme),
+                    stringResource(themeLabelRes(themeChoice))) { appearancePicker = "theme" }
+                SettingsDivider()
+                SettingsEntry(Icons.Default.Star, stringResource(R.string.settings_section_color),
+                    stringResource(colorStyleLabelRes(colorStyle))) { appearancePicker = "color" }
+                SettingsDivider()
+                SettingsEntry(Icons.Default.DateRange, stringResource(R.string.settings_section_background),
+                    stringResource(backgroundStyleLabelRes(backgroundStyle))) { appearancePicker = "background" }
+                SettingsDivider()
+                SettingsEntry(Icons.Default.Info, stringResource(R.string.settings_section_icon),
+                    stringResource(launcherIconLabelRes(launcherIcon))) { appearancePicker = "icon" }
             }
-
-            SettingsGroupLabel(stringResource(R.string.settings_section_color))
-            SettingsCard {
-                ColorStyle.entries.forEachIndexed { index, style ->
-                    if (index > 0) SettingsDivider()
-                    ChoiceRow(
-                        label = stringResource(colorStyleLabelRes(style)),
-                        selected = style == colorStyle,
-                        onClick = { onColorStyleChange(style) }
-                    )
-                }
-            }
-
-            SettingsGroupLabel(stringResource(R.string.settings_section_background))
-            SettingsCard {
-                BackgroundStyle.entries.forEachIndexed { index, style ->
-                    if (index > 0) SettingsDivider()
-                    ChoiceRow(
-                        label = stringResource(backgroundStyleLabelRes(style)),
-                        selected = style == backgroundStyle,
-                        onClick = { onBackgroundStyleChange(style) }
-                    )
-                }
-            }
-
-            SettingsGroupLabel(stringResource(R.string.settings_section_icon))
-            SettingsCard {
-                LauncherIcon.entries.forEachIndexed { index, icon ->
-                    if (index > 0) SettingsDivider()
-                    ChoiceRow(
-                        label = stringResource(launcherIconLabelRes(icon)),
-                        selected = icon == launcherIcon,
-                        onClick = { onLauncherIconChange(icon) }
-                    )
-                }
-            }
-            Text(
-                text = stringResource(R.string.settings_icon_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.dateMuted,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
-            )
 
             // 提醒：权限状态 + 准点开关。两行都不是「设一次就忘」的东西——通知权限可能被
             // 系统收回，准点开关要跳系统设置去授权，回来这里必须能看出到底成没成。
             SettingsGroupLabel(stringResource(R.string.settings_section_reminder))
             SettingsCard {
                 SettingsEntry(
-                    icon = "🔔",
+                    icon = Icons.Default.Notifications,
                     label = stringResource(R.string.settings_reminder_permission),
                     trailing = if (notificationsEnabled) {
                         stringResource(R.string.settings_reminder_permission_on)
@@ -302,25 +273,25 @@ fun SettingsScreen(
             SettingsGroupLabel(stringResource(R.string.settings_section_more))
             SettingsCard {
                 SettingsEntry(
-                    icon = "⏱️",
+                    icon = Icons.Default.DateRange,
                     label = stringResource(R.string.more_entry_focus),
                     onClick = onOpenFocus
                 )
                 SettingsDivider()
                 SettingsEntry(
-                    icon = "📊",
+                    icon = Icons.Default.DateRange,
                     label = stringResource(R.string.more_entry_stats),
                     onClick = onOpenStats
                 )
                 SettingsDivider()
                 SettingsEntry(
-                    icon = "🏷️",
+                    icon = Icons.Default.Star,
                     label = stringResource(R.string.more_entry_tags),
                     onClick = onOpenTags
                 )
                 SettingsDivider()
                 SettingsEntry(
-                    icon = "📤",
+                    icon = Icons.Default.Info,
                     label = stringResource(R.string.settings_export),
                     trailing = stringResource(R.string.settings_export_soon_short),
                     onClick = { scope.launch { snackbarHostState.showSnackbar(exportMessage) } }
@@ -332,7 +303,7 @@ fun SettingsScreen(
                 SettingsGroupLabel(stringResource(R.string.dev_section_title))
                 SettingsCard {
                     SettingsEntry(
-                        icon = "🛠️",
+                        icon = Icons.Default.Build,
                         label = stringResource(R.string.dev_entry_title),
                         onClick = onOpenDeveloperSettings
                     )
@@ -379,6 +350,52 @@ fun SettingsScreen(
             )
         }
     }
+    appearancePicker?.let { picker ->
+        val titleRes = when (picker) {
+            "theme" -> R.string.settings_section_theme
+            "color" -> R.string.settings_section_color
+            "background" -> R.string.settings_section_background
+            else -> R.string.settings_section_icon
+        }
+        AlertDialog(
+            onDismissRequest = { appearancePicker = null },
+            title = { Text(stringResource(titleRes)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (picker == "icon") {
+                        Text(stringResource(R.string.settings_icon_hint),
+                            style = MaterialTheme.typography.bodySmall, color = colors.dateMuted)
+                    }
+                    when (picker) {
+                        "theme" -> ThemeChoice.entries.forEach { choice ->
+                            ChoiceRow(stringResource(themeLabelRes(choice)), choice == themeChoice) {
+                                onThemeChoiceChange(choice); appearancePicker = null
+                            }
+                        }
+                        "color" -> ColorStyle.entries.forEach { style ->
+                            ChoiceRow(stringResource(colorStyleLabelRes(style)), style == colorStyle) {
+                                onColorStyleChange(style); appearancePicker = null
+                            }
+                        }
+                        "background" -> BackgroundStyle.entries.forEach { style ->
+                            ChoiceRow(stringResource(backgroundStyleLabelRes(style)), style == backgroundStyle) {
+                                onBackgroundStyleChange(style); appearancePicker = null
+                            }
+                        }
+                        else -> LauncherIcon.entries.forEach { icon ->
+                            ChoiceRow(stringResource(launcherIconLabelRes(icon)), icon == launcherIcon) {
+                                onLauncherIconChange(icon); appearancePicker = null
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { appearancePicker = null }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        )
+    }
+
 }
 
 /** 设置页里一组选项的圆角卡片：与更多页、任务卡同一个视觉语言。 */
@@ -388,14 +405,14 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .padding(horizontal = TodoDimensions.PageInset, vertical = 4.dp)
             .shadow(
                 elevation = 1.5.dp,
-                shape = RoundedCornerShape(18.dp),
+                shape = TodoDimensions.CardShape,
                 ambientColor = Color.Black.copy(alpha = 0.05f),
                 spotColor = Color.Black.copy(alpha = 0.07f)
             )
-            .clip(RoundedCornerShape(18.dp))
+            .clip(TodoDimensions.CardShape)
             .background(colors.card),
         content = content
     )
@@ -451,7 +468,7 @@ private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun SettingsEntry(
-    icon: String,
+    icon: ImageVector,
     label: String,
     trailing: String? = null,
     onClick: () -> Unit
@@ -468,10 +485,10 @@ private fun SettingsEntry(
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
-                .background(entryIconTint(icon).copy(alpha = 0.14f)),
+                .background(colors.groupHeader),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = icon, fontSize = 15.sp, maxLines = 1)
+            Icon(icon, contentDescription = null, tint = colors.dateMuted, modifier = Modifier.size(20.dp))
         }
         Spacer(Modifier.width(12.dp))
         Text(
@@ -483,7 +500,10 @@ private fun SettingsEntry(
             Text(
                 text = trailing,
                 style = MaterialTheme.typography.bodyMedium,
-                color = colors.dateMuted
+                color = colors.dateMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(0.8f)
             )
             Spacer(Modifier.width(6.dp))
         }

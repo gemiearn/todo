@@ -20,15 +20,18 @@ interface ReminderGateway {
      * 幂等：已完成、已删除、没有提醒、时刻已过，都是取消。所以调用点不必先自己判断，
      * 重复调用也不会出问题。
      */
-    fun sync(task: Task)
+    suspend fun sync(task: Task)
 
     /** 撤掉这条任务的闹钟。任务已经不在了（或被删了）时也安全。 */
-    fun cancel(taskId: Long)
+    suspend fun cancel(taskId: Long)
+
+    /** 批量生成完成后只重排一次，避免每个实例都扫描所有提醒。 */
+    suspend fun refresh() = Unit
 }
 
 /** 不做任何事的实现：没有注入调度器时（例如单测）用它。 */
 object NoReminderGateway : ReminderGateway {
-    override fun sync(task: Task) = Unit
+    override suspend fun sync(task: Task) = Unit
 
-    override fun cancel(taskId: Long) = Unit
+    override suspend fun cancel(taskId: Long) = Unit
 }

@@ -65,7 +65,8 @@ object ReminderNotifications {
         context: Context,
         taskId: Long,
         expectedAt: Long? = null,
-        db: TodoDatabase = DatabaseProvider.get(context)
+        db: TodoDatabase = DatabaseProvider.get(context),
+        nowMillis: Long = System.currentTimeMillis()
     ) {
         val task = db.taskDao().getById(taskId) ?: return
         if (task.deletedAt != null || task.completedAt != null) return
@@ -73,7 +74,7 @@ object ReminderNotifications {
         val at = ReminderSettingsStore(context).readSnooze(taskId, originalAt) ?: originalAt
         // 防止已派发的旧闹钟在用户改期之后仍弹通知。正常的省电延迟允许晚到。
         if (expectedAt != null && expectedAt != at) return
-        if (at > System.currentTimeMillis()) return
+        if (at > nowMillis) return
         ensureChannel(context)
         val listName = db.taskListDao().getById(task.listId)?.name
         notify(context, taskId, build(context, task, listName, at))

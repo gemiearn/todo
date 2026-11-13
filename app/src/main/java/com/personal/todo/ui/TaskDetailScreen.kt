@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.personal.todo.ui.theme.TodoDimensions
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -300,6 +307,7 @@ fun TaskDetailScreen(
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun TaskHeader(
     task: Task,
@@ -316,7 +324,7 @@ private fun TaskHeader(
     val colors = LocalTodoColors.current
     val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
     val accent = priorityColor(task.priority)
-    val shape = RoundedCornerShape(22.dp)
+    val shape = TodoDimensions.CardShape
     val deleted = task.deletedAt != null
     val completed = task.completedAt != null
     val statusText = when {
@@ -346,9 +354,9 @@ private fun TaskHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp)
+            .padding(horizontal = TodoDimensions.PageInset, vertical = 6.dp)
             .shadow(
-                elevation = 3.dp,
+                elevation = 1.dp,
                 shape = shape,
                 ambientColor = accent.copy(alpha = 0.10f),
                 spotColor = accent.copy(alpha = 0.12f)
@@ -361,9 +369,8 @@ private fun TaskHeader(
             )
             .padding(18.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             DetailStatusChip(text = statusText, color = statusColor)
-            Spacer(Modifier.weight(1f))
             PriorityPill(label = priorityLabel(task.priority), color = accent)
         }
         Spacer(Modifier.height(9.dp))
@@ -397,45 +404,21 @@ private fun TaskHeader(
         }
 
         Spacer(Modifier.height(14.dp))
-        // 两列属性卡：清单 / 优先级、计划 / 截止。时间并进日期那一行，不再一列
-        // 「计划日期」「计划时间」「截止日期」「截止时间」四行把卡片撑长。
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DetailProperty(
-                icon = "📁",
-                label = stringResource(R.string.task_property_list),
-                value = listName,
-                modifier = Modifier.weight(1f)
-            )
-            DetailProperty(
-                icon = "🎯",
-                label = stringResource(R.string.task_property_priority),
-                value = priorityLabel(task.priority),
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DetailProperty(
-                icon = "📅",
-                label = stringResource(R.string.task_property_planned),
-                value = planText,
-                modifier = Modifier.weight(1f)
-            )
-            DetailProperty(
-                icon = "⏳",
-                label = stringResource(R.string.task_property_due),
-                value = dueText,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        DetailProperty(Icons.AutoMirrored.Filled.List,
+            stringResource(R.string.task_property_list), listName)
+        DetailProperty(Icons.Default.DateRange,
+            stringResource(R.string.task_property_planned), planText)
+        DetailProperty(Icons.Default.DateRange,
+            stringResource(R.string.task_property_due), dueText)
         task.reminderAt?.let { reminderAt ->
             Spacer(Modifier.height(10.dp))
-            // 提醒单独占一行：它会跨天（「提前 1 天」），塞进上面那两列会说不清它是挂在
+            // 提醒单独占一行：它会跨天（「提前 1 天」），需要说清它是挂在
             // 计划日还是截止日上。已经响过的写「提醒已过」——不能让一个过去的时间看起来
             // 还等着响。
-            DetailMetaRow(
-                icon = "🔔",
-                text = if (task.completedAt == null && reminderAt > nowMillis) {
+            DetailProperty(
+                icon = Icons.Default.Notifications,
+                label = stringResource(R.string.editor_reminder_label),
+                value = if (task.completedAt == null && reminderAt > nowMillis) {
                     detailReminderText(reminderAt, today, zone)
                 } else {
                     stringResource(R.string.reminder_past)
@@ -566,10 +549,10 @@ private fun RepeatPill() {
     }
 }
 
-/** 两列属性格里的一格：小标题 + 值；值太长就省略，不把卡片撑高。 */
+/** 属性单独成行，长清单名和日期允许换行，随字体大小自然增高。 */
 @Composable
 private fun DetailProperty(
-    icon: String,
+    icon: ImageVector,
     label: String,
     value: String,
     modifier: Modifier = Modifier
@@ -580,31 +563,18 @@ private fun DetailProperty(
     } else {
         value
     }
-    Column(
-        modifier = modifier
-            .height(62.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(colors.groupHeader.copy(alpha = 0.38f))
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+    Row(
+        modifier = modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = 12.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = icon, fontSize = 11.sp)
-            Spacer(Modifier.width(5.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.dateMuted
-            )
+        Icon(icon, contentDescription = null, tint = colors.dateMuted, modifier = Modifier.size(20.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = colors.dateMuted)
+            Spacer(Modifier.height(4.dp))
+            Text(shown, style = MaterialTheme.typography.bodyMedium,
+                color = if (value.isBlank()) colors.dateMuted else MaterialTheme.colorScheme.onSurface)
         }
-        Spacer(Modifier.height(3.dp))
-        Text(
-            text = shown,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            color = if (value.isBlank()) colors.dateMuted else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 

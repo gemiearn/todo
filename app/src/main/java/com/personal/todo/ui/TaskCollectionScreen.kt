@@ -41,6 +41,7 @@ import com.personal.todo.R
 import com.personal.todo.data.ListSummary
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
+import com.personal.todo.ui.theme.TodoDimensions
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskCollection
 import java.time.LocalDate
@@ -141,8 +142,8 @@ fun TaskCollectionContent(
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         state = state,
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(start = TodoDimensions.PageInset, end = TodoDimensions.PageInset, top = 8.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(TodoDimensions.CardGap)
     ) {
         // 清单小结排在任务行之前：先说这个清单整体什么情况，再看具体任务。
         if (summary != null) {

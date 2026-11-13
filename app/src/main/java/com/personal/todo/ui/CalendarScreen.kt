@@ -73,6 +73,7 @@ import com.personal.todo.data.db.Task
 import com.personal.todo.model.Priority
 import com.personal.todo.model.TaskFilter
 import com.personal.todo.model.filterByRange
+import com.personal.todo.ui.theme.TodoDimensions
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -658,11 +659,11 @@ private fun MonthView(
     )
 
     val colors = LocalTodoColors.current
-    val cardShape = RoundedCornerShape(20.dp)
+    val cardShape = TodoDimensions.CardShape
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = TodoDimensions.PageInset)
             .shadow(
                 elevation = 2.dp,
                 shape = cardShape,

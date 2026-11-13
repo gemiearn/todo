@@ -311,11 +311,14 @@ class TodoAppSmokeTest {
         compose.onNodeWithTag(SettingsScreenTag).assertExists()
         compose.onNodeWithText("主题").assertExists()
         compose.onNodeWithText("跟随系统").assertExists()
+        compose.onNodeWithText("主题").performClick()
         compose.onNodeWithText("浅色").assertExists()
         compose.onNodeWithText("深色").assertExists()
-        compose.onNodeWithText("色系").assertExists()
+        compose.onNodeWithText("取消").performClick()
+        compose.onNodeWithText("色系").performClick()
         compose.onNodeWithText("马卡龙").assertExists()
         compose.onNodeWithText("莫兰迪").assertExists()
+        compose.onNodeWithText("取消").performClick()
     }
 
     /** 专注详情的第四个分段「自定义」会亮出起止日两个选择器。 */

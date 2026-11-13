@@ -541,7 +541,7 @@ class TaskRepository(
         }
         // 落在事务之外：闹钟是系统状态，不是数据库状态，事务回滚不该把它一起带走；
         // 反过来，先把闹钟设好再提交也有个空窗——所以放在提交之后。
-        taskDao.getById(taskId)?.let(reminders::sync)
+        taskDao.getById(taskId)?.let { reminders.sync(it) }
         return taskId
     }
 
@@ -584,8 +584,8 @@ class TaskRepository(
                 // 提醒跟着这一次的日期重算：源上是「提前 15 分钟」，铺出来的每一条都要
                 // 各自在它自己那天的 15 分钟前响，而不是全挤在源任务那一刻。
                 val occurrenceReminder = Reminder.epochMillisFor(
-                    kind = source.reminderKind,
-                    customAt = source.reminderAt,
+                    kind = source.reminderKind?.takeUnless { it == ReminderKind.CUSTOM },
+                    customAt = null,
                     plannedDate = date,
                     plannedTime = source.plannedTime,
                     dueDate = occurrenceDue,
@@ -602,15 +602,12 @@ class TaskRepository(
                     dueDate = occurrenceDue,
                     repeatRule = null,
                     recurrenceSourceId = source.id,
+                    reminderKind = source.reminderKind?.takeUnless { it == ReminderKind.CUSTOM },
                     reminderAt = occurrenceReminder
                 )
                 val occurrenceId = taskDao.insert(occurrence)
                 recordEvent(occurrenceId, TaskEventType.CREATED, source.title, time)
-                // 每条实例的闹钟各自排一份（`sync` 只排未来一个月内的，否则一条「每天」
-                // 就是三百多个闹钟，开机重排会把手机拖住）。
-                if (occurrenceReminder != null) {
-                    reminders.sync(occurrence.copy(id = occurrenceId))
-                }
+                // 自定义提醒只属于当前一次；批量生成后统一续排最近的提醒。
                 // 标签连线跟源任务照搬过来：实例是一张独立的任务行，标签存在 task_tags
                 // 里，不复制的话按标签筛「今天 / 未来 / 日历」时这些实例根本不会出现，
                 // 专注开始的标签快照也会是空的（说明文档 4.5 与标签是同一件事）。
@@ -620,6 +617,7 @@ class TaskRepository(
                 created++
             }
         }
+        if (created > 0) reminders.refresh()
         created
     }
 
@@ -705,7 +703,7 @@ class TaskRepository(
             }
         }
         // 取消旧闹钟 + 按新时刻重设，两步合一：`sync` 会用同一个 PendingIntent 覆盖。
-        taskDao.getById(taskId)?.let(reminders::sync)
+        taskDao.getById(taskId)?.let { reminders.sync(it) }
     }
 
     /**

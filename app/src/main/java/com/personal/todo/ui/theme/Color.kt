@@ -28,7 +28,7 @@ private val GroupDark = Color(0xFF25272C)
 
 private val InkLight = Color(0xFF1C1C1E)
 private val InkDark = Color(0xFFE6E7E9)
-private val MutedLight = Color(0xFF9A9FA5)
+private val MutedLight = Color(0xFF647084)
 private val MutedDark = Color(0xFF9AA0A6)
 /**
  * 「已完成」任务标题的颜色：比正文淡，但**必须看得见**。
@@ -38,14 +38,14 @@ private val MutedDark = Color(0xFF9AA0A6)
  * 现在这一档约 4:1：仍然明显比正文淡，但读得清。
  */
 private val DoneInkLight = Color(0xFF7F848A)
-private val DoneInkDark = Color(0xFF6E747B)
+private val DoneInkDark = Color(0xFFA3ADBB)
 
 /**
  * 未勾选时那个圈的颜色。它是**可点的控件**，不是装饰：原来 #D2D6DB 在白卡片上只有
  * 1.47:1，勾选钮看起来像一片空白（审查报告指出的问题）。现在约 3.1:1。
  */
 private val CheckOutlineLight = Color(0xFF8E939A)
-private val CheckOutlineDark = Color(0xFF464A52)
+private val CheckOutlineDark = Color(0xFF8793A5)
 private val OutlineLight = Color(0xFFE7E9EC)
 private val OutlineDark = Color(0xFF2C2F34)
 

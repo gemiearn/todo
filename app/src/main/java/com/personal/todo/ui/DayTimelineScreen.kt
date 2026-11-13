@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.personal.todo.R
 import com.personal.todo.data.db.Task
 import com.personal.todo.model.Schedule
+import com.personal.todo.ui.theme.TodoDimensions
 import com.personal.todo.ui.theme.LocalTodoColors
 import java.time.LocalTime
 import java.time.ZoneId
@@ -72,8 +73,8 @@ fun DayTimelineScreen(
         modifier = modifier
             .fillMaxSize()
             .testTag(DayTimelineTag),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(start = TodoDimensions.PageInset, end = TodoDimensions.PageInset, top = 8.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(TodoDimensions.CardGap)
     ) {
         if (allDay.isNotEmpty()) {
             item(key = "all-day-header") {

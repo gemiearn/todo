@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -46,7 +45,7 @@ internal fun TodaySummaryCard(
     val colors = LocalTodoColors.current
     val total = openCount + doneCount
     val progress = if (total <= 0) 0f else doneCount.toFloat() / total
-    val shape = RoundedCornerShape(20.dp)
+    val shape = com.personal.todo.ui.theme.TodoDimensions.CardShape
 
     Column(
         modifier = modifier
@@ -134,13 +133,7 @@ internal fun TodaySummaryCard(
                     )
                 } else {
                     Text(
-                        text = stringResource(R.string.today_summary_left, openCount),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.dateMuted
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.today_summary_done, doneCount),
+                        text = stringResource(R.string.today_summary_progress, doneCount, total),
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.dateMuted
                     )

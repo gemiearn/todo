@@ -17,17 +17,15 @@ import kotlinx.coroutines.launch
 class ReminderReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION_REMIND) return
-        val taskId = intent.getLongExtra(EXTRA_TASK_ID, 0L)
-        if (taskId <= 0L) return
+        // 旧版逐任务闹钟不再投递；启动迁移会撤掉它们。
+        if (intent.action != ACTION_DISPATCH || !intent.hasExtra(EXTRA_REMINDER_AT)) return
         val appContext = context.applicationContext
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val expectedAt = if (intent.hasExtra(EXTRA_REMINDER_AT)) {
+                ReminderScheduler(appContext).dispatch(
                     intent.getLongExtra(EXTRA_REMINDER_AT, 0L)
-                } else null
-                ReminderNotifications.show(appContext, taskId, expectedAt)
+                )
             } catch (_: Exception) {
                 // 广播里不让异常冒出去：抛出去会变成一次崩溃，而用户只是没收到提醒。
             } finally {
@@ -37,6 +35,7 @@ class ReminderReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        const val ACTION_DISPATCH = "com.personal.todo.action.DISPATCH_REMINDERS"
         const val ACTION_REMIND = "com.personal.todo.action.REMIND"
         const val EXTRA_TASK_ID = "taskId"
         const val EXTRA_REMINDER_AT = "reminderAt"

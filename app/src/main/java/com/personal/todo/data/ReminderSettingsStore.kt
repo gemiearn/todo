@@ -50,6 +50,19 @@ class ReminderSettingsStore(context: Context) {
         prefs.edit().remove("snooze_source_$taskId").remove("snooze_at_$taskId").apply()
     }
 
+    fun wasDelivered(taskId: Long, at: Long): Boolean =
+        prefs.getLong("delivered_$taskId", Long.MIN_VALUE) == at
+
+    fun markDelivered(taskId: Long, at: Long) {
+        prefs.edit().putLong("delivered_$taskId", at).apply()
+    }
+
+    fun usesSharedAlarm(): Boolean = prefs.getBoolean("sharedAlarm", false)
+
+    fun markSharedAlarm() {
+        prefs.edit().putBoolean("sharedAlarm", true).apply()
+    }
+
     companion object {
         private const val Name = "reminder_settings"
         private const val KeyExactAlarm = "exactAlarm"

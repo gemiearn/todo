@@ -84,6 +84,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.Habit
 import com.personal.todo.model.HabitRules
+import com.personal.todo.ui.theme.TodoDimensions
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.ui.theme.TagPalette
 import com.personal.todo.ui.theme.TodoColors
@@ -231,8 +232,8 @@ fun HabitScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .testTag(HabitScreenTag),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(start = TodoDimensions.PageInset, end = TodoDimensions.PageInset, top = 8.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(TodoDimensions.CardGap)
         ) {
             // 今日概况：今天完成了几个习惯（稿子里的「不那么单调」从这里开始）。
             item(key = "habit-summary") {
@@ -411,7 +412,7 @@ private fun HabitCard(
     val done = HabitRules.isComplete(todayCount, habit.dailyTarget, habit.step)
     // 这个习惯自己的颜色：进度条、今天那一列、以及「打了一部分」的格子都用它。
     val habitColor = habitColorOf(habit.id)
-    val cardShape = RoundedCornerShape(20.dp)
+    val cardShape = TodoDimensions.CardShape
 
     Column(
         modifier = modifier
@@ -1068,7 +1069,7 @@ private fun HabitPreviewCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(TodoDimensions.CardShape)
             .background(
                 Brush.linearGradient(
                     listOf(lerp(colors.card, accent, 0.12f), colors.card)
@@ -1118,7 +1119,7 @@ private fun EditSection(content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(TodoDimensions.CardShape)
             .background(colors.groupHeader.copy(alpha = 0.45f))
             .padding(14.dp)
     ) {

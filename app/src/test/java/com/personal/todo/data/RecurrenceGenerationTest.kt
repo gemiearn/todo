@@ -4,6 +4,9 @@ import androidx.room.Room
 import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.RepeatKind
 import com.personal.todo.model.RepeatRule
+import com.personal.todo.model.Reminder
+import com.personal.todo.model.ReminderKind
+import java.time.ZoneId
 import java.time.LocalDate
 import java.time.LocalTime
 import kotlinx.coroutines.flow.first
@@ -92,6 +95,36 @@ class RecurrenceGenerationTest {
         repository.materializeRecurrences(today, window)
         assertEquals("幂等：再跑一次一条都不多", 0, repository.materializeRecurrences(today, window))
         assertEquals(14, db.taskDao().getOccurrencesOf(sourceId).size)
+    }
+
+    @Test
+    fun customReminderBelongsOnlyToTheCurrentOccurrence() = runBlocking {
+        val at = today.atTime(6, 45).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val sourceId = repository.createTask("晨跑", inboxId, plannedDate = today,
+            repeatRule = RepeatRule(RepeatKind.DAILY), reminderKind = ReminderKind.CUSTOM,
+            customReminderAt = at)
+        repository.materializeRecurrences(today, window)
+        assertEquals(at, repository.getTask(sourceId)?.reminderAt)
+        val occurrences = db.taskDao().getOccurrencesOf(sourceId)
+        assertEquals(window, occurrences.size)
+        assertTrue(occurrences.all { it.reminderAt == null && it.reminderKind == null })
+    }
+
+    @Test
+    fun relativeRemindersFollowEachOccurrencesOwnDate() = runBlocking {
+        val sourceId = repository.createTask("晨跑", inboxId, plannedDate = today,
+            plannedTime = LocalTime.of(7, 0), repeatRule = RepeatRule(RepeatKind.DAILY),
+            reminderKind = ReminderKind.BEFORE_15)
+        repository.materializeRecurrences(today, window)
+        val occurrences = db.taskDao().getOccurrencesOf(sourceId)
+        assertEquals(window, occurrences.size)
+        occurrences.forEach { occurrence ->
+            assertEquals(ReminderKind.BEFORE_15, occurrence.reminderKind)
+            assertEquals(Reminder.epochMillisFor(ReminderKind.BEFORE_15, null,
+                occurrence.plannedDate, occurrence.plannedTime, null, null, ZoneId.systemDefault()),
+                occurrence.reminderAt)
+        }
+        assertEquals(window, occurrences.map { it.reminderAt }.distinct().size)
     }
 
     /**
