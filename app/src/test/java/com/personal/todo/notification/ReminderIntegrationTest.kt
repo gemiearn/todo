@@ -5,7 +5,6 @@ import android.app.AlarmManager
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.Context
 import androidx.room.Room
 import com.personal.todo.MainActivity
 import com.personal.todo.data.ReminderSettingsStore
@@ -122,7 +121,7 @@ class ReminderIntegrationTest {
         scheduler.snooze(task.id)
         val postponed = now + 600_000L
         assertEquals(postponed, scheduledAt())
-        manager.cancel(shadowOf(manager).scheduledAlarms.single().operation)
+        manager.cancel(requireNotNull(shadowOf(manager).scheduledAlarms.single().operation))
         newScheduler().rescheduleAll()
         assertEquals(postponed, scheduledAt())
         assertEquals(ReminderKind.CUSTOM, repository.getTask(task.id)?.reminderKind)
@@ -136,6 +135,9 @@ class ReminderIntegrationTest {
         db.taskDao().update(changed)
         scheduler.sync(changed)
         assertEquals(changed.reminderAt, scheduledAt())
+        // 再改回旧时刻，也不能让已经失效的推迟记录复活。
+        scheduler.sync(task)
+        assertTrue(shadowOf(manager).scheduledAlarms.isEmpty())
     }
 
     @Test

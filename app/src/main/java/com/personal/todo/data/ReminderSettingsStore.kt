@@ -30,7 +30,11 @@ class ReminderSettingsStore(context: Context) {
 
     /** 推迟只针对这一次提醒；原提醒改期后，旧的推迟记录自动失效。 */
     fun readSnooze(taskId: Long, reminderAt: Long): Long? {
-        if (prefs.getLong("snooze_source_$taskId", Long.MIN_VALUE) != reminderAt) return null
+        if (!prefs.contains("snooze_source_$taskId")) return null
+        if (prefs.getLong("snooze_source_$taskId", Long.MIN_VALUE) != reminderAt) {
+            clearSnooze(taskId)
+            return null
+        }
         return prefs.getLong("snooze_at_$taskId", Long.MIN_VALUE)
             .takeUnless { it == Long.MIN_VALUE }
     }
