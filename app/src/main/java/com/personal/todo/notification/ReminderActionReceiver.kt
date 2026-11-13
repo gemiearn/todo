@@ -15,8 +15,7 @@ import kotlinx.coroutines.launch
  * 闹钟撤掉并补一条 COMPLETED 事件，和手动勾完走的是同一条路——统计、习惯自动打卡都不会
  * 因为是从通知点的而漏掉）。
  *
- * 「稍后」不写库，只把闹钟推到 10 分钟后：任务的提醒时刻没变，只是这一次晚点响。所以
- * 通知里显示的时刻仍然是用户当初设的那个，不会被改写成 now+10。
+ * 「稍后」把这一次的推迟时刻保存在本地偏好，再排闹钟；重启仍可恢复，重复规则不变。
  */
 class ReminderActionReceiver : BroadcastReceiver() {
 
@@ -25,6 +24,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
         if (taskId <= 0L) return
         val appContext = context.applicationContext
         val action = intent.action
+        if (action != ACTION_COMPLETE && action != ACTION_SNOOZE) return
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {

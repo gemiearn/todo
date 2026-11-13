@@ -1,5 +1,6 @@
 package com.personal.todo
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
@@ -37,8 +38,11 @@ import com.personal.todo.ui.theme.todoCanvasColor
  * 立刻重画整棵树，同时落盘；桌面图标那项还多一步——去系统里换掉启用的 activity-alias。
  */
 class MainActivity : ComponentActivity() {
+    private var notificationTaskId by mutableStateOf<Long?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        notificationTaskId = intent.getLongExtra(EXTRA_OPEN_TASK_ID, 0L).takeIf { it > 0L }
         val repository = TodoContainer.repository(applicationContext)
         val focusRepository = TodoContainer.focusRepository(applicationContext)
         val habitRepository = TodoContainer.habitRepository(applicationContext)
@@ -95,6 +99,11 @@ class MainActivity : ComponentActivity() {
                         repository = repository,
                         focusRepository = focusRepository,
                         habitRepository = habitRepository,
+                        openTaskId = notificationTaskId,
+                        onOpenTaskConsumed = {
+                            notificationTaskId = null
+                            intent.removeExtra(EXTRA_OPEN_TASK_ID)
+                        },
                         themeChoice = themeChoice,
                         onThemeChoiceChange = {
                             themeChoice = it
@@ -120,6 +129,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        notificationTaskId = intent.getLongExtra(EXTRA_OPEN_TASK_ID, 0L).takeIf { it > 0L }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_TASK_ID = "openTaskId"
     }
 
     /** 窗口底＝App 页面底；背景风格一变只重刷这一层，不重复动系统栏。 */

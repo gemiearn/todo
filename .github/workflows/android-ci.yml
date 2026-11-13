@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 'codex/**' ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -24,6 +24,7 @@ jobs:
     # AppNotIdleException on that image. Ubuntu 24.04 is the image the suite is
     # known-green on.
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -56,7 +57,20 @@ jobs:
       # `--continue`：前面哪一项失败也照样把 lint 报告 / 单测 XML 生成出来，否则下面
       # 的 lint 报告上传永远是空的。
       - name: Build debug APK, lint and logic unit tests
+        id: gate
         run: ./gradlew --stacktrace --continue assembleDebug lintDebug testDebugUnitTest -PskipComposeSmoke
+
+      # 后续冒烟会覆盖同一路径，先保存门禁报告以便独立核对提醒回归结果。
+      - name: Upload logic unit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logic-unit-test-report-${{ steps.meta.outputs.short_sha }}
+          path: |
+            app/build/reports/tests/testDebugUnitTest
+            app/build/test-results/testDebugUnitTest
+          if-no-files-found: ignore
+          retention-days: 7
 
       # 整屏组合冒烟（src/testDebug）：把每个页面在 JVM 上真的组合一遍。
       #
@@ -67,6 +81,8 @@ jobs:
       # （见下一步），测试报告也照样上传。
       - name: Compose smoke tests (informational)
         id: smoke
+        if: success()
+        timeout-minutes: 8
         continue-on-error: true
         run: ./gradlew --stacktrace testDebugUnitTest --tests "com.personal.todo.ui.*SmokeTest"
 

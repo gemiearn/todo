@@ -18,6 +18,7 @@ import com.personal.todo.R
 import com.personal.todo.data.ReminderSettingsStore
 import com.personal.todo.data.db.DatabaseProvider
 import com.personal.todo.data.db.Task
+import com.personal.todo.data.db.TodoDatabase
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -60,11 +61,19 @@ object ReminderNotifications {
      * 先复核一次任务状态：闹钟设下之后用户可能已经勾掉、删掉或改掉了提醒，那时通知
      * 不该再弹。**过期不补发**——设备关机期间攒下的提醒，开机后不会补响。
      */
-    suspend fun show(context: Context, taskId: Long) {
-        val db = DatabaseProvider.get(context)
+    suspend fun show(
+        context: Context,
+        taskId: Long,
+        expectedAt: Long? = null,
+        db: TodoDatabase = DatabaseProvider.get(context)
+    ) {
         val task = db.taskDao().getById(taskId) ?: return
         if (task.deletedAt != null || task.completedAt != null) return
-        val at = task.reminderAt ?: return
+        val originalAt = task.reminderAt ?: return
+        val at = ReminderSettingsStore(context).readSnooze(taskId, originalAt) ?: originalAt
+        // 防止已派发的旧闹钟在用户改期之后仍弹通知。正常的省电延迟允许晚到。
+        if (expectedAt != null && expectedAt != at) return
+        if (at > System.currentTimeMillis()) return
         ensureChannel(context)
         val listName = db.taskListDao().getById(task.listId)?.name
         notify(context, taskId, build(context, task, listName, at))
@@ -73,6 +82,12 @@ object ReminderNotifications {
     fun cancel(context: Context, taskId: Long) {
         NotificationManagerCompat.from(context).cancel(taskId.toInt())
     }
+
+    /** 应用总开关和单独的「任务提醒」渠道都必须开启。 */
+    fun areEnabled(context: Context): Boolean =
+        NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            context.getSystemService(NotificationManager::class.java)
+                ?.getNotificationChannel(CHANNEL_ID)?.importance != NotificationManager.IMPORTANCE_NONE
 
     private fun build(context: Context, task: Task, listName: String?, at: Long): Notification {
         // 通知上显示的是「当初设的那个时刻」，不是 now：闹钟可能比它晚几分钟才送到
@@ -111,13 +126,15 @@ object ReminderNotifications {
             .build()
     }
 
-    /** 点通知主体：回到 App。深链到任务详情留到以后，先保证「点了有反应」。 */
+    /** 直接用 Activity PendingIntent，点击后打开对应任务。 */
     private fun openIntent(context: Context, taskId: Long): PendingIntent =
         PendingIntent.getActivity(
             context,
             taskId.toInt(),
             Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra(MainActivity.EXTRA_OPEN_TASK_ID, taskId)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -142,7 +159,7 @@ object ReminderNotifications {
         ) {
             return
         }
-        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        if (!areEnabled(context)) return
         NotificationManagerCompat.from(context).notify(taskId.toInt(), notification)
     }
 }

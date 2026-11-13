@@ -55,7 +55,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -67,6 +66,7 @@ import com.personal.todo.data.LauncherIcon
 import com.personal.todo.data.ReminderSettingsStore
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.notification.ReminderScheduler
+import com.personal.todo.notification.ReminderNotifications
 import com.personal.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.launch
 
@@ -113,7 +113,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val reminderStore = remember(context) { ReminderSettingsStore(context) }
     var notificationsEnabled by remember {
-        mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled())
+        mutableStateOf(ReminderNotifications.areEnabled(context))
     }
     var exactAlarmAllowed by remember {
         mutableStateOf(ReminderScheduler(context).canScheduleExact())
@@ -128,13 +128,16 @@ fun SettingsScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 notificationsEnabled =
-                    NotificationManagerCompat.from(context).areNotificationsEnabled()
+                    ReminderNotifications.areEnabled(context)
                 val allowed = ReminderScheduler(context).canScheduleExact()
                 exactAlarmAllowed = allowed
                 if (awaitingExact && allowed && !reminderStore.readExactAlarm()) {
                     reminderStore.writeExactAlarm(true)
                 }
-                if (awaitingExact && allowed) awaitingExact = false
+                if (awaitingExact && allowed) {
+                    scope.launch { ReminderScheduler(context).rescheduleAll() }
+                }
+                awaitingExact = false
                 // 系统收回了权限，开关就得自己回到关：显示成开、实际却不准，是骗人的。
                 exactEnabled = reminderStore.readExactAlarm() && allowed
             }

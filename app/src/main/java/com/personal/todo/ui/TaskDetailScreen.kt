@@ -441,6 +441,9 @@ private fun TaskHeader(
                     stringResource(R.string.reminder_past)
                 }
             )
+            if (task.completedAt == null && task.deletedAt == null) {
+                ReminderPermissionHint()
+            }
         }
         task.completedAt?.let { completedAt ->
             Spacer(Modifier.height(10.dp))

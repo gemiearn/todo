@@ -28,6 +28,24 @@ class ReminderSettingsStore(context: Context) {
         prefs.edit().putBoolean(KeyExactAlarm, enabled).apply()
     }
 
+    /** 推迟只针对这一次提醒；原提醒改期后，旧的推迟记录自动失效。 */
+    fun readSnooze(taskId: Long, reminderAt: Long): Long? {
+        if (prefs.getLong("snooze_source_$taskId", Long.MIN_VALUE) != reminderAt) return null
+        return prefs.getLong("snooze_at_$taskId", Long.MIN_VALUE)
+            .takeUnless { it == Long.MIN_VALUE }
+    }
+
+    fun writeSnooze(taskId: Long, reminderAt: Long, at: Long) {
+        prefs.edit()
+            .putLong("snooze_source_$taskId", reminderAt)
+            .putLong("snooze_at_$taskId", at)
+            .apply()
+    }
+
+    fun clearSnooze(taskId: Long) {
+        prefs.edit().remove("snooze_source_$taskId").remove("snooze_at_$taskId").apply()
+    }
+
     companion object {
         private const val Name = "reminder_settings"
         private const val KeyExactAlarm = "exactAlarm"

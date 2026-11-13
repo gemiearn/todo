@@ -225,7 +225,9 @@ fun TodoApp(
     backgroundStyle: BackgroundStyle = BackgroundStyle.PLAIN,
     onBackgroundStyleChange: (BackgroundStyle) -> Unit = {},
     launcherIcon: LauncherIcon = LauncherIcon.RING,
-    onLauncherIconChange: (LauncherIcon) -> Unit = {}
+    onLauncherIconChange: (LauncherIcon) -> Unit = {},
+    openTaskId: Long? = null,
+    onOpenTaskConsumed: () -> Unit = {}
 ) {
     // 冷启动先把重复任务后面两周那几次补上。生成器幂等（同一天不会生成两遍），所以
     // 每次进来跑一遍是安全的。跟着「今天」那条流跑：进程活过午夜时要再补一次，否则
@@ -250,6 +252,13 @@ fun TodoApp(
     }
 
     val nav = rememberNavStack()
+    LaunchedEffect(openTaskId) {
+        val taskId = openTaskId ?: return@LaunchedEffect
+        if (repository.getTask(taskId) != null && nav.current != taskRoute(taskId)) {
+            nav.push(taskRoute(taskId))
+        }
+        onOpenTaskConsumed()
+    }
     val route = nav.current
     val kind = route.substringBefore('/')
     val argument = route.substringAfter('/', "").toLongOrNull()
