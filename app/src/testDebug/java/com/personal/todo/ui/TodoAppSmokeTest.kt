@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
@@ -603,7 +604,9 @@ class TodoAppSmokeTest {
         //
         // 点删除之后详情页会先查一次库（这条还在不在重复），查完才弹框，所以这里等节点
         // 出现，而不是数固定次数的 waitForIdle——那是「等几帧」不是「等结果」。
-        compose.onNodeWithText("删除").performSemanticsAction(SemanticsActions.OnClick)
+        // 路由切换也会异步加载详情，不能把空白首帧误当成已准备好；属性允许换行后还需滚动。
+        compose.waitUntilNodeCount(hasText("删除"), 1, TimeoutMillis)
+        compose.onNodeWithText("删除").performScrollTo().performClick()
         compose.waitUntilNodeCount(hasText("删除重复任务"), 1, TimeoutMillis)
         compose.onNodeWithText("只删这一次").assertExists()
         compose.onNodeWithText("删除整条系列").performSemanticsAction(SemanticsActions.OnClick)
