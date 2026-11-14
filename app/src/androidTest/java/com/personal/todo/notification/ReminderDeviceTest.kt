@@ -54,6 +54,13 @@ class ReminderDeviceTest {
                 requireNotNull(settings.readScheduledAlarm()).exact)
 
             shell("am start -W -a android.intent.action.MAIN -c android.intent.category.HOME")
+            // Launcher readiness precedes the previous Activity's onStop.
+            // Await that lifecycle transition, rather than treating am -W as a barrier.
+            val backgroundDeadline = SystemClock.elapsedRealtime() + 8_000L
+            while (activity.state.isAtLeast(Lifecycle.State.STARTED) &&
+                SystemClock.elapsedRealtime() < backgroundDeadline) {
+                Thread.sleep(50L)
+            }
             assertFalse("App must have left the foreground before waiting for the alarm",
                 activity.state.isAtLeast(Lifecycle.State.STARTED))
             shell("dumpsys battery unplug")
