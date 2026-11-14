@@ -17,6 +17,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.lifecycle.ViewModelStore
@@ -97,18 +99,19 @@ class ReminderFlowTest {
             }
         }
         compose.onNodeWithTag(EditorTitleTag).performTextInput("两分钟后提醒")
-        compose.onNodeWithText("今天").performClick()
+        compose.onNodeWithText("今天").performSemanticsAction(SemanticsActions.OnClick)
         // The second 今天 is the editor's date pill, after the quick date row.
-        compose.onAllNodesWithText("今天").onLast().performClick()
-        compose.onNodeWithText("时间").performClick()
+        compose.onAllNodesWithText("今天").onLast().performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntilNodeCount(hasText("时间"), 1, 15_000L)
+        compose.onNodeWithText("时间").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("12").performClick()
         compose.onNodeWithText("45").performClick()
-        compose.onNodeWithText("确定").performClick()
-        compose.onNodeWithText("提醒").performClick()
-        compose.onNodeWithText("准时").performClick()
-        compose.onNodeWithText("确认日期和提醒").performScrollTo().performClick()
+        compose.onNodeWithText("确定").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("提醒").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("准时").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("确认日期和提醒").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("提醒：准时", substring = true).assertExists()
-        compose.onNodeWithText("保存").performScrollTo().performClick()
+        compose.onNodeWithText("保存").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntilNodeCount(hasText("12:45 提醒"), 1, 15_000L)
 
         val task = requireNotNull(savedTask)
