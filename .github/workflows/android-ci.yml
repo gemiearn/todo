@@ -153,9 +153,13 @@ jobs:
           retention-days: 7
 
   reminder-device:
-    name: Reminder on Android with screen off
+    name: Reminder on Android ${{ matrix.api }} with screen off
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -175,7 +179,7 @@ jobs:
       - name: Deliver a reminder with screen off and device idle
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: ${{ matrix.api }}
           target: google_apis
           arch: x86_64
           profile: pixel_2
@@ -185,7 +189,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: reminder-device-report-${{ github.sha }}
+          name: reminder-device-report-api${{ matrix.api }}-${{ github.sha }}
           path: |
             app/build/reports/androidTests
             app/build/outputs/androidTest-results

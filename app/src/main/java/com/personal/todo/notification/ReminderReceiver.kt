@@ -3,10 +3,12 @@ package com.personal.todo.notification
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.PowerManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /**
  * 闹钟到点时被系统叫起来的那一端。
@@ -22,15 +24,29 @@ class ReminderReceiver : BroadcastReceiver() {
         if (intent.action != ACTION_DISPATCH || !intent.hasExtra(EXTRA_REMINDER_AT)) return
         val appContext = context.applicationContext
         val pending = goAsync()
+        val at = intent.getLongExtra(EXTRA_REMINDER_AT, 0L)
+        ReminderDiagnostics.record(appContext, "系统闹钟广播收到 窗口=${ReminderDiagnostics.moment(at)}")
+        // AlarmManager's wake lock covers onReceive, not the Room coroutine
+        // after it returns. Keep CPU awake only for this bounded delivery.
+        val wakeLock = appContext.getSystemService(PowerManager::class.java)
+            ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "todo:reminder-delivery")
+        try {
+            wakeLock?.acquire(10_000L)
+        } catch (error: RuntimeException) {
+            ReminderDiagnostics.record(appContext, "提醒唤醒失败=${error.javaClass.simpleName}")
+        }
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                ReminderScheduler(appContext).dispatch(
-                    intent.getLongExtra(EXTRA_REMINDER_AT, 0L)
-                )
+                withTimeout(8_000L) { ReminderScheduler(appContext).dispatch(at) }
             } catch (error: Exception) {
+                ReminderDiagnostics.record(appContext, "系统闹钟处理失败=${error.javaClass.simpleName}")
                 Log.e("TaskReminder", "Unable to deliver alarm broadcast", error)
             } finally {
-                pending.finish()
+                try {
+                    if (wakeLock?.isHeld == true) wakeLock.release()
+                } finally {
+                    pending.finish()
+                }
             }
         }
     }

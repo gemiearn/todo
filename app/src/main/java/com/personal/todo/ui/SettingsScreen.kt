@@ -1,6 +1,8 @@
 package com.personal.todo.ui
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -76,6 +78,7 @@ import com.personal.todo.data.ReminderSettingsStore
 import com.personal.todo.data.ThemeChoice
 import com.personal.todo.notification.ReminderScheduler
 import com.personal.todo.notification.ReminderNotifications
+import com.personal.todo.notification.ReminderDiagnostics
 import com.personal.todo.ui.theme.LocalTodoColors
 import kotlinx.coroutines.launch
 
@@ -260,9 +263,22 @@ fun SettingsScreen(
                     trailing = "",
                     onClick = {
                         val sent = ReminderNotifications.showTest(context)
+                        ReminderDiagnostics.record(context, "测试通知请求成功=$sent")
                         val message = context.getString(if (sent) R.string.reminder_test_sent
                             else R.string.settings_reminder_permission_hint)
                         scope.launch { snackbarHostState.showSnackbar(message) }
+                    }
+                )
+                SettingsDivider()
+                SettingsEntry(
+                    icon = Icons.Default.Info,
+                    label = stringResource(R.string.reminder_diagnostics_copy),
+                    trailing = "",
+                    onClick = {
+                        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                            ClipData.newPlainText("提醒诊断", ReminderDiagnostics.report(context)))
+                        scope.launch { snackbarHostState.showSnackbar(
+                            context.getString(R.string.reminder_diagnostics_copied)) }
                     }
                 )
             }

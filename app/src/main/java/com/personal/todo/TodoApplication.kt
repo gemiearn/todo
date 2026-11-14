@@ -3,6 +3,7 @@ package com.personal.todo
 import android.app.Application
 import com.personal.todo.data.CrashLog
 import com.personal.todo.notification.ReminderNotifications
+import com.personal.todo.notification.ReminderDiagnostics
 import com.personal.todo.notification.ReminderScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,8 +34,11 @@ class TodoApplication : Application() {
         }
 
         ReminderNotifications.ensureChannel(this)
+        ReminderDiagnostics.record(this, "应用进程启动")
         appScope.launch {
             runCatching { ReminderScheduler(this@TodoApplication).rescheduleAll(restoreAlarm = true) }
+                .onFailure { ReminderDiagnostics.record(this@TodoApplication,
+                    "启动恢复闹钟失败=${it.javaClass.simpleName}") }
         }
     }
 }

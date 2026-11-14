@@ -16,6 +16,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowPowerManager
 import org.robolectric.annotation.Config
 
 /** 不能只直接调用调度器：真实 PendingIntent 必须能唤起 Manifest 中的接收器并发通知。 */
@@ -46,6 +47,16 @@ class ReminderReceiverTest {
                 Thread.sleep(10L)
             }
             assertNotNull(shadowOf(notifications).getNotification(id.toInt()))
+            val wakeLock = requireNotNull(ShadowPowerManager.getLatestWakeLock())
+            for (attempt in 0 until 100) {
+                if (!wakeLock.isHeld) break
+                Thread.sleep(10L)
+            }
+            assertFalse("Receiver must release its CPU wake lock after delivery", wakeLock.isHeld)
+            val report = ReminderDiagnostics.report(context)
+            assertTrue(report.contains("系统闹钟广播收到"))
+            assertTrue(report.contains("系统闹钟 任务#$id 通知请求成功=true"))
+            assertFalse("Diagnostics must omit task titles", report.contains("接收器回归"))
         } finally {
             db.close()
         }

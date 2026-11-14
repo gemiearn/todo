@@ -22,6 +22,8 @@
         android:name="android.permission.SCHEDULE_EXACT_ALARM"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Only held briefly while the alarm receiver queries Room and posts notifications. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!--
         Phase 1 keeps every task on the device: no network, no accounts - and no

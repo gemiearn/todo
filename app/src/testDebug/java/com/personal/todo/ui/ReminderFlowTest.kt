@@ -35,6 +35,7 @@ import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.ReminderKind
 import com.personal.todo.notification.ReminderNotifications
 import com.personal.todo.notification.ReminderScheduler
+import com.personal.todo.notification.ReminderDiagnostics
 import com.personal.todo.ui.theme.TodoPomodoroTheme
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
@@ -154,6 +155,7 @@ class ReminderFlowTest {
         runBlocking { scheduler.dispatchDue() }
         val notifications = context.getSystemService(NotificationManager::class.java)
         assertNotNull(shadowOf(notifications).getNotification(task.id.toInt()))
+        assertTrue(ReminderDiagnostics.report(context).contains("应用前台 任务#${task.id} 通知请求成功=true"))
         compose.onNodeWithText("12:45 · 提醒时间已到").assertExists()
         runBlocking { scheduler.dispatch(expected) }
         assertEquals(1, shadowOf(notifications).allNotifications.size)

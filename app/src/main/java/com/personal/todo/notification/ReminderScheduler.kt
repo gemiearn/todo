@@ -39,6 +39,7 @@ class ReminderScheduler(
     private val settings = ReminderSettingsStore(appContext)
 
     override suspend fun sync(task: Task) {
+        ReminderDiagnostics.record(appContext, "保存任务#${task.id} 提醒=${task.reminderAt?.let(ReminderDiagnostics::moment) ?: "无"} 类型=${task.reminderKind} 完成=${task.completedAt != null} 删除=${task.deletedAt != null}")
         val db = database()
         db.withTransaction {
             if (task.reminderAt == null || task.completedAt != null || task.deletedAt != null) {
@@ -87,7 +88,7 @@ class ReminderScheduler(
         val alarm = settings.readScheduledAlarm() ?: return
         if (alarm.bootCount != bootCount() || alarm.at > now()) return
         if (!ReminderNotifications.areEnabled(appContext)) return
-        dispatch(alarm.at)
+        dispatch(alarm.at, source = "应用前台")
     }
 
     suspend fun snooze(taskId: Long) {
@@ -103,7 +104,8 @@ class ReminderScheduler(
     }
 
     /** 系统广播与前台到点检查共用投递；冷启动保留待投递窗口，重启只排未来。 */
-    suspend fun dispatch(windowStart: Long) {
+    suspend fun dispatch(windowStart: Long, source: String = "系统闹钟") {
+        ReminderDiagnostics.record(appContext, "$source 开始处理窗口=${ReminderDiagnostics.moment(windowStart)}")
         val db = database()
         db.withTransaction {
             val time = now()
@@ -111,7 +113,9 @@ class ReminderScheduler(
             db.taskDao().getPendingReminders().forEach { task ->
                 val at = effectiveAt(task) ?: return@forEach
                 if (at in windowStart..time && !settings.wasDelivered(task.id, at)) {
-                    if (ReminderNotifications.show(appContext, task.id, at, db, time)) {
+                    val submitted = ReminderNotifications.show(appContext, task.id, at, db, time)
+                    ReminderDiagnostics.record(appContext, "$source 任务#${task.id} 通知请求成功=$submitted")
+                    if (submitted) {
                         settings.markDelivered(task.id, at)
                     }
                 }
@@ -192,6 +196,7 @@ class ReminderScheduler(
         }
         if (at == null) {
             settings.clearScheduledAlarm()
+            ReminderDiagnostics.record(appContext, "调度结束：无等待提醒")
             return
         }
         if (!restoreAlarm && previous?.at == at && previous.bootCount == currentBoot && previous.exact == exact &&
@@ -216,6 +221,7 @@ class ReminderScheduler(
             exact = false
         }
         settings.writeScheduledAlarm(at, currentBoot, exact)
+        ReminderDiagnostics.record(appContext, "系统闹钟已设置=${ReminderDiagnostics.moment(at)} 精确=$exact")
     }
 
     private fun dispatchIntent(at: Long?) = Intent(appContext, ReminderReceiver::class.java)

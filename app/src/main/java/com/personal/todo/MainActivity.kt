@@ -23,6 +23,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.personal.todo.notification.ReminderScheduler
+import com.personal.todo.notification.ReminderDiagnostics
 import kotlinx.coroutines.launch
 import com.personal.todo.data.AppearanceSettingsStore
 import com.personal.todo.data.BackgroundStyle
@@ -57,7 +58,12 @@ class MainActivity : ComponentActivity() {
         val context = applicationContext
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                ReminderScheduler(context).watchWhileForeground()
+                ReminderDiagnostics.record(context, "应用进入前台")
+                try {
+                    ReminderScheduler(context).watchWhileForeground()
+                } finally {
+                    ReminderDiagnostics.record(context, "应用离开前台")
+                }
             }
         }
 

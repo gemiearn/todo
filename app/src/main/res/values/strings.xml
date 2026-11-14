@@ -338,6 +338,8 @@
     <string name="reminder_inexact_hint">未开启准点提醒，后台通知可能被系统延迟。</string>
     <string name="reminder_enable_exact">开启准点提醒</string>
     <string name="reminder_test_title">测试提醒通知</string>
+    <string name="reminder_diagnostics_copy">复制提醒诊断</string>
+    <string name="reminder_diagnostics_copied">已复制提醒诊断，包含最近的调度和通知状态</string>
     <string name="reminder_test_text">如果能看到这条通知，当前通知权限和任务提醒渠道可用。</string>
     <string name="reminder_test_sent">已请求发送测试通知，请查看通知栏；未出现时检查系统通知设置</string>
     <string name="reminder_delivery_submitted">已交给系统通知栏；声音和弹出显示由系统通知设置控制</string>
