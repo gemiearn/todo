@@ -4,12 +4,14 @@ import android.app.ActivityManager
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import com.personal.todo.data.ReminderSettingsStore
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.security.MessageDigest
 
 /** Bounded local history: no task titles, notes or automatic uploads. */
 object ReminderDiagnostics {
@@ -38,6 +40,16 @@ object ReminderDiagnostics {
         val version = context.packageManager.getPackageInfo(context.packageName, 0)
         val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) version.longVersionCode else version.versionCode.toLong()
         appendLine("提醒诊断 ${version.versionName} ($code)")
+        val signing = context.packageManager.getPackageInfo(context.packageName,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES
+            else PackageManager.GET_SIGNATURES)
+        val certificates = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            signing.signingInfo?.apkContentsSigners else signing.signatures
+        val certificateHash = certificates?.firstOrNull()?.let { certificate ->
+            MessageDigest.getInstance("SHA-256").digest(certificate.toByteArray())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        }
+        appendLine("安装包签名SHA256=$certificateHash")
         appendLine("${Build.MANUFACTURER} ${Build.MODEL} / Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         appendLine("当前时间=${moment(System.currentTimeMillis())} 时区=${ZoneId.systemDefault()}")
         appendLine("通知可用=${ReminderNotifications.areEnabled(context)} 准点开关=${settings.readExactAlarm()} 精确闹钟授权=${ReminderScheduler(context).canScheduleExact()}")

@@ -69,11 +69,14 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a") as stream:
               stream.write(f"ANDROID_KEYSTORE_PATH={path}\n")
           PY
+          KEY_ALIAS="$("$JAVA_HOME/bin/keytool" -list -keystore "$RUNNER_TEMP/todo-release.keystore" \
+            -storetype PKCS12 -storepass:env ANDROID_KEYSTORE_PASSWORD | awk -F, '/PrivateKeyEntry/ {print $1; exit}')"
+          test -n "$KEY_ALIAS"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
 
       - name: Build signed release APK and lint
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         # Prevent signing credentials being retained in a configuration cache or long-lived daemon.
         run: ./gradlew --no-daemon --no-configuration-cache assembleRelease lintRelease -PrequireReleaseSigning=true

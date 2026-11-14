@@ -281,6 +281,16 @@ fun SettingsScreen(
                             context.getString(R.string.reminder_diagnostics_copied)) }
                     }
                 )
+                SettingsDivider()
+                SettingsEntry(
+                    icon = Icons.Default.Settings,
+                    label = stringResource(R.string.reminder_background_settings),
+                    trailing = "",
+                    onClick = {
+                        runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:${context.packageName}"))) }
+                    }
+                )
             }
             Text(
                 text = stringResource(R.string.settings_reminder_exact_hint),
