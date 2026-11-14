@@ -7,8 +7,8 @@
 
         - POST_NOTIFICATIONS：Android 13 起发通知要运行时授权。没授权时 App 照常能用，
           只是提醒不会弹——设置页会显示「未开启」，不会假装已经设好了。
-        - SCHEDULE_EXACT_ALARM：Android 12 起的精确闹钟。默认走非精确调度，只有用户在
-          设置页打开「准点提醒」时才会用到它；用户随时可以在系统设置里收回。
+        - SCHEDULE_EXACT_ALARM：Android 12 起的精确闹钟。默认优先准点调度，但仍需系统
+          授权，未授权时退回普通闹钟并在日期弹层提示；用户可关闭「准点提醒」。
         - RECEIVE_BOOT_COMPLETED：重启后把闹钟重新排上，否则重启一次就再也不响。
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -87,6 +87,7 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 

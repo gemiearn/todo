@@ -19,6 +19,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.personal.todo.notification.ReminderScheduler
+import kotlinx.coroutines.launch
 import com.personal.todo.data.AppearanceSettingsStore
 import com.personal.todo.data.BackgroundStyle
 import com.personal.todo.data.ThemeChoice
@@ -50,6 +55,11 @@ class MainActivity : ComponentActivity() {
         // 桌面图标是系统层面的东西（启用哪个 activity-alias），所以要一个 Context；
         // 用 applicationContext，别把 Activity 攥在闭包里。
         val context = applicationContext
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                ReminderScheduler(context).watchWhileForeground()
+            }
+        }
 
         // 窗口底色必须和 App 自己的页面底色一致，不能交给系统主题。
         //

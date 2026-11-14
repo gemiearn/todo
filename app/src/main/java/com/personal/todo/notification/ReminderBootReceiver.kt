@@ -1,5 +1,6 @@
 package com.personal.todo.notification
 
+import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -23,6 +24,7 @@ class ReminderBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val recalculate = when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
+            AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED,
             Intent.ACTION_MY_PACKAGE_REPLACED -> false
 
             Intent.ACTION_TIME_CHANGED,

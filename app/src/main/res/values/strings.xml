@@ -330,6 +330,13 @@
     <string name="reminder_card_chip">%1$s 提醒</string>
     <string name="reminder_detail_today">今天 %1$s</string>
     <string name="reminder_past">提醒已过</string>
+    <string name="reminder_card_elapsed">%1$s · 提醒时间已到</string>
+    <string name="reminder_elapsed_at">%1$s · 提醒时间已到</string>
+    <string name="reminder_past_selection">所选提醒时间已过，不会重新提醒；请改为未来时间</string>
+    <string name="reminder_apply_date">确认日期和提醒</string>
+    <string name="reminder_editor_summary">提醒：%1$s</string>
+    <string name="reminder_inexact_hint">未开启准点提醒，后台通知可能被系统延迟。</string>
+    <string name="reminder_enable_exact">开启准点提醒</string>
     <!-- 通知 -->
     <string name="reminder_channel_name">任务提醒</string>
     <string name="reminder_channel_description">任务到点时的提醒通知</string>

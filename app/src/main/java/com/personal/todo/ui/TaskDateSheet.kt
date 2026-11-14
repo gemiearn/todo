@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -132,6 +133,9 @@ internal fun TaskDateSheet(
 
     // 有没有可以当锚点的日期。没有锚点就算不出提醒时刻，这一行要显示成「先设日期」。
     val draftCanRemind = Reminder.canRemind(draftPlannedDate, draftDueDate)
+    val nowMillis = rememberNowMillis()
+    val draftReminderAt = Reminder.epochMillisFor(draftReminderKind, draftCustomAt,
+        draftPlannedDate, draftPlannedTime, draftDueDate, draftDueTime, ZoneId.systemDefault())
 
     // 通知权限只在**用户真的设了提醒**这一刻才要：一进 App 就弹是骚扰，而且那时用户还
     // 不知道自己会不会用提醒。拒绝了也不拦着设——设置页能重新打开，详情页会说清「不会响」。
@@ -268,7 +272,18 @@ internal fun TaskDateSheet(
                 }
             }
 
+            if (draftReminderKind != null) {
+                Spacer(Modifier.height(8.dp))
+                if (draftReminderAt?.let { it <= nowMillis } == true) {
+                    Text(stringResource(R.string.reminder_past_selection),
+                        style = MaterialTheme.typography.bodySmall, color = colors.dateOverdue)
+                }
+                ReminderPermissionHint()
+            }
             Spacer(Modifier.height(8.dp))
+            Button(onClick = ::confirm, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.reminder_apply_date))
+            }
             TextButton(
                 onClick = {
                     draftRule = null
@@ -906,7 +921,7 @@ private fun reminderKindText(kind: ReminderKind): String = when (kind) {
  * 的那个点。自定义时刻没有类型可言，直接显示时刻。
  */
 @Composable
-private fun reminderValueText(
+internal fun reminderValueText(
     kind: ReminderKind?,
     customAt: Long?,
     plannedDate: LocalDate?,

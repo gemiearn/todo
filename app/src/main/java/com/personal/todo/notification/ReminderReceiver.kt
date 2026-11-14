@@ -3,6 +3,7 @@ package com.personal.todo.notification
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,8 +27,8 @@ class ReminderReceiver : BroadcastReceiver() {
                 ReminderScheduler(appContext).dispatch(
                     intent.getLongExtra(EXTRA_REMINDER_AT, 0L)
                 )
-            } catch (_: Exception) {
-                // 广播里不让异常冒出去：抛出去会变成一次崩溃，而用户只是没收到提醒。
+            } catch (error: Exception) {
+                Log.e("TaskReminder", "Unable to deliver alarm broadcast", error)
             } finally {
                 pending.finish()
             }

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.room.withTransaction
 import com.personal.todo.data.ReminderGateway
 import com.personal.todo.data.ReminderSettingsStore
@@ -16,6 +17,10 @@ import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.Reminder
 import com.personal.todo.model.ReminderKind
 import java.time.ZoneId
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CancellationException
 
 /** 一个应用只保留一个系统闹钟；到点批量通知，随后安排最近的下一次。
  * 所有读写在同一个 Room 事务内串行，避免启动重排、通知按钮和编辑任务互相覆盖。
@@ -58,6 +63,33 @@ class ReminderScheduler(
 
     override suspend fun refresh() = rescheduleAll(restoreAlarm = false)
 
+    /** 前台不必等普通系统闹钟的批处理窗口；与广播共用去重和任务状态检查。 */
+    suspend fun watchWhileForeground() {
+        try {
+            rescheduleAll()
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            Log.e("TaskReminder", "Unable to restore reminders", error)
+        }
+        while (currentCoroutineContext().isActive) {
+            try {
+                dispatchDue()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Log.e("TaskReminder", "Unable to deliver foreground reminder", error)
+            }
+            delay(1_000L)
+        }
+    }
+
+    /** 只处理本次开机已经排定的窗口，不能补发过去未排定或关机错过的提醒。 */
+    suspend fun dispatchDue() {
+        val alarm = settings.readScheduledAlarm() ?: return
+        if (alarm.bootCount != bootCount() || alarm.at > now()) return
+        if (!ReminderNotifications.areEnabled(appContext)) return
+        dispatch(alarm.at)
+    }
+
     suspend fun snooze(taskId: Long) {
         val db = database()
         db.withTransaction {
@@ -70,7 +102,7 @@ class ReminderScheduler(
         }
     }
 
-    /** 只有系统闹钟投递才发通知；冷启动保留待投递窗口，设备重启则只排未来。 */
+    /** 系统广播与前台到点检查共用投递；冷启动保留待投递窗口，重启只排未来。 */
     suspend fun dispatch(windowStart: Long) {
         val db = database()
         db.withTransaction {

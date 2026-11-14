@@ -8,8 +8,7 @@ import android.content.Context
  * 和外观 / 专注参数 / 筛选一样存在 SharedPreferences 里：它们是**屏幕偏好**，不是任务
  * 数据，改一次既不需要迁移，也不该动到任何一条任务。
  *
- * 只有 [exactAlarmEnabled] 一个开关，以及「稍后提醒」等多久。默认都不打扰：
- * 非精确闹钟不需要额外权限，对绝大多数任务够用；用户嫌不准时自己去设置页打开准点。
+ * 默认优先准点提醒，仍受系统授权约束；用户明确关闭的选择保留。
  */
 class ReminderSettingsStore(context: Context) {
 
@@ -22,7 +21,7 @@ class ReminderSettingsStore(context: Context) {
      * 打开它需要系统授予「闹钟和提醒」权限（Android 12+），没授权时会退回非精确，
      * 而不是抛异常——宁可晚几分钟，也不能让通知彻底不响。
      */
-    fun readExactAlarm(): Boolean = prefs.getBoolean(KeyExactAlarm, false)
+    fun readExactAlarm(): Boolean = prefs.getBoolean(KeyExactAlarm, true)
 
     fun writeExactAlarm(enabled: Boolean) {
         prefs.edit().putBoolean(KeyExactAlarm, enabled).apply()

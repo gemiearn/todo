@@ -16,6 +16,9 @@ import com.personal.todo.data.db.TodoDatabase
 import com.personal.todo.model.ReminderKind
 import java.time.LocalDate
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancelAndJoin
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -73,6 +76,69 @@ class ReminderIntegrationTest {
     }
 
     private fun scheduledAt(): Long = shadowOf(manager).scheduledAlarms.single().triggerAtTime
+
+    @Test
+    fun foregroundWatcherActuallyDeliversWithoutAnAlarmBroadcastAndCanBeStopped() = runBlocking {
+        settings.writeExactAlarm(false)
+        val task = task()
+        val watcher = launch { scheduler.watchWhileForeground() }
+        try {
+            delay(50L)
+            now = requireNotNull(task.reminderAt)
+            delay(1_100L)
+            assertNotNull(shadowOf(notifications).getNotification(task.id.toInt()))
+        } finally {
+            watcher.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun foregroundDeliveryDoesNotWaitForTheInexactSystemAlarm() = runBlocking {
+        settings.writeExactAlarm(false)
+        val task = task()
+        val at = requireNotNull(task.reminderAt)
+        scheduler.dispatchDue()
+        assertTrue(shadowOf(notifications).allNotifications.isEmpty())
+        now = at
+        scheduler.dispatchDue()
+        assertNotNull(shadowOf(notifications).getNotification(task.id.toInt()))
+        assertTrue(settings.wasDelivered(task.id, at))
+        notifications.cancelAll()
+        scheduler.dispatch(at) // Later Android delivery must not notify again.
+        assertTrue(shadowOf(notifications).allNotifications.isEmpty())
+    }
+
+    @Test
+    fun foregroundDeliveryCannotBackfillAnAlarmFromThePreviousBoot() = runBlocking {
+        val task = task()
+        now = requireNotNull(task.reminderAt)
+        bootCount++
+        scheduler.dispatchDue()
+        assertTrue(shadowOf(notifications).allNotifications.isEmpty())
+    }
+
+    @Test
+    fun foregroundDeliveryRetriesWhenNotificationPermissionReturns() = runBlocking {
+        val task = task()
+        now = requireNotNull(task.reminderAt)
+        shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        scheduler.dispatchDue()
+        assertFalse(settings.wasDelivered(task.id, now))
+        shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        scheduler.dispatchDue()
+        assertNotNull(shadowOf(notifications).getNotification(task.id.toInt()))
+    }
+
+    @Test
+    fun exactPermissionIsUsedByDefaultButAnExplicitOptOutIsRespected() = runBlocking {
+        shadowOf(manager).setCanScheduleExactAlarms(true)
+        val task = task()
+        assertTrue(requireNotNull(settings.readScheduledAlarm()).exact)
+        settings.writeExactAlarm(false)
+        scheduler.rescheduleAll()
+        assertFalse(requireNotNull(settings.readScheduledAlarm()).exact)
+        assertEquals(task.reminderAt, scheduledAt())
+    }
 
     @Test
     fun aReminderBeyondThirtyDaysIsScheduledWithoutAnotherAppLaunch() = runBlocking {

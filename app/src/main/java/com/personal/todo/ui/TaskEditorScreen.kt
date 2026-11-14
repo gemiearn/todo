@@ -346,6 +346,18 @@ internal fun TaskEditorBody(
             }
         )
 
+        if (viewModel.reminderKind != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.reminder_editor_summary, reminderValueText(
+                    viewModel.reminderKind, viewModel.customReminderAt,
+                    viewModel.plannedDate, viewModel.plannedTime,
+                    viewModel.dueDate, viewModel.dueTime)),
+                style = MaterialTheme.typography.bodySmall,
+                color = LocalTodoColors.current.dateMuted
+            )
+        }
+
         if (group != null) {
             Spacer(Modifier.height(4.dp))
             when (group) {

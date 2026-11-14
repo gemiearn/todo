@@ -413,15 +413,15 @@ private fun TaskHeader(
         task.reminderAt?.let { reminderAt ->
             Spacer(Modifier.height(10.dp))
             // 提醒单独占一行：它会跨天（「提前 1 天」），需要说清它是挂在
-            // 计划日还是截止日上。已经响过的写「提醒已过」——不能让一个过去的时间看起来
-            // 还等着响。
+            // 计划日还是截止日上。已到时间也保留时刻，不把「时间已到」当作「已经响过」。
             DetailProperty(
                 icon = Icons.Default.Notifications,
                 label = stringResource(R.string.editor_reminder_label),
                 value = if (task.completedAt == null && reminderAt > nowMillis) {
                     detailReminderText(reminderAt, today, zone)
                 } else {
-                    stringResource(R.string.reminder_past)
+                    stringResource(R.string.reminder_elapsed_at,
+                        detailReminderText(reminderAt, today, zone))
                 }
             )
             if (task.completedAt == null && task.deletedAt == null) {
