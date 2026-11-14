@@ -117,8 +117,14 @@ class ReminderFlowTest {
         compose.onNodeWithText("准时").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("确认日期和提醒").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("提醒：准时", substring = true).assertExists()
+        compose.runOnIdle {
+            assertEquals("Date sheet must retain the selected day", day, editor.plannedDate)
+            assertEquals("Clock selector must retain the selected time", LocalTime.of(12, 45), editor.plannedTime)
+            assertEquals(ReminderKind.ON_TIME, editor.reminderKind)
+        }
         compose.onNodeWithText("保存").performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitUntilNodeCount(hasText("12:45 提醒"), 1, 15_000L)
+        compose.waitUntil(15_000L) { savedTask != null || editor.saveFailed }
+        assertFalse("Editor failed to save the reminder", editor.saveFailed)
 
         val task = requireNotNull(savedTask)
         val expected = day.atTime(12, 45).atZone(zone).toInstant().toEpochMilli()
@@ -126,6 +132,7 @@ class ReminderFlowTest {
         assertEquals(LocalTime.of(12, 45), task.plannedTime)
         assertEquals(ReminderKind.ON_TIME, task.reminderKind)
         assertEquals(expected, task.reminderAt)
+        compose.onNodeWithText("12:45 提醒").assertExists()
         val context = RuntimeEnvironment.getApplication()
         val alarms = context.getSystemService(AlarmManager::class.java)
         assertEquals(expected, shadowOf(alarms).scheduledAlarms.single().triggerAtTime)
