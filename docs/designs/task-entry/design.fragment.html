@@ -1,0 +1,149 @@
+<div id="todo-entry-design">
+  <style>
+    #todo-entry-design { --te-bg:light-dark(#faf9fc,#18171d);--te-sheet:light-dark(#ffffff,#24222b);--te-text:light-dark(#272332,#f2eef8);--te-muted:light-dark(#797382,#ada6b8);--te-line:light-dark(#eeeaf2,#393441);--te-accent:light-dark(#7352c8,#b89aff);--te-soft:light-dark(#f2ecff,#382c50);--te-field:light-dark(#f6f4f9,#2e2a36);--te-on-accent:light-dark(#ffffff,#201231);color:var(--te-text);font-family:Inter,"Microsoft YaHei",system-ui,sans-serif }
+    #todo-entry-design * { box-sizing:border-box }
+    #todo-entry-design .te-stage { display:flex;justify-content:center;align-items:flex-start;min-height:855px;padding:24px 12px 18px }
+    #todo-entry-design .te-phone { width:390px;max-width:100%;background:var(--te-bg);border:1px solid var(--te-line);border-radius:28px;overflow:hidden;box-shadow:0 14px 40px #00000012 }
+    #todo-entry-design .te-status { display:flex;align-items:center;justify-content:space-between;padding:15px 24px 12px;font-size:12px;font-weight:600 }
+    #todo-entry-design .te-status span:last-child { display:flex;gap:7px }
+    #todo-entry-design .te-screen { display:flex;flex-direction:column;min-height:744px;background:var(--te-sheet) }
+    #todo-entry-design .te-head { display:flex;align-items:center;justify-content:space-between;padding:20px 22px 12px }
+    #todo-entry-design .te-head h2 { font-size:17px;font-weight:650;margin:0 }
+    #todo-entry-design button,#todo-entry-design input,#todo-entry-design select,#todo-entry-design textarea { font:inherit }
+    #todo-entry-design button { cursor:pointer }
+    #todo-entry-design .te-plain { border:0;background:none;color:var(--te-muted);padding:10px 0;font-size:14px }
+    #todo-entry-design .te-content { padding:16px 22px;flex:1 }
+    #todo-entry-design .te-title { display:block;border:0;outline-offset:4px;background:transparent;color:var(--te-text);font-size:23px;font-weight:650;line-height:1.45;width:100%;padding:0;resize:none;min-height:66px }
+    #todo-entry-design .te-title::placeholder { color:var(--te-muted) }
+    #todo-entry-design .te-note { border:0;background:transparent;color:var(--te-text);font-size:14px;line-height:1.5;width:100%;resize:vertical;min-height:37px;padding:6px 0;margin-bottom:18px }
+    #todo-entry-design .te-note::placeholder { color:var(--te-muted) }
+    #todo-entry-design .te-dayrow { display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px }
+    #todo-entry-design .te-day { border:1px solid var(--te-line);border-radius:10px;padding:9px 13px;background:var(--te-sheet);color:var(--te-muted);font-size:13px;min-height:40px }
+    #todo-entry-design .te-day[aria-pressed=true] { background:var(--te-soft);border-color:transparent;color:var(--te-accent);font-weight:600 }
+    #todo-entry-design .te-section { color:var(--te-muted);font-size:12px;letter-spacing:.04em;margin-bottom:6px }
+    #todo-entry-design .te-row { display:flex;align-items:center;gap:12px;min-height:59px;border-bottom:1px solid var(--te-line);font-size:14px }
+    #todo-entry-design .te-row>i,#todo-entry-design .te-row>svg { color:var(--te-muted);width:18px;flex-shrink:0 }
+    #todo-entry-design .te-label { flex:1;min-width:0 }
+    #todo-entry-design .te-value { color:var(--te-text);font-size:14px;border:0;background:var(--te-field);padding:9px 11px;border-radius:9px;max-width:174px;min-height:39px }
+    #todo-entry-design select.te-value { padding-right:5px }
+    #todo-entry-design input[type=time] { width:126px;font-variant-numeric:tabular-nums }
+    #todo-entry-design .te-row input[type=date] { max-width:155px }
+    #todo-entry-design .te-accent { color:var(--te-accent) }
+    #todo-entry-design .te-summary { display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.6;color:var(--te-accent);padding:14px 0 4px;min-height:42px }
+    #todo-entry-design .te-summary>svg { flex-shrink:0;width:15px;margin-top:2px }
+    #todo-entry-design details { margin-top:22px }
+    #todo-entry-design summary { cursor:pointer;font-size:14px;color:var(--te-muted);padding:8px 0;list-style:none;display:flex;align-items:center;gap:9px }
+    #todo-entry-design summary::after { content:'＋';margin-left:auto;font-size:18px }
+    #todo-entry-design details[open]>summary::after { content:'−' }
+    #todo-entry-design .te-more { padding-top:5px }
+    #todo-entry-design .te-footer { padding:14px 22px 19px;border-top:1px solid var(--te-line);background:var(--te-sheet) }
+    #todo-entry-design .te-save { background:var(--te-accent);color:var(--te-on-accent);border:0;border-radius:13px;width:100%;padding:15px;font-size:15px;font-weight:600;min-height:48px }
+    #todo-entry-design .te-gesture { width:104px;height:4px;border-radius:4px;background:var(--te-text);opacity:.4;margin:18px auto 0 }
+    #todo-entry-design .te-under { font-size:12px;text-align:center;color:var(--te-muted);margin:9px 0 0;min-height:18px }
+    #todo-entry-design .te-home { padding:15px 23px 42px;opacity:.46 }
+    #todo-entry-design .te-home h2 { font-size:23px;margin:8px 0 10px }
+    #todo-entry-design .te-home p { margin:0;font-size:13px;color:var(--te-muted) }
+    #todo-entry-design .te-home-task { display:flex;gap:12px;align-items:center;padding:16px 0;font-size:14px;border-bottom:1px solid var(--te-line) }
+    #todo-entry-design .te-sheet { border-radius:24px 24px 0 0;box-shadow:0 -12px 35px #00000008;background:var(--te-sheet);min-height:538px;display:flex;flex-direction:column }
+    #todo-entry-design .te-handle { background:var(--te-line);width:34px;height:4px;border-radius:3px;margin:10px auto 2px }
+    #todo-entry-design .te-sheet .te-content { padding-top:8px }
+    #todo-entry-design .te-sheet .te-title { font-size:21px;min-height:57px }
+    #todo-entry-design .te-sheet .te-dayrow { margin:12px 0 15px }
+    #todo-entry-design .te-mini-fields { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:7px 0 12px }
+    #todo-entry-design .te-mini-field { background:var(--te-field);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0 }
+    #todo-entry-design .te-mini-field label { font-size:12px;color:var(--te-muted);display:flex;gap:7px;align-items:center }
+    #todo-entry-design .te-mini-field input,#todo-entry-design .te-mini-field select { background:transparent;border:0;color:var(--te-text);padding:0;max-width:100%;width:100%;font-size:16px;min-height:28px }
+    #todo-entry-design .te-sheet details { margin-top:10px }
+    #todo-entry-design .te-sheet .te-footer { border-top:0 }
+    #todo-entry-design .te-success { color:var(--te-accent) }
+    @media(max-width:400px) { #todo-entry-design .te-stage { padding:15px 0;min-height:850px } #todo-entry-design .te-content { padding:14px 17px } #todo-entry-design .te-head,#todo-entry-design .te-footer { padding-left:17px;padding-right:17px } #todo-entry-design .te-day { padding:9px 11px } }
+  </style>
+  <div class="viz-carousel viz-dotted-background" aria-label="添加任务界面设计" data-previous-label="上一方案" data-next-label="下一方案">
+    <section data-variant="一页填写" aria-label="一页填写设计">
+      <div class="te-stage">
+        <div class="te-phone" data-mock="page" aria-label="一页填写添加任务">
+          <div class="te-status"><span>20:30</span><span><i data-lucide="wifi" aria-hidden="true"></i><i data-lucide="battery-full" aria-hidden="true"></i></span></div>
+          <div class="te-screen">
+            <header class="te-head"><button class="te-plain" type="button" data-action="cancel">取消</button><h2>添加任务</h2><span class="te-section">收件箱</span></header>
+            <div class="te-content">
+              <textarea class="te-title" aria-label="任务名称" rows="2" placeholder="准备做什么？">整理本周工作笔记</textarea>
+              <textarea class="te-note" aria-label="任务备注" rows="1" placeholder="添加备注…"></textarea>
+              <div class="te-dayrow" aria-label="快捷日期"><button class="te-day" data-day="今天" aria-pressed="true" type="button">今天</button><button class="te-day" data-day="明天" aria-pressed="false" type="button">明天</button><button class="te-day" data-action="pick-date" type="button">选日期</button></div>
+              <div class="te-section">时间安排</div>
+              <div class="te-row"><i data-lucide="calendar-days" aria-hidden="true"></i><span class="te-label">计划日期</span><span class="te-current-day">今天 · 11月14日</span><input class="te-value te-custom-date" aria-label="计划日期" type="date" value="2026-11-14" hidden></div>
+              <div class="te-row"><i data-lucide="clock-3" aria-hidden="true"></i><label class="te-label" for="te-page-time">时间</label><input id="te-page-time" class="te-value te-time" type="time" value="21:30"></div>
+              <div class="te-row"><i data-lucide="bell" aria-hidden="true"></i><label class="te-label" for="te-page-reminder">提醒</label><select id="te-page-reminder" class="te-value te-reminder"><option value="none">不提醒</option><option value="0" selected>准时</option><option value="5">提前 5 分钟</option><option value="15">提前 15 分钟</option><option value="30">提前 30 分钟</option><option value="60">提前 1 小时</option></select></div>
+              <div class="te-row"><i data-lucide="repeat-2" aria-hidden="true"></i><label class="te-label" for="te-page-repeat">重复</label><select id="te-page-repeat" class="te-value te-repeat"><option>不重复</option><option>每天</option><option>工作日</option><option>每周</option></select></div>
+              <div class="te-summary" aria-live="polite"><i data-lucide="bell-ring" aria-hidden="true"></i><span data-summary>今天 21:30 提醒</span></div>
+              <details><summary><i data-lucide="sliders-horizontal" aria-hidden="true"></i>更多选项</summary><div class="te-more"><div class="te-row"><label class="te-label" for="te-page-list">清单</label><select class="te-value" id="te-page-list"><option>收件箱</option><option>工作</option><option>生活</option></select></div><div class="te-row"><label class="te-label" for="te-page-priority">优先级</label><select class="te-value" id="te-page-priority"><option>普通</option><option>重要</option><option>紧急</option><option>重要且紧急</option></select></div><div class="te-row"><label class="te-label" for="te-page-due">截止日期</label><input class="te-value" id="te-page-due" type="date"></div><div class="te-row"><label class="te-label" for="te-page-tag">标签</label><input class="te-value" id="te-page-tag" placeholder="添加标签"></div><div class="te-row"><label class="te-label" for="te-page-subtask">子任务</label><input class="te-value" id="te-page-subtask" placeholder="添加子任务"></div></div></details>
+            </div>
+            <footer class="te-footer"><button class="te-save" type="button" data-action="save">添加任务</button><p class="te-under" data-feedback>保存前即可确认提醒时刻</p><div class="te-gesture"></div></footer>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section data-variant="快捷弹层" aria-label="快捷弹层设计" hidden>
+      <div class="te-stage">
+        <div class="te-phone" data-mock="sheet" aria-label="快捷弹层添加任务">
+          <div class="te-status"><span>20:30</span><span><i data-lucide="wifi" aria-hidden="true"></i><i data-lucide="battery-full" aria-hidden="true"></i></span></div>
+          <div class="te-home"><p>11月14日 · 星期六</p><h2>今天</h2><div class="te-home-task"><i data-lucide="circle" aria-hidden="true"></i>整理电脑上的文件</div><div class="te-home-task"><i data-lucide="circle" aria-hidden="true"></i>读完这一章</div></div>
+          <div class="te-sheet">
+            <div class="te-handle"></div><header class="te-head"><h2>添加任务</h2><button class="te-plain" type="button" data-action="cancel" aria-label="取消添加">取消</button></header>
+            <div class="te-content">
+              <textarea class="te-title" aria-label="任务名称" rows="2" placeholder="准备做什么？">整理本周工作笔记</textarea>
+              <div class="te-dayrow" aria-label="快捷日期"><button class="te-day" type="button" data-day="今天" aria-pressed="true">今天</button><button class="te-day" type="button" data-day="明天" aria-pressed="false">明天</button><button class="te-day" type="button" data-action="pick-date">选日期</button><input class="te-value te-custom-date" aria-label="计划日期" type="date" value="2026-11-14" hidden></div>
+              <div class="te-mini-fields"><div class="te-mini-field"><label for="te-sheet-time"><i data-lucide="clock-3" aria-hidden="true"></i>时间</label><input id="te-sheet-time" class="te-time" type="time" value="21:30"></div><div class="te-mini-field"><label for="te-sheet-reminder"><i data-lucide="bell" aria-hidden="true"></i>提醒</label><select id="te-sheet-reminder" class="te-reminder"><option value="none">不提醒</option><option value="0" selected>准时</option><option value="5">提前 5 分钟</option><option value="15">提前 15 分钟</option><option value="30">提前 30 分钟</option></select></div></div>
+              <div class="te-summary" aria-live="polite"><i data-lucide="bell-ring" aria-hidden="true"></i><span data-summary>今天 21:30 提醒</span></div>
+              <details><summary><i data-lucide="sliders-horizontal" aria-hidden="true"></i>重复、备注及更多</summary><div class="te-row"><label class="te-label" for="te-sheet-repeat">重复</label><select class="te-value te-repeat" id="te-sheet-repeat"><option>不重复</option><option>每天</option><option>工作日</option></select></div><div class="te-row"><label class="te-label" for="te-sheet-list">清单</label><select class="te-value" id="te-sheet-list"><option>收件箱</option><option>工作</option></select></div><textarea class="te-note" aria-label="备注" rows="2" placeholder="添加备注…"></textarea></details>
+            </div>
+            <footer class="te-footer"><button class="te-save" type="button" data-action="save">添加任务</button><p class="te-under" data-feedback>时间与提醒直接填写，无需再开日期弹层</p><div class="te-gesture"></div></footer>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+  (() => {
+    const root = document.getElementById('todo-entry-design');
+    root.querySelectorAll('[data-mock]').forEach(mock => {
+      let day = '今天';
+      const summary = mock.querySelector('[data-summary]');
+      const feedback = mock.querySelector('[data-feedback]');
+      const time = mock.querySelector('.te-time');
+      const reminder = mock.querySelector('.te-reminder');
+      const date = mock.querySelector('.te-custom-date');
+      const title = mock.querySelector('.te-title');
+      const repeat = mock.querySelector('.te-repeat');
+      function update() {
+        if(reminder.value === 'none') summary.textContent = day + (time.value ? ' ' + time.value : '') + ' · 不提醒';
+        else if(!time.value) summary.textContent = '请先设置提醒时间';
+        else {
+          const [h,m] = time.value.split(':').map(Number);
+          const minutes = h * 60 + m - Number(reminder.value);
+          const clock = String(Math.floor((minutes+1440)%1440/60)).padStart(2,'0') + ':' + String((minutes+1440)%60).padStart(2,'0');
+          summary.textContent = (minutes<0 ? day+'的前一天' : day) + ' ' + clock + ' 提醒' + (repeat && repeat.value!=='不重复' ? ' · ' + repeat.value : '');
+        }
+      }
+      mock.addEventListener('input',update);
+      mock.addEventListener('change',e=>{
+        if(e.target===date) { day=date.value ? date.value.replaceAll('-','/') : '未选日期';const label=mock.querySelector('.te-current-day');if(label)label.textContent=day;mock.querySelectorAll('[data-day]').forEach(b=>b.setAttribute('aria-pressed','false')); }
+        update();
+      });
+      mock.addEventListener('click',e=>{
+        const button = e.target.closest('button');if(!button)return;
+        if(button.dataset.day){ day=button.dataset.day;mock.querySelectorAll('[data-day]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));const label=mock.querySelector('.te-current-day');if(label)label.textContent=day+(day==='今天'?' · 11月14日':' · 11月15日');date.hidden=true;update(); }
+        if(button.dataset.action==='pick-date'){date.hidden=!date.hidden;if(!date.hidden){date.focus();try{date.showPicker();}catch(_){}}}
+        if(button.dataset.action==='save'){
+          if(!title.value.trim()){feedback.textContent='请填写任务名称';title.focus();return;}
+          if(reminder.value!=='none'&&!time.value){feedback.textContent='请先设置提醒时间';time.focus();return;}
+          feedback.textContent='已添加「'+title.value.trim()+'」';feedback.classList.add('te-success');
+        }
+        if(button.dataset.action==='cancel'){feedback.textContent='已取消添加';feedback.classList.remove('te-success');}
+      });
+      const design = { spacing: 22, showNote: true };
+      if(globalThis.Tweak){const tweak=new Tweak({container:mock,onChange:()=>{mock.querySelector('.te-content').style.paddingLeft=design.spacing+'px';mock.querySelector('.te-content').style.paddingRight=design.spacing+'px';const note=mock.querySelector('.te-note');if(note)note.hidden=!design.showNote;}});tweak.addSlider(design,'spacing',{label:'内容边距',min:16,max:28,step:2,unit:'px'});tweak.addToggle(design,'showNote',{label:'显示备注入口'});}
+      update();
+    });
+  })();
+  </script>
+</div>
