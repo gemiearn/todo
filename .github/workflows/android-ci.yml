@@ -178,12 +178,37 @@ jobs:
         with:
           name: ci-test-apk-v${{ needs.build.outputs.version }}-${{ needs.build.outputs.short_sha }}
           path: input-apk
+      - name: Find the preceding verified build
+        id: previous
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {data} = await github.rest.actions.listArtifactsForRepo({...context.repo, per_page: 100});
+            const candidates = data.artifacts.filter(a => !a.expired && a.workflow_run?.id !== context.runId);
+            let previous = candidates.find(a => a.name.startsWith('app-debug-fixed-v'));
+            const needsSigning = !previous;
+            if (!previous) previous = candidates.find(a => a.name.startsWith('ci-test-apk-v'));
+            if (!previous) throw new Error('A preceding CI build is required to verify upgrade compatibility.');
+            const source = (await github.rest.actions.getWorkflowRun({...context.repo, run_id: previous.workflow_run.id})).data;
+            if (source.event !== 'push' || source.head_repository?.full_name !== `${context.repo.owner}/${context.repo.repo}`)
+              throw new Error('Upgrade baseline must come from a repository push, not a pull request.');
+            const jobs = (await github.rest.actions.listJobsForWorkflowRun({...context.repo, run_id: source.id, per_page: 100})).data.jobs;
+            for (const name of ['Build, unit test and lint', 'Reminder on Android 35 with screen off', 'Reminder on Android 36 with screen off']) {
+              if (!jobs.some(j => j.name === name && j.conclusion === 'success'))
+                throw new Error(`Preceding build did not pass ${name}`);
+            }
+            const result = await github.rest.actions.downloadArtifact({...context.repo, artifact_id: previous.id, archive_format: 'zip'});
+            require('fs').writeFileSync('previous.zip', Buffer.from(result.data));
+            core.setOutput('found', 'true');
+            core.setOutput('needs_signing', String(needsSigning));
+            core.info(`Upgrade baseline: ${previous.name}, commit ${source.head_sha}`);
       - name: Sign with the persistent app certificate
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          BASELINE_NEEDS_SIGNING: ${{ steps.previous.outputs.needs_signing }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -207,30 +232,24 @@ jobs:
             --key-pass env:ANDROID_KEY_PASSWORD --out signed-apk/app-debug.apk input-apk/app-debug.apk
           "$APKSIGNER" verify --verbose --print-certs signed-apk/app-debug.apk | tee signed-apk/signature.txt
           EXPECTED="$(tr -d '\r\n ' < signing-certificate.sha256)"
-          ACTUAL="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' signed-apk/signature.txt)"
+          ACTUAL="$(sed -n -E 's/^.*certificate SHA-256 digest: ([0-9a-f]+).*$/\1/p' signed-apk/signature.txt | sort -u)"
           test "$ACTUAL" = "$EXPECTED"
-      - name: Find the preceding fixed-signature build
-        id: previous
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const {data} = await github.rest.actions.listArtifactsForRepo({...context.repo, per_page: 100});
-            const previous = data.artifacts.find(a => !a.expired &&
-              a.name.startsWith('app-debug-fixed-v') && a.workflow_run?.id !== context.runId);
-            if (!previous) { core.setOutput('found', 'false'); return; }
-            const result = await github.rest.actions.downloadArtifact({...context.repo, artifact_id: previous.id, archive_format: 'zip'});
-            require('fs').writeFileSync('previous.zip', Buffer.from(result.data));
-            core.setOutput('found', 'true');
-            core.info(`Previous signed artifact: ${previous.name}`);
+          if [ "$BASELINE_NEEDS_SIGNING" = true ]; then
+            unzip -q previous.zip -d previous-input
+            mkdir -p previous-apk
+            "$APKSIGNER" sign --ks "$RUNNER_TEMP/todo-fixed.p12" --ks-type PKCS12 \
+              --ks-key-alias "$KEY_ALIAS" --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+              --key-pass env:ANDROID_KEY_PASSWORD --out previous-apk/app-debug.apk previous-input/app-debug.apk
+          fi
       - name: Verify preceding certificate
         if: steps.previous.outputs.found == 'true'
         run: |
           set -euo pipefail
-          unzip -q previous.zip -d previous-apk
+          if [ ! -f previous-apk/app-debug.apk ]; then unzip -q previous.zip -d previous-apk; fi
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           "$APKSIGNER" verify --print-certs previous-apk/app-debug.apk > previous-cert.txt
           EXPECTED="$(tr -d '\r\n ' < signing-certificate.sha256)"
-          ACTUAL="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' previous-cert.txt)"
+          ACTUAL="$(sed -n -E 's/^.*certificate SHA-256 digest: ([0-9a-f]+).*$/\1/p' previous-cert.txt | sort -u)"
           test "$ACTUAL" = "$EXPECTED"
       - name: Enable KVM for installation verification
         if: steps.previous.outputs.found == 'true'

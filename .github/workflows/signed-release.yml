@@ -88,7 +88,7 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
-          ACTUAL="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          ACTUAL="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n -E 's/^.*certificate SHA-256 digest: ([0-9a-f]+).*$/\1/p' | sort -u)"
           EXPECTED="$(tr -d '\r\n ' < signing-certificate.sha256)"
           test "$ACTUAL" = "$EXPECTED"
           VERSION_NAME="$(sed -n 's/^appVersionName=//p' gradle.properties | tr -d '\r')"
