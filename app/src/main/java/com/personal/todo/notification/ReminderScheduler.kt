@@ -56,7 +56,7 @@ class ReminderScheduler(
         }
     }
 
-    override suspend fun refresh() = rescheduleAll()
+    override suspend fun refresh() = rescheduleAll(restoreAlarm = false)
 
     suspend fun snooze(taskId: Long) {
         val db = database()
@@ -94,7 +94,7 @@ class ReminderScheduler(
         }
     }
 
-    suspend fun rescheduleAll(recalculate: Boolean = false, restoreAlarm: Boolean = false) {
+    suspend fun rescheduleAll(recalculate: Boolean = false, restoreAlarm: Boolean = true) {
         val db = database()
         db.withTransaction {
             val tasks = db.taskDao().getPendingReminders()
