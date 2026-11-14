@@ -34,7 +34,7 @@ class TodoApplication : Application() {
 
         ReminderNotifications.ensureChannel(this)
         appScope.launch {
-            runCatching { ReminderScheduler(this@TodoApplication).rescheduleAll() }
+            runCatching { ReminderScheduler(this@TodoApplication).rescheduleAll(restoreAlarm = true) }
         }
     }
 }

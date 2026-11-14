@@ -94,7 +94,7 @@ class ReminderScheduler(
         }
     }
 
-    suspend fun rescheduleAll(recalculate: Boolean = false) {
+    suspend fun rescheduleAll(recalculate: Boolean = false, restoreAlarm: Boolean = false) {
         val db = database()
         db.withTransaction {
             val tasks = db.taskDao().getPendingReminders()
@@ -129,7 +129,7 @@ class ReminderScheduler(
                     }
                 }
             }
-            scheduleNext(db)
+            scheduleNext(db, restoreAlarm)
         }
     }
 
@@ -138,7 +138,7 @@ class ReminderScheduler(
         return settings.readSnooze(task.id, at) ?: at
     }
 
-    private suspend fun scheduleNext(db: TodoDatabase) {
+    private suspend fun scheduleNext(db: TodoDatabase, restoreAlarm: Boolean = false) {
         val time = now()
         val currentBoot = bootCount()
         val previous = settings.readScheduledAlarm()
@@ -162,10 +162,11 @@ class ReminderScheduler(
             settings.clearScheduledAlarm()
             return
         }
-        if (waitingAt != null && previous?.exact == exact &&
+        if (!restoreAlarm && previous?.at == at && previous.bootCount == currentBoot && previous.exact == exact &&
             PendingIntent.getBroadcast(appContext, 0, dispatchIntent(at),
                 PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE) != null) {
-            // 不反复重新启动一个已经晚到的普通闹钟，否则系统的省电配额会再次推迟它。
+            // 日常编辑不重复启动同一个闹钟，以免普通闹钟的可投递窗口不断后移。
+            // 冷启动及系统恢复必须重设：PendingIntent 存在不代表系统仍保有闹钟。
             return
         }
         val pending = PendingIntent.getBroadcast(appContext, 0,

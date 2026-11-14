@@ -34,7 +34,7 @@ class ReminderBootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                ReminderScheduler(appContext).rescheduleAll(recalculate = recalculate)
+                ReminderScheduler(appContext).rescheduleAll(recalculate = recalculate, restoreAlarm = true)
             } catch (_: Exception) {
                 // 重排失败不该变成崩溃：下次打开 App 时启动兜底还会再跑一次。
             } finally {

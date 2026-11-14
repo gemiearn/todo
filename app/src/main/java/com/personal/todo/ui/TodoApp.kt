@@ -707,6 +707,7 @@ internal fun MainScreen(
     var renameTarget by remember { mutableStateOf<TaskList?>(null) }
     var deleteTarget by remember { mutableStateOf<TaskList?>(null) }
     var pendingTaskDelete by remember { mutableStateOf<Task?>(null) }
+    var pendingSeriesDelete by remember { mutableStateOf<Task?>(null) }
 
     // 新建任务走底部弹层（照「创建任务UI-2」），不再是一页推入的路由。
     //
@@ -734,6 +735,7 @@ internal fun MainScreen(
     }
 
     val deletedMessage = stringResource(R.string.message_task_deleted)
+    val seriesDeletedMessage = stringResource(R.string.message_series_deleted)
     val completedMessage = stringResource(R.string.message_task_completed)
     val listDeletedMessage = stringResource(R.string.message_list_deleted)
     val undoLabel = stringResource(R.string.action_undo)
@@ -764,7 +766,11 @@ internal fun MainScreen(
     val onReopen: (Task) -> Unit = { collectionViewModel?.reopen(it.id) }
     val onRestore: (Task) -> Unit = { collectionViewModel?.restore(it.id) }
     val requestDelete: (Task) -> Unit = { task ->
-        if ((subtaskCounts[task.id] ?: 0) > 0) pendingTaskDelete = task else deleteTaskWithUndo(task)
+        scope.launch {
+            if (repository.isInLiveSeries(task.id)) pendingSeriesDelete = task
+            else if ((subtaskCounts[task.id] ?: 0) > 0) pendingTaskDelete = task
+            else deleteTaskWithUndo(task)
+        }
     }
 
     // 每张卡的子任务展开区：行直接从 subtasksByParent 里拿，勾选走 collectionViewModel。
@@ -1314,6 +1320,25 @@ internal fun MainScreen(
                     Text(stringResource(R.string.action_cancel))
                 }
             }
+        )
+    }
+
+    pendingSeriesDelete?.let { task ->
+        RepeatDeleteDialog(
+            taskTitle = task.title,
+            onDeleteThisOnly = {
+                pendingSeriesDelete = null
+                deleteTaskWithUndo(task)
+            },
+            onDeleteSeries = {
+                pendingSeriesDelete = null
+                scope.launch {
+                    repository.deleteSeries(task.id)
+                    val result = snackbarHostState.showSnackbar(seriesDeletedMessage, actionLabel = undoLabel)
+                    if (result == SnackbarResult.ActionPerformed) repository.restoreSeries(task.id)
+                }
+            },
+            onDismiss = { pendingSeriesDelete = null }
         )
     }
 

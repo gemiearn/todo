@@ -132,6 +132,19 @@ class ReminderIntegrationTest {
     }
 
     @Test
+    fun coldStartRestoresAnOverdueAlarmEvenIfItsPendingIntentStillExists() = runBlocking {
+        val task = task()
+        val at = requireNotNull(task.reminderAt)
+        val pending = requireNotNull(shadowOf(manager).scheduledAlarms.single().operation)
+        manager.cancel(pending) // Alarm loss does not invalidate the PendingIntent token.
+        now = at + 10_000L
+        newScheduler().rescheduleAll(restoreAlarm = true)
+        assertEquals(at, scheduledAt())
+        scheduler.dispatch(at)
+        assertNotNull(shadowOf(notifications).getNotification(task.id.toInt()))
+    }
+
+    @Test
     fun savingAnotherTaskAfterTheDueTimeDoesNotCancelTheWaitingReminder() = runBlocking {
         val first = task()
         val at = requireNotNull(first.reminderAt)

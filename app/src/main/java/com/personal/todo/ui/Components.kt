@@ -1308,9 +1308,8 @@ fun DeleteTaskConfirmDialog(
 /**
  * 删一条**重复任务**之前的确认（用户 2026-10-25）：只删这一次，还是整条系列都不再重复。
  *
- * 两个按钮说清各自删掉什么：左边是「只删这一次」（明天那一次还会照常出现），右边是
- * 「删除整条系列」（规则和它生成过的每一次一起进回收站，从此不再长出来）。取消放中间
- * 那一行的左边，不与这两个动作挤在同一行——三个等宽按钮里「删除整条系列」会被挤成两行。
+ * 两个按钮说清各自删掉什么：「只删这一次」或「删除整条系列」。
+ * 取消与单次删除纵向排列，窄屏和大字体下也不挤掉单次删除入口。
  */
 @Composable
 fun RepeatDeleteDialog(
@@ -1343,7 +1342,7 @@ fun RepeatDeleteDialog(
             }
         },
         dismissButton = {
-            Row {
+            Column {
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.action_cancel))
                 }
