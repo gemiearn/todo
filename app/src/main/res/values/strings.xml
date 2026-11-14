@@ -342,6 +342,8 @@
     <string name="reminder_test_sent">已请求发送测试通知，请查看通知栏；未出现时检查系统通知设置</string>
     <string name="reminder_delivery_submitted">已交给系统通知栏；声音和弹出显示由系统通知设置控制</string>
     <string name="reminder_delivery_unconfirmed">尚未确认发出通知；请检查准点提醒授权及后台运行限制</string>
+    <string name="time_type_values">输入时分</string>
+    <string name="time_use_dial">使用表盘</string>
     <!-- 通知 -->
     <string name="reminder_channel_name">任务提醒</string>
     <string name="reminder_channel_description">任务到点时的提醒通知</string>

@@ -10,11 +10,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -22,6 +24,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.waitUntilNodeCount
 import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
@@ -106,12 +109,11 @@ class ReminderFlowTest {
         compose.onAllNodesWithText("今天").onLast().performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntilNodeCount(hasText("时间"), 1, 15_000L)
         compose.onNodeWithText("时间").performSemanticsAction(SemanticsActions.OnClick)
-        compose.onNode(hasContentDescription("12", substring = true) and hasClickAction())
-            .performSemanticsAction(SemanticsActions.OnClick)
-        // Accessibility selection need not auto-advance the dial: explicitly select minutes.
-        compose.onNodeWithText("00").performSemanticsAction(SemanticsActions.OnClick)
-        compose.onNode(hasContentDescription("45", substring = true) and hasClickAction())
-            .performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("输入时分").performSemanticsAction(SemanticsActions.OnClick)
+        val timeFields = compose.onAllNodes(hasSetTextAction() and
+            hasAnyAncestor(hasTestTag("sheet-time-input")))
+        timeFields.onFirst().performTextReplacement("12")
+        timeFields.onLast().performTextReplacement("45")
         compose.onNodeWithText("确定").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("提醒").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("准时").performSemanticsAction(SemanticsActions.OnClick)

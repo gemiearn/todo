@@ -36,6 +36,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.TimePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -49,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -328,7 +331,7 @@ internal fun TaskDateSheet(
                     )
                 )
             },
-            text = { TimePicker(state = timeState) },
+            text = { SheetTimePicker(timeState) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -473,7 +476,7 @@ internal fun TaskDateSheet(
         AlertDialog(
             onDismissRequest = { customTimeOpen = false },
             title = { Text(stringResource(R.string.dialog_time_picker_title)) },
-            text = { TimePicker(state = state) },
+            text = { SheetTimePicker(state) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -495,6 +498,20 @@ internal fun TaskDateSheet(
 
 /** 一个时刻都没有时的起点，和编辑器里那几个选择器保持一致。 */
 private val DefaultSheetTime: LocalTime = LocalTime.of(9, 0)
+
+/** 两种输入方式共用同一份时分，切换不会丢掉用户选中的时间。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SheetTimePicker(state: TimePickerState) {
+    var typing by rememberSaveable { mutableStateOf(false) }
+    Column {
+        if (typing) TimeInput(state, modifier = Modifier.testTag("sheet-time-input"))
+        else TimePicker(state)
+        TextButton(onClick = { typing = !typing }) {
+            Text(stringResource(if (typing) R.string.time_use_dial else R.string.time_type_values))
+        }
+    }
+}
 
 @Composable
 private fun SheetTabButton(label: String, selected: Boolean, onClick: () -> Unit) {
