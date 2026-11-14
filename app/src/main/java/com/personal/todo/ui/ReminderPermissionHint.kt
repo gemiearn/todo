@@ -3,6 +3,7 @@ package com.personal.todo.ui
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +36,10 @@ internal fun ReminderPermissionHint() {
     val scope = rememberCoroutineScope()
     val scheduler = remember(context) { ReminderScheduler(context) }
     val settings = remember(context) { ReminderSettingsStore(context) }
+    val power = remember(context) { context.getSystemService(PowerManager::class.java) }
+    var unrestricted by remember(context) {
+        mutableStateOf(power?.isIgnoringBatteryOptimizations(context.packageName) == true)
+    }
     var enabled by remember(context) { mutableStateOf(ReminderNotifications.areEnabled(context)) }
     var exact by remember(context) {
         mutableStateOf(settings.readExactAlarm() && scheduler.canScheduleExact())
@@ -47,6 +52,7 @@ internal fun ReminderPermissionHint() {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 enabled = ReminderNotifications.areEnabled(context)
+                unrestricted = power?.isIgnoringBatteryOptimizations(context.packageName) == true
                 exact = settings.readExactAlarm() && scheduler.canScheduleExact()
             }
         }
@@ -91,5 +97,13 @@ internal fun ReminderPermissionHint() {
         }) {
             Text(stringResource(R.string.reminder_enable_exact))
         }
+    }
+    if (!unrestricted) {
+        Text(stringResource(R.string.reminder_background_hint),
+            style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = {
+            runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${context.packageName}"))) }
+        }) { Text(stringResource(R.string.reminder_background_settings)) }
     }
 }

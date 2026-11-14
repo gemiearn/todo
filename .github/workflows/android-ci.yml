@@ -25,6 +25,9 @@ jobs:
     # known-green on.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      version: ${{ steps.meta.outputs.version_name }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
 
     steps:
       - name: Checkout repository
@@ -126,7 +129,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-v${{ steps.meta.outputs.version_name }}-${{ steps.meta.outputs.short_sha }}
+          name: ci-test-apk-v${{ steps.meta.outputs.version_name }}-${{ steps.meta.outputs.short_sha }}
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -151,6 +154,111 @@ jobs:
             app/build/reports/lint-results-debug.txt
           if-no-files-found: ignore
           retention-days: 7
+
+  signed-debug:
+    name: Fixed signing and upgrade verification
+    needs: [build, reminder-device]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: signing-certificate.sha256
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-test-apk-v${{ needs.build.outputs.version }}-${{ needs.build.outputs.short_sha }}
+          path: input-apk
+      - name: Sign with the persistent app certificate
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          names = ('ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD')
+          if any(not os.environ.get(n) for n in names):
+              raise SystemExit('Fixed signing Secrets are required; refusing to publish a temporary-signature APK.')
+          path = Path(os.environ['RUNNER_TEMP']) / 'todo-fixed.p12'
+          with path.open('wb') as f:
+              os.chmod(path, 0o600)
+              f.write(base64.b64decode(os.environ['ANDROID_KEYSTORE_BASE64'], validate=True))
+          PY
+          mkdir -p signed-apk
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/todo-fixed.p12" --ks-type PKCS12 \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD --out signed-apk/app-debug.apk input-apk/app-debug.apk
+          "$APKSIGNER" verify --verbose --print-certs signed-apk/app-debug.apk | tee signed-apk/signature.txt
+          EXPECTED="$(tr -d '\r\n ' < signing-certificate.sha256)"
+          ACTUAL="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' signed-apk/signature.txt)"
+          test "$ACTUAL" = "$EXPECTED"
+      - name: Find the preceding fixed-signature build
+        id: previous
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {data} = await github.rest.actions.listArtifactsForRepo({...context.repo, per_page: 100});
+            const previous = data.artifacts.find(a => !a.expired &&
+              a.name.startsWith('app-debug-fixed-v') && a.workflow_run?.id !== context.runId);
+            if (!previous) { core.setOutput('found', 'false'); return; }
+            const result = await github.rest.actions.downloadArtifact({...context.repo, artifact_id: previous.id, archive_format: 'zip'});
+            require('fs').writeFileSync('previous.zip', Buffer.from(result.data));
+            core.setOutput('found', 'true');
+            core.info(`Previous signed artifact: ${previous.name}`);
+      - name: Verify preceding certificate
+        if: steps.previous.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          unzip -q previous.zip -d previous-apk
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --print-certs previous-apk/app-debug.apk > previous-cert.txt
+          EXPECTED="$(tr -d '\r\n ' < signing-certificate.sha256)"
+          ACTUAL="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' previous-cert.txt)"
+          test "$ACTUAL" = "$EXPECTED"
+      - name: Enable KVM for installation verification
+        if: steps.previous.outputs.found == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Upgrade the preceding APK and retain app data
+        if: steps.previous.outputs.found == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb install previous-apk/app-debug.apk
+            adb shell "run-as com.personal.todo sh -c 'mkdir -p files && echo retained > files/signing-upgrade-proof'"
+            adb install -r signed-apk/app-debug.apk
+            test "$(adb shell run-as com.personal.todo cat files/signing-upgrade-proof | tr -d '\r')" = retained
+      - name: Upload fixed-signature APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-fixed-v${{ needs.build.outputs.version }}-${{ needs.build.outputs.short_sha }}
+          path: signed-apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/todo-fixed.p12"
 
   reminder-device:
     name: Reminder on Android ${{ matrix.api }} with screen off

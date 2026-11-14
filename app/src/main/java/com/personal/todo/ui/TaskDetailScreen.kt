@@ -432,8 +432,12 @@ private fun TaskHeader(
                 // 仅表示系统通知接口已接受请求，不能声称用户已经看到或听到。
                 if (reminderAt <= nowMillis) {
                     Text(
-                        stringResource(if (reminderSettings.wasDelivered(task.id, reminderAt))
-                            R.string.reminder_delivery_submitted else R.string.reminder_delivery_unconfirmed),
+                        stringResource(when {
+                            reminderSettings.deliverySource(task.id, reminderAt) == "应用前台" ->
+                                R.string.reminder_delivery_foreground
+                            reminderSettings.wasDelivered(task.id, reminderAt) -> R.string.reminder_delivery_submitted
+                            else -> R.string.reminder_delivery_unconfirmed
+                        }),
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.dateMuted
                     )

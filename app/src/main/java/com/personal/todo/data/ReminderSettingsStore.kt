@@ -52,9 +52,14 @@ class ReminderSettingsStore(context: Context) {
     fun wasDelivered(taskId: Long, at: Long): Boolean =
         prefs.getLong("delivered_$taskId", Long.MIN_VALUE) == at
 
-    fun markDelivered(taskId: Long, at: Long) {
-        prefs.edit().putLong("delivered_$taskId", at).apply()
+    fun markDelivered(taskId: Long, at: Long, source: String = "未知", submittedAt: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong("delivered_$taskId", at)
+            .putString("delivered_source_$taskId", source)
+            .putLong("delivered_time_$taskId", submittedAt).apply()
     }
+
+    fun deliverySource(taskId: Long, at: Long): String? =
+        if (wasDelivered(taskId, at)) prefs.getString("delivered_source_$taskId", null) else null
 
     fun usesSharedAlarm(): Boolean = prefs.getBoolean("sharedAlarm", false)
 
@@ -63,21 +68,22 @@ class ReminderSettingsStore(context: Context) {
     }
 
     /** 记录仍在等待系统投递的窗口；不能仅因到点就把它当成已经执行。 */
-    data class ScheduledAlarm(val at: Long, val bootCount: Int, val exact: Boolean)
+    data class ScheduledAlarm(val at: Long, val bootCount: Int, val exact: Boolean, val alarmClock: Boolean = false)
 
     fun readScheduledAlarm(): ScheduledAlarm? {
         if (!prefs.contains("scheduled_at")) return null
         return ScheduledAlarm(prefs.getLong("scheduled_at", 0L), prefs.getInt("scheduled_boot", -1),
-            prefs.getBoolean("scheduled_exact", false))
+            prefs.getBoolean("scheduled_exact", false), prefs.getBoolean("scheduled_alarm_clock", false))
     }
 
-    fun writeScheduledAlarm(at: Long, bootCount: Int, exact: Boolean) {
+    fun writeScheduledAlarm(at: Long, bootCount: Int, exact: Boolean, alarmClock: Boolean = false) {
         prefs.edit().putLong("scheduled_at", at).putInt("scheduled_boot", bootCount)
-            .putBoolean("scheduled_exact", exact).apply()
+            .putBoolean("scheduled_exact", exact).putBoolean("scheduled_alarm_clock", alarmClock).apply()
     }
 
     fun clearScheduledAlarm() {
-        prefs.edit().remove("scheduled_at").remove("scheduled_boot").remove("scheduled_exact").apply()
+        prefs.edit().remove("scheduled_at").remove("scheduled_boot").remove("scheduled_exact")
+            .remove("scheduled_alarm_clock").apply()
     }
 
     companion object {

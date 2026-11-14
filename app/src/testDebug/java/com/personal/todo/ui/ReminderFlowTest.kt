@@ -156,6 +156,7 @@ class ReminderFlowTest {
         val notifications = context.getSystemService(NotificationManager::class.java)
         assertNotNull(shadowOf(notifications).getNotification(task.id.toInt()))
         assertTrue(ReminderDiagnostics.report(context).contains("应用前台 任务#${task.id} 通知请求成功=true"))
+        assertEquals("应用前台", ReminderSettingsStore(context).deliverySource(task.id, expected))
         compose.onNodeWithText("12:45 · 提醒时间已到").assertExists()
         runBlocking { scheduler.dispatch(expected) }
         assertEquals(1, shadowOf(notifications).allNotifications.size)

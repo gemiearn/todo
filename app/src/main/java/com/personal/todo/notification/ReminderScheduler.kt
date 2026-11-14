@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.room.withTransaction
 import com.personal.todo.data.ReminderGateway
+import com.personal.todo.MainActivity
 import com.personal.todo.data.ReminderSettingsStore
 import com.personal.todo.data.db.DatabaseProvider
 import com.personal.todo.data.db.Task
@@ -116,7 +117,7 @@ class ReminderScheduler(
                     val submitted = ReminderNotifications.show(appContext, task.id, at, db, time)
                     ReminderDiagnostics.record(appContext, "$source 任务#${task.id} 通知请求成功=$submitted")
                     if (submitted) {
-                        settings.markDelivered(task.id, at)
+                        settings.markDelivered(task.id, at, source, time)
                     }
                 }
             }
@@ -200,6 +201,7 @@ class ReminderScheduler(
             return
         }
         if (!restoreAlarm && previous?.at == at && previous.bootCount == currentBoot && previous.exact == exact &&
+            previous.alarmClock == exact &&
             PendingIntent.getBroadcast(appContext, 0, dispatchIntent(at),
                 PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE) != null) {
             // 日常编辑不重复启动同一个闹钟，以免普通闹钟的可投递窗口不断后移。
@@ -212,7 +214,14 @@ class ReminderScheduler(
         val manager = alarmManager ?: return
         try {
             if (exact) {
-                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+                // User-requested punctual reminders are visible system alarms.
+                // Unlike ordinary allow-while-idle alarms they are exempt from
+                // Doze batching and appear in the system's upcoming alarm UI.
+                val show = PendingIntent.getActivity(appContext, 0,
+                    Intent(appContext, MainActivity::class.java)
+                        .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                manager.setAlarmClock(AlarmManager.AlarmClockInfo(at, show), pending)
             } else {
                 manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
             }
@@ -220,8 +229,8 @@ class ReminderScheduler(
             manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
             exact = false
         }
-        settings.writeScheduledAlarm(at, currentBoot, exact)
-        ReminderDiagnostics.record(appContext, "系统闹钟已设置=${ReminderDiagnostics.moment(at)} 精确=$exact")
+        settings.writeScheduledAlarm(at, currentBoot, exact, alarmClock = exact)
+        ReminderDiagnostics.record(appContext, "系统闹钟已设置=${ReminderDiagnostics.moment(at)} 精确=$exact 模式=${if (exact) "AlarmClock" else "普通闹钟"}")
     }
 
     private fun dispatchIntent(at: Long?) = Intent(appContext, ReminderReceiver::class.java)

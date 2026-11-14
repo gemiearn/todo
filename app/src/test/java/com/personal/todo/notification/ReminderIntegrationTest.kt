@@ -145,6 +145,8 @@ class ReminderIntegrationTest {
         org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val task = task()
         assertTrue(requireNotNull(settings.readScheduledAlarm()).exact)
+        assertTrue(requireNotNull(settings.readScheduledAlarm()).alarmClock)
+        assertEquals(scheduledAt(), requireNotNull(manager.nextAlarmClock).triggerTime)
         settings.writeExactAlarm(false)
         scheduler.rescheduleAll()
         assertFalse(requireNotNull(settings.readScheduledAlarm()).exact)

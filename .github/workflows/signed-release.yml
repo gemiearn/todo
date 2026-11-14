@@ -1,0 +1,118 @@
+name: Signed release APK
+
+# Deliberately manual: ordinary pushes/PRs keep using Android CI without signing secrets.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signed-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Signing is limited to the repository's main branch, not arbitrary feature code.
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build debug APK and run regression gate
+        run: ./gradlew --stacktrace --continue assembleDebug lintDebug testDebugUnitTest -PskipComposeSmoke
+
+      - name: Prepare signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import binascii
+          import os
+          from pathlib import Path
+
+          names = ("ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD")
+          if any(not os.environ.get(name, "").strip() for name in names):
+              raise SystemExit("Missing release signing Secrets. Configure all four ANDROID signing Secrets.")
+          try:
+              data = base64.b64decode("".join(os.environ["ANDROID_KEYSTORE_BASE64"].split()), validate=True)
+          except (ValueError, binascii.Error):
+              raise SystemExit("Invalid keystore Base64. No signing data was printed.") from None
+          if not data:
+              raise SystemExit("Keystore is empty.")
+          path = Path(os.environ["RUNNER_TEMP"]) / "todo-release.keystore"
+          with path.open("wb") as stream:
+              os.chmod(path, 0o600)
+              stream.write(data)
+          with open(os.environ["GITHUB_ENV"], "a") as stream:
+              stream.write(f"ANDROID_KEYSTORE_PATH={path}\n")
+          PY
+
+      - name: Build signed release APK and lint
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        # Prevent signing credentials being retained in a configuration cache or long-lived daemon.
+        run: ./gradlew --no-daemon --no-configuration-cache assembleRelease lintRelease -PrequireReleaseSigning=true
+
+      - name: Verify APK signature and read version
+        id: apk
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          ACTUAL="$("$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          EXPECTED="$(tr -d '\r\n ' < signing-certificate.sha256)"
+          test "$ACTUAL" = "$EXPECTED"
+          VERSION_NAME="$(sed -n 's/^appVersionName=//p' gradle.properties | tr -d '\r')"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-v${{ steps.apk.outputs.version_name }}-${{ steps.apk.outputs.short_sha }}
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary keystore
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/todo-release.keystore"
+
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-release-checks-${{ github.run_id }}
+          path: |
+            app/build/reports/tests/testDebugUnitTest
+            app/build/test-results/testDebugUnitTest
+            app/build/reports/lint-results-*.html
+            app/build/reports/lint-results-*.xml
+          if-no-files-found: ignore
+          retention-days: 7

@@ -30,6 +30,9 @@ captures/
 # Signing material and secrets - never commit these.
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.dpapi
 keystore.properties
 secrets.properties
 

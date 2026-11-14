@@ -5,6 +5,24 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Only CI supplies signing material. Never store credentials in Gradle properties or Git.
+val releaseStorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+val releaseStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+val releaseSigningValues = listOf(releaseStorePath, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+val releaseSigningReady = releaseSigningValues.all { !it.isNullOrBlank() }
+val requireReleaseSigning = providers.gradleProperty("requireReleaseSigning").orNull == "true"
+check(releaseSigningValues.all { it == null } || releaseSigningReady) {
+    "Release signing configuration is incomplete. Supply all four ANDROID signing environment variables."
+}
+check(!requireReleaseSigning || releaseSigningReady) {
+    "Signed release requested but signing configuration is missing. Configure GitHub Actions Secrets first."
+}
+if (releaseSigningReady) {
+    check(file(requireNotNull(releaseStorePath)).isFile) { "Release keystore file is missing." }
+}
+
 android {
     namespace = "com.personal.todo"
     compileSdk = 35
@@ -21,8 +39,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("fixedRelease") {
+                storeFile = file(requireNotNull(releaseStorePath))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseSigningReady) signingConfig = signingConfigs.getByName("fixedRelease")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

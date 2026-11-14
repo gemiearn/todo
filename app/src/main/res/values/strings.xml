@@ -343,6 +343,9 @@
     <string name="reminder_test_text">如果能看到这条通知，当前通知权限和任务提醒渠道可用。</string>
     <string name="reminder_test_sent">已请求发送测试通知，请查看通知栏；未出现时检查系统通知设置</string>
     <string name="reminder_delivery_submitted">已交给系统通知栏；声音和弹出显示由系统通知设置控制</string>
+    <string name="reminder_delivery_foreground">打开应用后补发了通知；本次未由后台准时提醒</string>
+    <string name="reminder_background_hint">当前未设为不受电池优化限制。若回桌面后不提醒，请在系统设置中允许后台运行和自启动。</string>
+    <string name="reminder_background_settings">后台运行设置</string>
     <string name="reminder_delivery_unconfirmed">尚未确认发出通知；请检查准点提醒授权及后台运行限制</string>
     <string name="time_type_values">输入时分</string>
     <string name="time_use_dial">使用表盘</string>
@@ -360,7 +363,7 @@
     <string name="settings_reminder_permission_hint">通知或「任务提醒」渠道未开启，提醒到点不会弹出</string>
     <string name="reminder_enable_notifications">开启任务提醒通知</string>
     <string name="settings_reminder_exact">准点提醒</string>
-    <string name="settings_reminder_exact_hint">开启后会请求系统的「闹钟和提醒」权限，到点更准；关闭时省电策略可能让它晚几分钟</string>
+    <string name="settings_reminder_exact_hint">开启后使用系统闹钟安排准点提醒，状态栏可能显示闹钟图标；需要「闹钟和提醒」授权。关闭时系统可能延迟提醒。</string>
     <string name="editor_value_none">无</string>
     <string name="editor_repeat_none">不重复</string>
     <string name="editor_previous_month">上个月</string>

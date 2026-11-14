@@ -1,6 +1,7 @@
 package com.personal.todo.notification
 
 import android.app.NotificationManager
+import android.app.AlarmManager
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import androidx.lifecycle.Lifecycle
@@ -52,6 +53,8 @@ class ReminderDeviceTest {
             val at = requireNotNull(runBlocking { repository.getTask(taskId) }?.reminderAt)
             assertTrue("Reminder was not scheduled as an exact alarm",
                 requireNotNull(settings.readScheduledAlarm()).exact)
+            assertEquals("Punctual reminders must use the visible system alarm API", at,
+                requireNotNull(context.getSystemService(AlarmManager::class.java).nextAlarmClock).triggerTime)
 
             shell("am start -W -a android.intent.action.MAIN -c android.intent.category.HOME")
             // Launcher readiness precedes the previous Activity's onStop.
