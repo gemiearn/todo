@@ -120,12 +120,22 @@ class ReminderFlowTest {
         compose.onNodeWithText("确认日期和提醒").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("提醒：准时", substring = true).assertExists()
         compose.runOnIdle {
+            assertEquals("两分钟后提醒", editor.title)
             assertEquals("Date sheet must retain the selected day", day, editor.plannedDate)
             assertEquals("Clock selector must retain the selected time", LocalTime.of(12, 45), editor.plannedTime)
             assertEquals(ReminderKind.ON_TIME, editor.reminderKind)
         }
         compose.onNodeWithText("保存").performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitUntil(15_000L) { savedTask != null || editor.saveFailed }
+        // Room resumes the view model on Android's main looper. waitUntil only
+        // advances Compose frames when its condition does not query UI nodes;
+        // drain the main queue as well so the actual save callback can run.
+        val saveDeadline = System.currentTimeMillis() + 15_000L
+        while (savedTask == null && !editor.saveFailed) {
+            if (System.currentTimeMillis() >= saveDeadline) {
+                fail("Save callback timed out: saving=${editor.saving.value}, saved=${editor.saved.value}, titleError=${editor.titleHasError}")
+            }
+            compose.waitForIdle()
+        }
         assertFalse("Editor failed to save the reminder", editor.saveFailed)
 
         val task = requireNotNull(savedTask)
