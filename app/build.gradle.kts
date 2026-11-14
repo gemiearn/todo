@@ -97,6 +97,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
     testImplementation(libs.robolectric)
     // Compose screens are composed on the JVM too: the smoke tests catch a
     // crash in the composition itself, which no pure logic test can see.

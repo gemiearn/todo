@@ -17,6 +17,8 @@ coroutines = "1.8.1"
 # Test.
 junit = "4.13.2"
 robolectric = "4.14.1"
+androidTestRunner = "1.6.2"
+androidTestJunit = "1.2.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +46,8 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidTestRunner" }
+androidx-test-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidTestJunit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

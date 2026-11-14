@@ -253,6 +253,18 @@ fun SettingsScreen(
                         }
                     }
                 )
+                SettingsDivider()
+                SettingsEntry(
+                    icon = Icons.Default.Notifications,
+                    label = stringResource(R.string.reminder_test_title),
+                    trailing = "",
+                    onClick = {
+                        val sent = ReminderNotifications.showTest(context)
+                        val message = context.getString(if (sent) R.string.reminder_test_sent
+                            else R.string.settings_reminder_permission_hint)
+                        scope.launch { snackbarHostState.showSnackbar(message) }
+                    }
+                )
             }
             Text(
                 text = stringResource(R.string.settings_reminder_exact_hint),

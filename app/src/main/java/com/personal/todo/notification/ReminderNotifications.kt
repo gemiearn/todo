@@ -84,6 +84,19 @@ object ReminderNotifications {
         NotificationManagerCompat.from(context).cancel(taskId.toInt())
     }
 
+    /** 使用同一个提醒渠道验证手机能否显示通知，区别于闹钟是否能唤醒应用。 */
+    fun showTest(context: Context): Boolean {
+        ensureChannel(context)
+        return notify(context, 0L, NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_reminder)
+            .setContentTitle(context.getString(R.string.reminder_test_title))
+            .setContentText(context.getString(R.string.reminder_test_text))
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build())
+    }
+
     /** 应用总开关和单独的「任务提醒」渠道都必须开启。 */
     fun areEnabled(context: Context): Boolean =
         (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||

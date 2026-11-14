@@ -24,7 +24,7 @@ import org.robolectric.annotation.Config
 class ReminderReceiverTest {
     @Test
     fun theScheduledPendingIntentReachesTheManifestReceiverAndPostsANotification() {
-        val context = RuntimeEnvironment.getApplication<Application>()
+        val context = RuntimeEnvironment.getApplication()
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         val db = DatabaseProvider.get(context)
         try {

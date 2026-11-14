@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.TaskSeriesTotals
+import com.personal.todo.data.ReminderSettingsStore
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.Task
 import com.personal.todo.data.db.TaskEvent
@@ -425,6 +427,17 @@ private fun TaskHeader(
                 }
             )
             if (task.completedAt == null && task.deletedAt == null) {
+                val reminderContext = LocalContext.current
+                val reminderSettings = remember(reminderContext) { ReminderSettingsStore(reminderContext) }
+                // 仅表示系统通知接口已接受请求，不能声称用户已经看到或听到。
+                if (reminderAt <= nowMillis) {
+                    Text(
+                        stringResource(if (reminderSettings.wasDelivered(task.id, reminderAt))
+                            R.string.reminder_delivery_submitted else R.string.reminder_delivery_unconfirmed),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.dateMuted
+                    )
+                }
                 ReminderPermissionHint()
             }
         }

@@ -62,7 +62,7 @@ class ReminderFlowTest {
 
     @Before
     fun setUp() = runBlocking {
-        val context = RuntimeEnvironment.getApplication<Application>()
+        val context = RuntimeEnvironment.getApplication()
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         // Explicitly reproduce ordinary alarms being delayed by Android.
         ReminderSettingsStore(context).writeExactAlarm(false)
@@ -117,7 +117,7 @@ class ReminderFlowTest {
         assertEquals(LocalTime.of(12, 45), task.plannedTime)
         assertEquals(ReminderKind.ON_TIME, task.reminderKind)
         assertEquals(expected, task.reminderAt)
-        val context = RuntimeEnvironment.getApplication<Application>()
+        val context = RuntimeEnvironment.getApplication()
         val alarms = context.getSystemService(AlarmManager::class.java)
         assertEquals(expected, shadowOf(alarms).scheduledAlarms.single().triggerAtTime)
 

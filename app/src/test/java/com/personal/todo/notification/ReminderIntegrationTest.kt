@@ -78,6 +78,17 @@ class ReminderIntegrationTest {
     private fun scheduledAt(): Long = shadowOf(manager).scheduledAlarms.single().triggerAtTime
 
     @Test
+    fun notificationTestUsesTheTaskChannelAndHonorsPermission() {
+        assertTrue(ReminderNotifications.showTest(context))
+        assertEquals(ReminderNotifications.CHANNEL_ID,
+            requireNotNull(shadowOf(notifications).getNotification(0)).channelId)
+        notifications.cancelAll()
+        shadowOf(context).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertFalse(ReminderNotifications.showTest(context))
+        assertTrue(shadowOf(notifications).allNotifications.isEmpty())
+    }
+
+    @Test
     fun foregroundWatcherActuallyDeliversWithoutAnAlarmBroadcastAndCanBeStopped() = runBlocking {
         settings.writeExactAlarm(false)
         val task = task()
@@ -131,7 +142,7 @@ class ReminderIntegrationTest {
 
     @Test
     fun exactPermissionIsUsedByDefaultButAnExplicitOptOutIsRespected() = runBlocking {
-        shadowOf(manager).setCanScheduleExactAlarms(true)
+        org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val task = task()
         assertTrue(requireNotNull(settings.readScheduledAlarm()).exact)
         settings.writeExactAlarm(false)
