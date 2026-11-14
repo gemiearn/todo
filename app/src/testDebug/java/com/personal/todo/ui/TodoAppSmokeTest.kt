@@ -270,13 +270,13 @@ class TodoAppSmokeTest {
         compose.onNodeWithContentDescription("新建任务").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag(EditorTitleTag).performTextInput("买牛奶")
-        compose.onNodeWithText("保存").performClick()
+        compose.onNodeWithTag(EditorSaveTag).performClick()
         // Back on the list again: the editor has no new-task button of its own.
         compose.waitUntilNodeCount(hasContentDescription("新建任务"), 1, TimeoutMillis)
 
         compose.onNodeWithContentDescription("新建任务").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("保存").assertExists()
+        compose.onNodeWithTag(EditorSaveTag).assertExists()
     }
 
     /** 统计入口在专注页右上角的图标里，点它就进统计页。 */

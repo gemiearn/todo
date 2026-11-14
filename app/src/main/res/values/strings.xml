@@ -293,6 +293,14 @@
 
     <!-- 编辑器：顶部 ✕ 与 ↑、工具条的四组、优先级两个开关（照创建任务UI的图） -->
     <string name="editor_title_edit">编辑任务</string>
+    <!-- 添加任务「一页填写」（docs/designs/task-entry）：标题、备注、快捷日期、时间安排四行
+         （计划日期 / 时间 / 提醒 / 重复）直接可见；清单、优先级、截止日期、标签、子任务收进
+         「更多选项」。新建时底部按钮说「添加任务」，编辑时仍是「保存」。 -->
+    <string name="editor_title_new">添加任务</string>
+    <string name="editor_section_schedule">时间安排</string>
+    <string name="editor_more_options">更多选项</string>
+    <string name="editor_entry_hint">保存前即可确认提醒时刻</string>
+    <string name="editor_custom_reminder_title">自定义提醒</string>
     <!-- 编辑已有任务时要先读库：读完再放表单，免得数据库回流把用户刚敲的字盖掉 -->
     <string name="editor_loading">加载中…</string>
     <string name="editor_save_failed">保存失败，请重试</string>

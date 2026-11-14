@@ -497,12 +497,12 @@ internal fun TaskDateSheet(
 }
 
 /** 一个时刻都没有时的起点，和编辑器里那几个选择器保持一致。 */
-private val DefaultSheetTime: LocalTime = LocalTime.of(9, 0)
+internal val DefaultSheetTime: LocalTime = LocalTime.of(9, 0)
 
 /** 两种输入方式共用同一份时分，切换不会丢掉用户选中的时间。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SheetTimePicker(state: TimePickerState) {
+internal fun SheetTimePicker(state: TimePickerState) {
     var typing by rememberSaveable { mutableStateOf(false) }
     Column {
         if (typing) TimeInput(state, modifier = Modifier.testTag("sheet-time-input"))
@@ -578,7 +578,7 @@ private fun SheetValueRow(label: String, value: String, onClick: () -> Unit) {
 // ------------------------------------------------------------------ 月历
 
 @Composable
-private fun MonthCalendar(
+internal fun MonthCalendar(
     month: YearMonth,
     selected: LocalDate?,
     today: LocalDate,
@@ -683,7 +683,7 @@ private const val DaysInWeek = 7
 
 /** 规则的写法在这里落成中文：每天 / 每两天 / 每周三 / 每月 15 号…… */
 @Composable
-private fun repeatText(rule: RepeatRule?): String {
+internal fun repeatText(rule: RepeatRule?): String {
     if (rule == null) return stringResource(R.string.editor_value_none)
     return when (rule.kind) {
         RepeatKind.DAILY -> stringResource(R.string.repeat_daily)
@@ -703,7 +703,7 @@ private enum class RuleStep { LIST, WEEKLY, MONTHLY }
 
 /** 选重复规则：先列六档，选「每周」「每月」再进一层挑星期几 / 几号。 */
 @Composable
-private fun RepeatRuleDialog(
+internal fun RepeatRuleDialog(
     current: RepeatRule?,
     onPick: (RepeatRule?) -> Unit,
     onDismiss: () -> Unit
@@ -829,13 +829,13 @@ private fun RuleOption(label: String, selected: Boolean, onClick: () -> Unit) {
 private const val DaysInMonth = 31
 
 /** The time as `HH:mm`; the picker itself works on hour and minute. */
-private fun timeText(time: LocalTime): String = "%02d:%02d".format(time.hour, time.minute)
+internal fun timeText(time: LocalTime): String = "%02d:%02d".format(time.hour, time.minute)
 
 // ------------------------------------------------------------------ 提醒
 
 /** 选提醒：不提醒 + 六档相对时刻 + 自定义。 */
 @Composable
-private fun ReminderPickerDialog(
+internal fun ReminderPickerDialog(
     current: ReminderKind?,
     onPick: (ReminderKind?) -> Unit,
     onDismiss: () -> Unit

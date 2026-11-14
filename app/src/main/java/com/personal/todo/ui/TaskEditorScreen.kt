@@ -1,13 +1,22 @@
 package com.personal.todo.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,16 +34,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -41,14 +49,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -61,28 +66,33 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.todo.R
 import com.personal.todo.data.db.Tag
 import com.personal.todo.data.db.TaskList
-import com.personal.todo.model.Priority
+import com.personal.todo.model.ReminderKind
 import com.personal.todo.ui.theme.DefaultTagColor
 import com.personal.todo.ui.theme.LocalTodoColors
 import com.personal.todo.viewmodel.TaskEditorViewModel
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.YearMonth
+import java.time.ZoneId
 
 /** The tag the smoke tests use to type a title into the editor. */
 internal const val EditorTitleTag = "editor-title"
 
-/** The tag the smoke tests use to reach the icon toolbar of the editor. */
+/** The tag the smoke tests use to reach the 时间安排 rows of the editor. */
 internal const val EditorToolbarTag = "editor-toolbar"
 
 /** The tag the smoke tests use to reach the「新建标签」入口 of the editor's 标签 group. */
@@ -94,113 +104,24 @@ internal const val EditorSubtaskTag = "editor-subtask"
 /** 子任务输入框的 testTag：冒烟测试靠它往里敲字。 */
 internal const val EditorSubtaskInputTag = "editor-subtask-input"
 
-/**
- * 编辑器里能就地展开的三块面板：优先级 / 清单 / 备注。
- *
- * 日期**不**在这里：日期有自己的弹层（[TaskDateSheet]：月历 + 时间 + 重复 + 时间段），
- * 点属性行上那枚日期就是开它。原来「日期」也占一格面板，可面板里只有「计划日期 / 时间段」
- * 两行，点进去还是开同一个弹层——白占一层高度。
- */
-private enum class EditorGroup(val labelRes: Int, val emoji: String) {
-    PRIORITY(R.string.task_priority_label, "🎯"),
-    LIST(R.string.editor_tab_list, "📋"),
-    NOTES(R.string.editor_tab_notes, "📝")
-}
+/** 底部那颗主按钮的 testTag（新建＝「添加任务」，编辑＝「保存」）。 */
+internal const val EditorSaveTag = "editor-save"
 
 /**
- * 编辑任务（推入的一页）：顶栏是 ✕ 和保存，下面是和「新建任务」弹层共用的同一份内容——
- * 标题行、属性行（日期 / 优先级 / 清单 / 备注）、当前展开的那一块。区别只有两处：
- * 没有快捷日期那一行（改一条已经有日期的任务，用不着「今天 / 明天」），标题行尾也没有 ✕。
+ * 新建任务的底部弹层，按 `docs/designs/task-entry` 的**「一页填写」**方案重做
+ * （2026-11-15）。
  *
- * All the fields the editor had before are still here and nothing new was added;
- * only 优先级 changed shape - 重要 and 紧急 are now two switches, because a task's
- * quadrant *is* its priority (see [Priority]).
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TaskEditorScreen(
-    viewModel: TaskEditorViewModel,
-    onSaved: () -> Unit,
-    onBack: () -> Unit
-) {
-    val saved by viewModel.saved.collectAsStateWithLifecycle()
-    val loading by viewModel.loading.collectAsStateWithLifecycle()
-    val saving by viewModel.saving.collectAsStateWithLifecycle()
-    // 读库没回来、或者上一次保存还没回来：两个保存按钮都不收点击。
-    val saveEnabled = !loading && !saving
-
-    LaunchedEffect(saved) {
-        if (saved) {
-            viewModel.consumeSaved()
-            onSaved()
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = stringResource(R.string.action_close)
-                        )
-                    }
-                },
-                actions = { SaveIconButton(onClick = viewModel::save, enabled = saveEnabled) }
-            )
-        }
-    ) { innerPadding ->
-        if (loading) {
-            // 表单在读库返回前不画：输入框一旦画出来，用户敲的字就会被回流结果盖掉。
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.editor_loading),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = LocalTodoColors.current.dateMuted
-                )
-            }
-            return@Scaffold
-        }
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.editor_title_edit),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 12.dp)
-            )
-            TaskEditorBody(viewModel = viewModel, showQuickDates = false)
-        }
-    }
-}
-
-/**
- * 新建任务的底部弹层。
+ * 与上一版的区别只有一件事：**所有时间和提醒都在这一页里直接改完**。
+ * 上一版的「日期」是一枚属性胶囊，点开还是那个日期弹层（月历 + 时间段两个页签），
+ * 用户得进两层才看得到「几点提醒」。现在计划日期 / 时间 / 提醒 / 重复是四行普通的
+ * 值行，各自点一下就地改，改完上面那行摘要立刻写出算出来的提醒时刻。
  *
- * 2026-10-22 又重做了一次（用户说「布局很不好」）：这一版的原则是**一层边界**——
- * 整张弹层里不再出现「卡片里套描边框、框下面又是一张卡片」，只有输入区、属性行、
- * 面板之间那几条 1dp 的分隔线。具体的减法：
+ * 收进「更多选项」的是几件不常改的事：清单、优先级、截止日期与时间、标签、子任务。
+ * 一进来它们全是收起的，所以第一屏只有标题、备注、快捷日期、四行时间安排。
  *
- * - 顶部那颗 ✍️ + 「新建任务」+ 说明文字整块撤掉，只留把手；关闭键挪到标题那一行的行尾。
- *   标题就是输入框本身（占位文字「要做什么？」，原来占位是「标题」两个字），不再套一层
- *   带描边的 `OutlinedTextField`——它就是这一行的名字，不需要再被一个框圈起来。
- * - 快捷日期从「五个等分胶囊」改成一行靠左的小字，够用就好，不再像一排按钮。
- * - 图标工具条换成属性行：四枚胶囊各自显示**当前值**（日期 / 优先级 / 清单 / 备注），
- *   点一下才在下面展开那一块；一进来什么都不展开，所以这张弹层不再一开就要滚动。
- *
- * 字段一个都没少，改的只是它们排成什么样。
+ * 弹层本身仍是全高底部弹层（上滑即满屏），没有改成推入的路由：新建是一次性的动作，
+ * 关掉就该回到列表，而 `editor-sheet` 这个 view model 的「每次打开先 [TaskEditorViewModel.startNewTask]」
+ * 逻辑就挂在 MainScreen 上——换路由要连那套重置逻辑一起搬，收益只有顶部两个圆角。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -229,12 +150,107 @@ fun NewTaskSheet(
         // 自己画一颗更细的把手：默认那颗跟着拖拽槽一起往下压，内容就离顶太远。
         dragHandle = null
     ) {
-        Column(
-            modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 16.dp)
+        EntryChrome(
+            viewModel = viewModel,
+            headerTitle = stringResource(R.string.editor_title_new),
+            saveLabel = stringResource(R.string.editor_title_new),
+            hint = stringResource(R.string.editor_entry_hint),
+            saveEnabled = !saving,
+            onCancel = onDismiss,
+            onSave = viewModel::save,
+            modifier = Modifier.fillMaxHeight(),
+            showHandle = true
         ) {
+            TaskEntryBody(viewModel = viewModel)
+        }
+    }
+}
+
+/**
+ * 编辑任务（推入的一页）：和新建共用同一份「一页填写」，只有三处不同——顶部写「编辑任务」、
+ * 底部按钮写「保存」、顶栏左边是返回而不是取消。
+ */
+@Composable
+fun TaskEditorScreen(
+    viewModel: TaskEditorViewModel,
+    onSaved: () -> Unit,
+    onBack: () -> Unit
+) {
+    val saved by viewModel.saved.collectAsStateWithLifecycle()
+    val loading by viewModel.loading.collectAsStateWithLifecycle()
+    val saving by viewModel.saving.collectAsStateWithLifecycle()
+    // 读库没回来、或者上一次保存还没回来：按钮都不收点击。
+    val saveEnabled = !loading && !saving
+    val colors = LocalTodoColors.current
+
+    LaunchedEffect(saved) {
+        if (saved) {
+            viewModel.consumeSaved()
+            onSaved()
+        }
+    }
+
+    Scaffold(containerColor = colors.card) { innerPadding ->
+        if (loading) {
+            // 表单在读库返回前不画：输入框一旦画出来，用户敲的字就会被回流结果盖掉。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.editor_loading),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.dateMuted
+                )
+            }
+            return@Scaffold
+        }
+        EntryChrome(
+            viewModel = viewModel,
+            headerTitle = stringResource(R.string.editor_title_edit),
+            saveLabel = stringResource(R.string.action_save),
+            hint = stringResource(R.string.editor_entry_hint),
+            saveEnabled = saveEnabled,
+            onCancel = onBack,
+            onSave = viewModel::save,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            TaskEntryBody(viewModel = viewModel)
+        }
+    }
+}
+
+// ------------------------------------------------------------------ 外壳
+
+/**
+ * 一页填写的骨架：把手（弹层才有）、顶栏、可滚的内容区、底部主按钮。
+ *
+ * **只有这一处**画边框：内容区与底栏之间那条 1dp 的分隔线。原来那版在弹层里套卡片、
+ * 卡片里再套描边输入框，一层套一层；这一版内容区是平的，靠行距和细分隔线分组。
+ */
+@Composable
+private fun EntryChrome(
+    viewModel: TaskEditorViewModel,
+    headerTitle: String,
+    saveLabel: String,
+    hint: String,
+    saveEnabled: Boolean,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+    showHandle: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val lists by viewModel.lists.collectAsStateWithLifecycle()
+    val listName = lists.firstOrNull { it.id == viewModel.listId }?.name.orEmpty()
+    val colors = LocalTodoColors.current
+
+    Column(modifier = modifier.fillMaxWidth().background(colors.card)) {
+        if (showHandle) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -249,420 +265,612 @@ fun NewTaskSheet(
                         .background(colors.dateMuted.copy(alpha = 0.28f))
                 )
             }
+        }
 
-            // 标题、快捷日期、属性行、面板：全在 [TaskEditorBody] 里，和编辑页共用同一份。
-            // onClose 只有弹层传：编辑页的 ✕ 在顶栏上，不必再来一个。
-            TaskEditorBody(
-                viewModel = viewModel,
-                showQuickDates = true,
-                onClose = onDismiss
+        EntryHeader(title = headerTitle, listName = listName, onCancel = onCancel)
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 22.dp)
+                .padding(top = 6.dp, bottom = 10.dp)
+        ) {
+            content()
+        }
+
+        EntryFooter(
+            label = saveLabel,
+            enabled = saveEnabled,
+            hint = hint,
+            onSave = onSave
+        )
+    }
+}
+
+/** 顶栏：左「取消」、中间标题、右边只读地写着这条任务落在哪条清单（和稿子一致）。 */
+@Composable
+private fun EntryHeader(title: String, listName: String, onCancel: () -> Unit) {
+    val colors = LocalTodoColors.current
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 6.dp, end = 22.dp, top = 4.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextButton(
+            onClick = onCancel,
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.action_cancel),
+                style = MaterialTheme.typography.bodyLarge,
+                color = colors.dateMuted
             )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+        )
+        Text(
+            text = listName,
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.dateMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 96.dp)
+        )
+    }
+}
 
-            Spacer(Modifier.height(16.dp))
+/** 底部：一颗整行铺满的主按钮 + 一行说明（保存前就能确认提醒时刻 / 保存中的状态）。 */
+@Composable
+private fun EntryFooter(label: String, enabled: Boolean, hint: String, onSave: () -> Unit) {
+    val colors = LocalTodoColors.current
+
+    Column(modifier = Modifier.fillMaxWidth().background(colors.card)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(colors.dateMuted.copy(alpha = 0.15f))
+        )
+        Column(modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 18.dp)) {
             Button(
-                onClick = viewModel::save,
-                enabled = !saving,
-                shape = RoundedCornerShape(14.dp),
+                onClick = onSave,
+                enabled = enabled,
+                shape = RoundedCornerShape(13.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
+                    .testTag(EditorSaveTag)
             ) {
                 Text(
-                    text = stringResource(R.string.action_save),
+                    text = label,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
             }
+            Spacer(Modifier.height(9.dp))
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.dateMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
 
-/** The purple ↑ of the reference: the one way to save a task. 保存中 / 读库中时它不收点击。 */
-@Composable
-private fun SaveIconButton(onClick: () -> Unit, enabled: Boolean) {
-    FilledIconButton(
-        onClick = onClick,
-        enabled = enabled,
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = LocalTodoColors.current.accent,
-            contentColor = Color.White
-        ),
-        modifier = Modifier.padding(end = 8.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.Check,
-            contentDescription = stringResource(R.string.action_save)
-        )
-    }
-}
+// ------------------------------------------------------------------ 内容
+
+/** 打开「计划日期 / 截止日期」哪一行的日期选择器。 */
+private enum class EntryDateField { PLANNED, DUE }
+
+/** 打开「时间 / 截止时间」哪一行的时刻选择器。 */
+private enum class EntryTimeField { PLANNED, DUE }
 
 /**
- * The editor content, shared by the page and the bottom sheet: 标题行、快捷日期（只有弹层
- * 显示）、属性行、当前展开的那一块面板。It also owns the date / time dialogs, so both
- * callers get the same behaviour without repeating it.
+ * 一页填写的全部内容。
+ *
+ * 顺序照稿子：标题 → 备注 → 快捷日期（今天 / 明天 / 选日期）→「时间安排」四行 → 提醒摘要
+ * →「更多选项」→（校验与保存失败的提示）。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun TaskEditorBody(
-    viewModel: TaskEditorViewModel,
-    showQuickDates: Boolean,
-    onClose: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
-) {
-    val lists by viewModel.lists.collectAsStateWithLifecycle()
+private fun TaskEntryBody(viewModel: TaskEditorViewModel) {
     val allTags by viewModel.allTags.collectAsStateWithLifecycle()
+    val lists by viewModel.lists.collectAsStateWithLifecycle()
+    val colors = LocalTodoColors.current
 
-    // 展开的是哪一块面板：-1 = 都没开。新建任务一进来什么都不展开，弹层就只有标题、
-    // 快捷日期、属性行三行——原来默认展开「日期」，一开就是四行内容 + 一条要滚的尾巴。
-    var groupIndex by rememberSaveable { mutableIntStateOf(-1) }
-    val group = EditorGroup.entries.getOrNull(groupIndex)
+    var moreOpen by rememberSaveable { mutableStateOf(false) }
+    var dateField by remember { mutableStateOf<EntryDateField?>(null) }
+    var timeField by remember { mutableStateOf<EntryTimeField?>(null) }
+    var reminderOpen by remember { mutableStateOf(false) }
+    var customReminderOpen by remember { mutableStateOf(false) }
+    var repeatOpen by remember { mutableStateOf(false) }
 
-    // 日期、时间段、时刻、重复全在同一个弹层里（照「待办时间」那张图），所以这里只留
-    // 一个状态：弹层开着的话停在哪个页签。
-    var dateSheet by remember { mutableStateOf<DateSheetTab?>(null) }
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        TitleRow(viewModel = viewModel, onClose = onClose)
-
-        if (showQuickDates) {
-            QuickDates(
-                today = viewModel.today,
-                onPick = { viewModel.onPlannedDateChange(it) },
-                onPickExact = { dateSheet = DateSheetTab.DATE }
-            )
+    // 通知权限只在用户**真的设了提醒**这一刻才要（照日期弹层原来的做法）：一进来就弹是骚扰。
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { /* 拒绝只是「到点不弹」，任务照常保存 */ }
+    val askNotificationPermission = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
 
-        Spacer(Modifier.height(if (showQuickDates) 10.dp else 12.dp))
-        Hairline()
-        Spacer(Modifier.height(10.dp))
+    Column(modifier = Modifier.fillMaxWidth()) {
+        TitleField(viewModel = viewModel)
+        NotesField(viewModel = viewModel)
 
-        AttributeRow(
-            group = group,
-            viewModel = viewModel,
-            lists = lists,
-            onOpenDate = { dateSheet = DateSheetTab.DATE },
-            onSelect = { picked ->
-                groupIndex = if (groupIndex == picked.ordinal) -1 else picked.ordinal
-            }
+        Spacer(Modifier.height(16.dp))
+        QuickDateRow(
+            today = viewModel.today,
+            plannedDate = viewModel.plannedDate,
+            onPick = { viewModel.onPlannedDateChange(it) },
+            onPickExact = { dateField = EntryDateField.PLANNED }
         )
 
-        if (viewModel.reminderKind != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.reminder_editor_summary, reminderValueText(
-                    viewModel.reminderKind, viewModel.customReminderAt,
-                    viewModel.plannedDate, viewModel.plannedTime,
-                    viewModel.dueDate, viewModel.dueTime)),
-                style = MaterialTheme.typography.bodySmall,
-                color = LocalTodoColors.current.dateMuted
+        Spacer(Modifier.height(20.dp))
+        SectionLabel(stringResource(R.string.editor_section_schedule))
+
+        // 四行时间安排。这一块是这一版的全部重点：不进任何二级页面就能改完。
+        Column(modifier = Modifier.testTag(EditorToolbarTag)) {
+            ScheduleValueRow(
+                emoji = "📅",
+                label = stringResource(R.string.task_planned_date_label),
+                value = viewModel.plannedDate?.let { entryDateText(it, viewModel.today) }
+                    ?: stringResource(R.string.editor_value_none),
+                onClick = { dateField = EntryDateField.PLANNED }
+            )
+            ScheduleValueRow(
+                emoji = "🕒",
+                label = stringResource(R.string.editor_time_label),
+                value = viewModel.plannedTime?.let { timeText(it) }
+                    ?: stringResource(R.string.editor_value_none),
+                onClick = { timeField = EntryTimeField.PLANNED }
+            )
+            ScheduleValueRow(
+                emoji = "🔔",
+                label = stringResource(R.string.editor_reminder_label),
+                value = if (!viewModel.canSetReminder) {
+                    // 没有日期就没有锚点，提醒算不出时刻——先把话说明白，别让这一行点了没反应。
+                    stringResource(R.string.reminder_need_date_short)
+                } else {
+                    reminderValueText(
+                        kind = viewModel.reminderKind,
+                        customAt = viewModel.customReminderAt,
+                        plannedDate = viewModel.plannedDate,
+                        plannedTime = viewModel.plannedTime,
+                        dueDate = viewModel.dueDate,
+                        dueTime = viewModel.dueTime
+                    )
+                },
+                muted = !viewModel.canSetReminder,
+                onClick = { if (viewModel.canSetReminder) reminderOpen = true }
+            )
+            ScheduleValueRow(
+                emoji = "🔁",
+                label = stringResource(R.string.editor_repeat_label),
+                value = repeatText(viewModel.repeatRule),
+                onClick = { repeatOpen = true },
+                divider = false
             )
         }
 
-        if (group != null) {
-            Spacer(Modifier.height(4.dp))
-            when (group) {
-                EditorGroup.PRIORITY -> PriorityGroup(viewModel = viewModel)
+        // 提醒摘要：算出来的**具体时刻**写在强调色里，改日期 / 时间时它跟着变。
+        if (viewModel.reminderKind != null) {
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.Top) {
+                Text(text = "🔔", fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                Spacer(Modifier.width(9.dp))
+                Text(
+                    text = stringResource(
+                        R.string.reminder_editor_summary,
+                        reminderValueText(
+                            kind = viewModel.reminderKind,
+                            customAt = viewModel.customReminderAt,
+                            plannedDate = viewModel.plannedDate,
+                            plannedTime = viewModel.plannedTime,
+                            dueDate = viewModel.dueDate,
+                            dueTime = viewModel.dueTime
+                        )
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.accent
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            ReminderPermissionHint()
+        }
 
-                EditorGroup.LIST -> ListGroup(
-                    viewModel = viewModel,
+        MoreOptionsToggle(open = moreOpen, onToggle = { moreOpen = !moreOpen })
+
+        if (moreOpen) {
+            Column(modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)) {
+                SubLabel(stringResource(R.string.task_list_label))
+                ListPicker(
                     lists = lists,
-                    tags = allTags
+                    selectedListId = viewModel.listId,
+                    onSelect = viewModel::onListChange,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
-                EditorGroup.NOTES -> NotesGroup(viewModel = viewModel)
+                Spacer(Modifier.height(18.dp))
+                SubLabel(stringResource(R.string.task_priority_label))
+                PrioritySection(viewModel = viewModel)
+
+                Spacer(Modifier.height(10.dp))
+                // 截止日期 / 截止时间：稿子把它们收在「更多选项」里，但一个字段都没少。
+                ScheduleValueRow(
+                    emoji = "⏳",
+                    label = stringResource(R.string.task_due_date_label),
+                    value = viewModel.dueDate?.let { entryDateText(it, viewModel.today) }
+                        ?: stringResource(R.string.editor_value_none),
+                    onClick = { dateField = EntryDateField.DUE },
+                    divider = false
+                )
+                if (viewModel.dueDate != null) {
+                    ScheduleValueRow(
+                        emoji = "🕒",
+                        label = stringResource(R.string.task_due_time_label),
+                        value = viewModel.dueTime?.let { timeText(it) }
+                            ?: stringResource(R.string.editor_value_none),
+                        onClick = { timeField = EntryTimeField.DUE },
+                        divider = false
+                    )
+                }
+
+                Spacer(Modifier.height(18.dp))
+                TagSection(viewModel = viewModel, tags = allTags)
+
+                if (viewModel.isNewTask) {
+                    Spacer(Modifier.height(14.dp))
+                    SubtaskSection(viewModel = viewModel)
+                }
             }
         }
 
-        // 子任务只在「新建任务」时给：改一条已有任务，子任务在详情页里加（那里本来就有
-        // 一行输入，还能逐条打勾、删掉），这里再开一个口子会让两处口径打架。
-        if (viewModel.isNewTask) {
-            SubtaskDraftSection(viewModel = viewModel)
+        if (viewModel.titleHasError) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.task_title_required),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
         }
-
-        // 写库失败：留在这一页，把话说出来（页面与弹层共用这一段）。
         if (viewModel.saveFailed) {
             Spacer(Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.editor_save_failed),
                 style = MaterialTheme.typography.bodySmall,
-                color = LocalTodoColors.current.dateOverdue
+                color = colors.dateOverdue
             )
         }
     }
-    dateSheet?.let { tab ->
-        TaskDateSheet(
+
+    dateField?.let { field ->
+        EntryDateDialog(field = field, viewModel = viewModel, onDismiss = { dateField = null })
+    }
+    timeField?.let { field ->
+        EntryTimeDialog(field = field, viewModel = viewModel, onDismiss = { timeField = null })
+    }
+    if (reminderOpen) {
+        ReminderPickerDialog(
+            current = viewModel.reminderKind,
+            onPick = { kind ->
+                reminderOpen = false
+                when (kind) {
+                    null -> viewModel.onReminderChange(null)
+
+                    ReminderKind.CUSTOM -> {
+                        // 自定义要挑一个具体时刻：先按现在的锚点起个头，再让用户在弹窗里改。
+                        askNotificationPermission()
+                        customReminderOpen = true
+                    }
+
+                    else -> {
+                        askNotificationPermission()
+                        viewModel.onReminderChange(kind)
+                    }
+                }
+            },
+            onDismiss = { reminderOpen = false }
+        )
+    }
+    if (customReminderOpen) {
+        EntryCustomReminderDialog(
             viewModel = viewModel,
-            tab = tab,
-            onDismiss = { dateSheet = null }
+            onDismiss = { customReminderOpen = false }
+        )
+    }
+    if (repeatOpen) {
+        RepeatRuleDialog(
+            current = viewModel.repeatRule,
+            onPick = {
+                viewModel.onRepeatChange(it)
+                repeatOpen = false
+            },
+            onDismiss = { repeatOpen = false }
         )
     }
 }
 
-// ------------------------------------------------------------------ 标题行
+// ---------------------------------------------------------------- 标题与备注
 
 /**
- * 标题那一行：一个**没有框**的输入框 + 行尾的关闭键（只有弹层传 [onClose]）。
- *
- * 用 `BasicTextField` 而不是 `OutlinedTextField`：后者自带 1dp 圆角描边和 16dp 内边距，
- * 摆在弹层里就是「弹层里还有一张表单项」的样子，而且缩进和下面几行对不齐。
+ * 标题：一个**没有框**的输入框，字号 22sp 加粗——它就是这一页的名字，不该再被一个框圈起来。
  */
 @Composable
-private fun TitleRow(viewModel: TaskEditorViewModel, onClose: (() -> Unit)?) {
+private fun TitleField(viewModel: TaskEditorViewModel) {
     val colors = LocalTodoColors.current
+    val textStyle = MaterialTheme.typography.titleLarge.copy(
+        fontSize = 22.sp,
+        fontWeight = FontWeight.Bold,
+        lineHeight = 30.sp,
+        color = MaterialTheme.colorScheme.onSurface
+    )
 
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        BasicTextField(
-            value = viewModel.title,
-            onValueChange = viewModel::onTitleChange,
-            singleLine = true,
-            textStyle = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            ),
-            cursorBrush = SolidColor(colors.accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            modifier = Modifier.weight(1f).testTag(EditorTitleTag),
-            decorationBox = { innerTextField ->
-                Box(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    if (viewModel.title.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.task_title_placeholder),
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = colors.dateMuted.copy(alpha = 0.70f),
-                            maxLines = 1
-                        )
-                    }
-                    innerTextField()
+    BasicTextField(
+        value = viewModel.title,
+        onValueChange = viewModel::onTitleChange,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(colors.accent),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp, max = 120.dp)
+            .padding(top = 6.dp)
+            .testTag(EditorTitleTag),
+        decorationBox = { innerTextField ->
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (viewModel.title.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.task_title_placeholder),
+                        style = textStyle,
+                        color = colors.dateMuted.copy(alpha = 0.75f),
+                        maxLines = 1
+                    )
                 }
-            }
-        )
-        if (onClose != null) {
-            IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = stringResource(R.string.action_close),
-                    tint = colors.dateMuted
-                )
+                innerTextField()
             }
         }
-    }
+    )
+}
 
-    if (viewModel.titleHasError) {
-        Text(
-            text = stringResource(R.string.task_title_required),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error
-        )
-    }
+/** 备注：贴着标题下面的一行淡字，写到哪儿就长到哪儿（没有底色、没有描边）。 */
+@Composable
+private fun NotesField(viewModel: TaskEditorViewModel) {
+    val colors = LocalTodoColors.current
+    val textStyle = MaterialTheme.typography.bodyMedium.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+        lineHeight = 21.sp
+    )
+
+    BasicTextField(
+        value = viewModel.notes,
+        onValueChange = viewModel::onNotesChange,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(colors.accent),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 34.dp)
+            .padding(top = 2.dp),
+        decorationBox = { innerTextField ->
+            Box {
+                if (viewModel.notes.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.editor_add_notes),
+                        style = textStyle,
+                        color = colors.dateMuted.copy(alpha = 0.75f),
+                        maxLines = 1
+                    )
+                }
+                innerTextField()
+            }
+        }
+    )
 }
 
 // ---------------------------------------------------------------- 快捷日期
 
 /**
- * 快捷日期行：今天 / 明天 / 下周 / 下个月 / 选日期。
+ * 快捷日期：今天 / 明天 / 选日期。
  *
- * 2026-10-22：从「五个等分胶囊」改成**一行靠左的小字**。等分之后每个都撑满一格、
- * 文字居中，看着就是五个按钮；这本来只是一条捷径，不该和下面的保存按钮抢分量。
- * 放不下就横向滑动（其实五个字都在，411dp 的屏也放得下）。
+ * 和上一版的区别是这三枚有了形状（细描边 + 圆角 10dp），选中的那枚用淡强调色底——
+ * 稿子上它们就是三颗小按钮，而不再是三个字。
  */
 @Composable
-private fun QuickDates(today: LocalDate, onPick: (LocalDate) -> Unit, onPickExact: () -> Unit) {
-    val colors = LocalTodoColors.current
-
+private fun QuickDateRow(
+    today: LocalDate,
+    plannedDate: LocalDate?,
+    onPick: (LocalDate) -> Unit,
+    onPickExact: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        QuickDateChip(
+        EntryChip(
             label = stringResource(R.string.date_today),
+            selected = plannedDate == today,
             onClick = { onPick(today) }
         )
-        QuickDateChip(
+        EntryChip(
             label = stringResource(R.string.date_tomorrow),
+            selected = plannedDate == today.plusDays(1),
             onClick = { onPick(today.plusDays(1)) }
         )
-        // 「下周 / 下个月」按同一个日子往后推，不做「下周一」那种额外推断。
-        QuickDateChip(
-            label = stringResource(R.string.editor_quick_next_week),
-            onClick = { onPick(today.plusWeeks(1)) }
-        )
-        QuickDateChip(
-            label = stringResource(R.string.editor_quick_next_month),
-            onClick = { onPick(today.plusMonths(1)) }
-        )
-        QuickDateChip(
+        EntryChip(
             label = stringResource(R.string.editor_quick_pick_date),
-            onClick = onPickExact,
-            tint = colors.accent
+            selected = false,
+            onClick = onPickExact
         )
     }
 }
 
-/** 快捷日期上的一个字：没有底色、没有边框，只有字（点下去的涟漪是唯一的按钮感）。 */
+/** 快捷日期上的一枚：选中＝淡强调色底 + 强调色字；没选中＝细描边 + 灰字。 */
 @Composable
-private fun QuickDateChip(
-    label: String,
-    onClick: () -> Unit,
-    tint: Color = LocalTodoColors.current.dateMuted
-) {
+private fun EntryChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalTodoColors.current
+    val shape = RoundedCornerShape(10.dp)
+
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(shape)
+            .then(
+                if (selected) {
+                    Modifier.background(colors.accent.copy(alpha = 0.14f))
+                } else {
+                    Modifier.border(1.dp, colors.dateMuted.copy(alpha = 0.28f), shape)
+                }
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .heightIn(min = 38.dp)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = tint,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else null,
+            color = if (selected) colors.accent else colors.dateMuted,
             maxLines = 1
         )
     }
 }
 
-// ---------------------------------------------------------------- 属性行
+// ---------------------------------------------------------------- 时间安排的行
 
-/** 整张编辑器里唯一的分隔线：输入区和属性区之间那一条。 */
+/** 「时间安排」这种小标题：12sp、灰、字距略开。 */
 @Composable
-private fun Hairline() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(LocalTodoColors.current.dateMuted.copy(alpha = 0.15f))
+private fun SectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.5.sp),
+        color = LocalTodoColors.current.dateMuted,
+        modifier = Modifier.padding(bottom = 2.dp)
+    )
+}
+
+/** 「更多选项」里的分组名（清单 / 优先级 / 标签）。 */
+@Composable
+private fun SubLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = LocalTodoColors.current.dateMuted,
+        modifier = Modifier.padding(bottom = 6.dp)
     )
 }
 
 /**
- * 属性行：日期 / 优先级 / 清单 / 备注，四枚扁胶囊**等分四格、内容居中**，各自写着**当前值**。
- *
- * 它替掉了原来那排「图标 + 文字」的小方块，也替掉了下面那张面板卡：点一下就在行下面
- * 展开那一块，再点一下收起来；一进来什么都不展开。所以「新建任务」打开就是
- * 标题 + 快捷日期 + 这一行，一共三行，不用滚动。
- *
- * 日期不在 [EditorGroup] 里：它没有「展开」这一说，点它就是开日期弹层。
- *
- * 2026-10-22 第二稿：四枚统一 `weight(1f)`。第一稿给「日期 / 清单」各多分了 0.15 份，
- * 结果两条缝宽两条缝窄，看着像没对齐；而且内容靠左时，字短的「备注」那格右边空一大块。
+ * 一行「图标 + 名字 + 当前值」。当前值画成一块淡底的圆角小格（稿子上的 input / select），
+ * 点整行就是改它——不需要先点进一个二级页面。
  */
 @Composable
-private fun AttributeRow(
-    group: EditorGroup?,
-    viewModel: TaskEditorViewModel,
-    lists: List<TaskList>,
-    onOpenDate: () -> Unit,
-    onSelect: (EditorGroup) -> Unit
-) {
-    val dateText = viewModel.plannedDate?.let {
-        dateAndTimeText(it, viewModel.plannedTime, viewModel.today)
-    }
-    val priorityIsSet = viewModel.priority != Priority.DEFAULT
-    val listName = lists.firstOrNull { it.id == viewModel.listId }?.name?.takeIf { it.isNotBlank() }
-
-    Row(
-        modifier = Modifier.fillMaxWidth().testTag(EditorToolbarTag),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        AttributePill(
-            emoji = "📅",
-            text = dateText ?: stringResource(R.string.editor_add_date),
-            isSet = dateText != null,
-            isOpen = false,
-            onClick = onOpenDate,
-            modifier = Modifier.weight(1f)
-        )
-        AttributePill(
-            emoji = EditorGroup.PRIORITY.emoji,
-            text = if (priorityIsSet) {
-                priorityNumeral(viewModel.priority)
-            } else {
-                stringResource(EditorGroup.PRIORITY.labelRes)
-            },
-            isSet = priorityIsSet,
-            isOpen = group == EditorGroup.PRIORITY,
-            onClick = { onSelect(EditorGroup.PRIORITY) },
-            modifier = Modifier.weight(1f)
-        )
-        AttributePill(
-            emoji = EditorGroup.LIST.emoji,
-            text = listName ?: stringResource(EditorGroup.LIST.labelRes),
-            isSet = listName != null,
-            isOpen = group == EditorGroup.LIST,
-            onClick = { onSelect(EditorGroup.LIST) },
-            modifier = Modifier.weight(1f)
-        )
-        AttributePill(
-            emoji = EditorGroup.NOTES.emoji,
-            text = stringResource(EditorGroup.NOTES.labelRes),
-            isSet = viewModel.notes.isNotBlank(),
-            isOpen = group == EditorGroup.NOTES,
-            onClick = { onSelect(EditorGroup.NOTES) },
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-/** 属性行里的一枚：emoji + 当前值，内容在格里居中。设过值的用强调色，展开的那枚带淡底。 */
-@Composable
-private fun AttributePill(
+private fun ScheduleValueRow(
     emoji: String,
-    text: String,
-    isSet: Boolean,
-    isOpen: Boolean,
+    label: String,
+    value: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    muted: Boolean = false,
+    divider: Boolean = true
 ) {
     val colors = LocalTodoColors.current
-    val tint = if (isSet || isOpen) colors.accent else colors.dateMuted
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = !muted, onClick = onClick)
+                .heightIn(min = 56.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = emoji, fontSize = 13.sp, modifier = Modifier.width(26.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 178.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(colors.groupHeader.copy(alpha = 0.75f))
+                    .padding(horizontal = 11.dp, vertical = 9.dp)
+            ) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (muted) colors.dateMuted else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (divider) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(colors.dateMuted.copy(alpha = 0.12f))
+            )
+        }
+    }
+}
+
+/** 「更多选项」的开合行：左边一行小字，右边一个 ＋ / −。 */
+@Composable
+private fun MoreOptionsToggle(open: Boolean, onToggle: () -> Unit) {
+    val colors = LocalTodoColors.current
 
     Row(
-        modifier = modifier
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (isOpen) colors.accent.copy(alpha = 0.14f) else colors.groupHeader.copy(alpha = 0.55f)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.Center,
+            .clickable(onClick = onToggle)
+            .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = emoji, fontSize = 12.sp, maxLines = 1)
-        Spacer(Modifier.width(4.dp))
+        Text(text = "🎛️", fontSize = 12.sp)
+        Spacer(Modifier.width(9.dp))
         Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (isSet || isOpen) FontWeight.SemiBold else null,
-            color = tint,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            text = stringResource(R.string.editor_more_options),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.dateMuted,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = if (open) "−" else "＋",
+            fontSize = 18.sp,
+            color = colors.dateMuted
         )
     }
 }
 
-/** 优先级在属性行上只占一个字：Ⅰ / Ⅱ / Ⅲ / Ⅳ，全名在下面展开的那一块里说。 */
-@Composable
-private fun priorityNumeral(priority: Priority): String = stringResource(
-    when (priority) {
-        Priority.IMPORTANT_URGENT -> R.string.quadrant_numeral_1
-        Priority.IMPORTANT_NOT_URGENT -> R.string.quadrant_numeral_2
-        Priority.NOT_IMPORTANT_URGENT -> R.string.quadrant_numeral_3
-        Priority.NOT_IMPORTANT_NOT_URGENT -> R.string.quadrant_numeral_4
-    }
-)
+// ---------------------------------------------------------------- 更多选项里的三块
 
-// ---------------------------------------------------------------- 各组的行
-
-/** 优先级就是四象限：两个开关，下面一行实时说清楚落进哪一格。 */
+/** 优先级就是四象限：两个开关 + 一行实时说明落进哪一格。 */
 @Composable
-private fun PriorityGroup(viewModel: TaskEditorViewModel) {
+private fun PrioritySection(viewModel: TaskEditorViewModel) {
     val colors = LocalTodoColors.current
 
     DimensionSwitch(
@@ -677,7 +885,7 @@ private fun PriorityGroup(viewModel: TaskEditorViewModel) {
     )
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -699,7 +907,7 @@ private fun PriorityGroup(viewModel: TaskEditorViewModel) {
 private fun DimensionSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     val colors = LocalTodoColors.current
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
@@ -719,88 +927,66 @@ private fun DimensionSwitch(label: String, checked: Boolean, onCheckedChange: (B
 }
 
 /**
- * 「清单」那一组：先挑归属的清单（单值），再给这条任务打标签（多值）。清单是任务住
- * 哪，标签是任务身上带什么标记——两者分工不同，所以并排放在同一组里。
+ * 标签：先给一个「新建标签」的入口（建完立刻勾在这条任务上），再把全部标签列出来逐条勾。
+ *
+ * 标签是多值属性，和上面的清单（单值）分工不同：清单是任务住哪，标签是任务身上带什么标记。
  */
 @Composable
-private fun ListGroup(viewModel: TaskEditorViewModel, lists: List<TaskList>, tags: List<Tag>) {
+private fun TagSection(viewModel: TaskEditorViewModel, tags: List<Tag>) {
     val colors = LocalTodoColors.current
-    // 新建标签的弹层挂在编辑器里：建完立刻勾上这条任务，不必先跑去「标签管理」再回来。
     var creatingTag by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+    SubLabel(stringResource(R.string.task_tags_label))
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { creatingTag = true }
+            .testTag(EditorNewTagTag)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Add,
+            contentDescription = null,
+            tint = colors.accent,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
         Text(
-            text = stringResource(R.string.task_list_label),
+            text = stringResource(R.string.tag_new),
             style = MaterialTheme.typography.bodyMedium,
+            color = colors.accent
+        )
+    }
+
+    if (tags.isEmpty()) {
+        Text(
+            text = stringResource(R.string.tags_empty_hint),
+            style = MaterialTheme.typography.bodySmall,
             color = colors.dateMuted
         )
-        Spacer(Modifier.height(6.dp))
-        ListPicker(
-            lists = lists,
-            selectedListId = viewModel.listId,
-            onSelect = viewModel::onListChange,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = stringResource(R.string.task_tags_label),
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.dateMuted
-        )
-        Spacer(Modifier.height(6.dp))
-
-        // 「新建标签」放在标签列表最上面，一眼能看到、也少滚一屏。
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { creatingTag = true }
-                .testTag(EditorNewTagTag)
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                tint = colors.accent,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = stringResource(R.string.tag_new),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.accent
-            )
-        }
-
-        if (tags.isEmpty()) {
-            Text(
-                text = stringResource(R.string.tags_empty_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.dateMuted
-            )
-        } else {
-            tags.forEach { tag ->
-                val selected = tag.id in viewModel.selectedTagIds
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { viewModel.onToggleTag(tag.id) }
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TagChip(name = tag.name, color = tag.color)
-                    Spacer(Modifier.weight(1f))
-                    Checkbox(
-                        checked = selected,
-                        onCheckedChange = { viewModel.onToggleTag(tag.id) },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = colors.accent,
-                            checkmarkColor = Color.White
-                        )
+    } else {
+        tags.forEach { tag ->
+            val selected = tag.id in viewModel.selectedTagIds
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.onToggleTag(tag.id) }
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TagChip(name = tag.name, color = tag.color)
+                Spacer(Modifier.weight(1f))
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { viewModel.onToggleTag(tag.id) },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = colors.accent,
+                        checkmarkColor = Color.White
                     )
-                }
+                )
             }
         }
     }
@@ -820,61 +1006,17 @@ private fun ListGroup(viewModel: TaskEditorViewModel, lists: List<TaskList>, tag
 }
 
 /**
- * 备注那一块：一块填色的输入区，**不带描边**。
+ * 新建任务时的子任务草稿区：一行「子任务 + 添加」，点开才出现输入框，加过的列在下面可逐条移除。
  *
- * 上一版给它画了 12dp 圆角 + 1dp 描边，还把同一套形状复制到标题卡里那条「添加备注」上，
- * 于是弹层里出现了「卡片里套一个描边框」的第二层边界。现在备注只有这一处入口（属性行上
- * 的 📝），展开后就是一块淡底输入区，形状只靠圆角区分。
+ * 草稿真正的落库在保存那一步（[TaskEditorViewModel.save] → `TaskRepository.saveTask` 的同一个
+ * 事务）：父任务这一刻还没有 id，子任务挂不上去。
  */
 @Composable
-private fun NotesGroup(viewModel: TaskEditorViewModel) {
-    val colors = LocalTodoColors.current
-    TextField(
-        value = viewModel.notes,
-        onValueChange = viewModel::onNotesChange,
-        placeholder = {
-            Text(
-                text = stringResource(R.string.editor_add_notes),
-                style = MaterialTheme.typography.bodyMedium,
-                color = colors.dateMuted
-            )
-        },
-        minLines = 3,
-        textStyle = MaterialTheme.typography.bodyMedium,
-        shape = RoundedCornerShape(12.dp),
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = colors.groupHeader.copy(alpha = 0.5f),
-            unfocusedContainerColor = colors.groupHeader.copy(alpha = 0.5f),
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-            disabledIndicatorColor = Color.Transparent,
-            cursorColor = colors.accent
-        ),
-        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-    )
-}
-
-// ---------------------------------------------------------------- 子任务草稿
-
-/**
- * 新建任务时的子任务草稿区。
- *
- * 为什么不做成属性行上的第五枚胶囊：那四枚等分之后每枚只剩七十来 dp，再挤一枚，
- * 「今天 15:00」这种日期就会被压成省略号；而子任务也不是「这条任务的某个属性」，
- * 它是一串小任务，值得自己占一行。这里刻意做得轻：一行字 + 一个「添加」，点开才出现
- * 输入框——不点就不占高度，弹层一进来仍是标题 / 快捷日期 / 属性行那三行。
- *
- * 加过的草稿一直列在下面，可以逐条移除；真正的落库在保存那一步
- * （[TaskEditorViewModel.save] → `TaskRepository.saveTask` 的同一个事务），因为父任务
- * 这一刻还没有 id，子任务挂不上去。
- */
-@Composable
-private fun SubtaskDraftSection(viewModel: TaskEditorViewModel) {
+private fun SubtaskSection(viewModel: TaskEditorViewModel) {
     val colors = LocalTodoColors.current
     var adding by rememberSaveable { mutableStateOf(false) }
     var draft by rememberSaveable { mutableStateOf("") }
     val count = viewModel.subtaskDrafts.size
-    // 点开这一行就直接能打字：不再让用户点第二下去对准输入框。
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(adding) {
@@ -893,7 +1035,7 @@ private fun SubtaskDraftSection(viewModel: TaskEditorViewModel) {
                 .clip(RoundedCornerShape(10.dp))
                 .clickable { adding = !adding }
                 .testTag(EditorSubtaskTag)
-                .padding(horizontal = 6.dp, vertical = 8.dp),
+                .padding(horizontal = 4.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = "🧩", fontSize = 12.sp)
@@ -935,7 +1077,7 @@ private fun SubtaskDraftSection(viewModel: TaskEditorViewModel) {
                         .weight(1f)
                         .focusRequester(focusRequester)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(colors.groupHeader.copy(alpha = 0.5f))
+                        .background(colors.groupHeader.copy(alpha = 0.6f))
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                         .testTag(EditorSubtaskInputTag),
                     decorationBox = { innerTextField ->
@@ -966,7 +1108,7 @@ private fun SubtaskDraftSection(viewModel: TaskEditorViewModel) {
                 text = stringResource(R.string.editor_subtask_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.dateMuted,
-                modifier = Modifier.padding(start = 6.dp, top = 2.dp)
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
             )
         }
     }
@@ -977,7 +1119,7 @@ private fun SubtaskDraftSection(viewModel: TaskEditorViewModel) {
 private fun SubtaskDraftRow(title: String, onRemove: () -> Unit) {
     val colors = LocalTodoColors.current
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, top = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -1005,12 +1147,254 @@ private fun SubtaskDraftRow(title: String, onRemove: () -> Unit) {
     }
 }
 
-/** 「明天 15:00」 / 「明天」: the text of the 日期 pill on the attribute row. */
+// ---------------------------------------------------------------- 三个选择器
+
+/** 计划日期 / 截止日期：就地弹一个月历，点哪一天就是哪一天，不用再点一次「确认」。 */
 @Composable
-private fun dateAndTimeText(date: LocalDate, time: LocalTime?, today: LocalDate): String {
-    val day = calendarDateText(date, today)
-    return if (time == null) day else "$day ${timeText(time)}"
+private fun EntryDateDialog(
+    field: EntryDateField,
+    viewModel: TaskEditorViewModel,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalTodoColors.current
+    val current = when (field) {
+        EntryDateField.PLANNED -> viewModel.plannedDate
+        EntryDateField.DUE -> viewModel.dueDate
+    }
+    var month by remember(field) { mutableStateOf(YearMonth.from(current ?: viewModel.today)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (field == EntryDateField.PLANNED) {
+                        R.string.task_planned_date_label
+                    } else {
+                        R.string.task_due_date_label
+                    }
+                )
+            )
+        },
+        text = {
+            MonthCalendar(
+                month = month,
+                selected = current,
+                today = viewModel.today,
+                onSelect = {
+                    when (field) {
+                        EntryDateField.PLANNED -> viewModel.onPlannedDateChange(it)
+                        EntryDateField.DUE -> viewModel.onDueDateChange(it)
+                    }
+                    onDismiss()
+                },
+                onStepMonth = { month = month.plusMonths(it) }
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    when (field) {
+                        EntryDateField.PLANNED -> viewModel.onPlannedDateChange(null)
+                        EntryDateField.DUE -> viewModel.onDueDateChange(null)
+                    }
+                    onDismiss()
+                }
+            ) {
+                Text(text = stringResource(R.string.action_clear), color = colors.dateOverdue)
+            }
+        }
+    )
 }
 
-/** The time as `HH:mm`; the picker itself works on hour and minute. */
-private fun timeText(time: LocalTime): String = "%02d:%02d".format(time.hour, time.minute)
+/**
+ * 时间 / 截止时间：一个时刻要挂在一天上，所以先没有日期就先落到今天（和稿子上
+ * 「时间」那一格的行为一致）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EntryTimeDialog(
+    field: EntryTimeField,
+    viewModel: TaskEditorViewModel,
+    onDismiss: () -> Unit
+) {
+    val start = when (field) {
+        EntryTimeField.PLANNED -> viewModel.plannedTime
+        EntryTimeField.DUE -> viewModel.dueTime
+    } ?: DefaultSheetTime
+    val state = rememberTimePickerState(
+        initialHour = start.hour,
+        initialMinute = start.minute,
+        is24Hour = true
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (field == EntryTimeField.PLANNED) {
+                        R.string.editor_time_label
+                    } else {
+                        R.string.task_due_time_label
+                    }
+                )
+            )
+        },
+        text = { SheetTimePicker(state) },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val time = LocalTime.of(state.hour, state.minute)
+                    when (field) {
+                        EntryTimeField.PLANNED -> {
+                            if (viewModel.plannedDate == null) {
+                                viewModel.onPlannedDateChange(viewModel.today)
+                            }
+                            viewModel.onPlannedTimeChange(time)
+                        }
+
+                        EntryTimeField.DUE -> {
+                            if (viewModel.dueDate == null) {
+                                viewModel.onDueDateChange(viewModel.plannedDate ?: viewModel.today)
+                            }
+                            viewModel.onDueTimeChange(time)
+                        }
+                    }
+                    onDismiss()
+                }
+            ) {
+                Text(stringResource(R.string.action_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
+    )
+}
+
+/**
+ * 自定义提醒：挑一个绝对时刻（日历 + 钟点）。
+ *
+ * 其余几种提醒只存「相对哪种锚点算」，日期一改由落库时重算；自定义是唯一需要另存绝对值的
+ * 类型，所以要单独问一次日期和时刻。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EntryCustomReminderDialog(viewModel: TaskEditorViewModel, onDismiss: () -> Unit) {
+    val colors = LocalTodoColors.current
+    var customDate by remember {
+        mutableStateOf(viewModel.plannedDate ?: viewModel.dueDate ?: viewModel.today)
+    }
+    var customTime by remember { mutableStateOf(viewModel.plannedTime ?: DefaultSheetTime) }
+    var month by remember { mutableStateOf(YearMonth.from(customDate)) }
+    var timeOpen by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.editor_custom_reminder_title)) },
+        text = {
+            Column {
+                if (viewModel.repeatRule != null) {
+                    Text(
+                        text = stringResource(R.string.reminder_custom_repeat_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.dateMuted
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                MonthCalendar(
+                    month = month,
+                    selected = customDate,
+                    today = viewModel.today,
+                    onSelect = { customDate = it },
+                    onStepMonth = { month = month.plusMonths(it) }
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { timeOpen = true }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.editor_time_label),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = timeText(customTime),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.dateMuted
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val at = customDate.atTime(customTime)
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli()
+                    viewModel.onReminderChange(ReminderKind.CUSTOM, at)
+                    onDismiss()
+                }
+            ) {
+                Text(stringResource(R.string.action_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        }
+    )
+
+    if (timeOpen) {
+        val state = rememberTimePickerState(
+            initialHour = customTime.hour,
+            initialMinute = customTime.minute,
+            is24Hour = true
+        )
+        AlertDialog(
+            onDismissRequest = { timeOpen = false },
+            title = { Text(stringResource(R.string.editor_time_label)) },
+            text = { SheetTimePicker(state) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        customTime = LocalTime.of(state.hour, state.minute)
+                        timeOpen = false
+                    }
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { timeOpen = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+}
+
+// ---------------------------------------------------------------- 小工具
+
+/**
+ * 计划日期那一行右边显示什么：「今天 · 11月14日」。
+ *
+ * 光写「今天」时用户看不出到底是几号；光写「11月14日」时又要自己去对星期。近三天用
+ * [calendarDateText] 的相对说法，后面补上具体月日；更远的日子它本身就是「11月20日」，
+ * 不再重复一遍。
+ */
+@Composable
+private fun entryDateText(date: LocalDate, today: LocalDate): String {
+    val relative = calendarDateText(date, today)
+    val absolute = stringResource(R.string.date_month_day, date.monthValue, date.dayOfMonth)
+    return if (relative == absolute) relative else "$relative · $absolute"
+}

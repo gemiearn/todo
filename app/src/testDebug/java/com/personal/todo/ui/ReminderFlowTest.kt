@@ -105,9 +105,8 @@ class ReminderFlowTest {
             }
         }
         compose.onNodeWithTag(EditorTitleTag).performTextInput("两分钟后提醒")
+        // 「一页填写」：快捷日期、时间、提醒都在同一页，且都是就地改完就生效。
         compose.onNodeWithText("今天").performSemanticsAction(SemanticsActions.OnClick)
-        // The second 今天 is the editor's date pill, after the quick date row.
-        compose.onAllNodesWithText("今天").onLast().performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntilNodeCount(hasText("时间"), 1, 15_000L)
         compose.onNodeWithText("时间").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("输入时分").performSemanticsAction(SemanticsActions.OnClick)
@@ -118,15 +117,15 @@ class ReminderFlowTest {
         compose.onNodeWithText("确定").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("提醒").performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("准时").performSemanticsAction(SemanticsActions.OnClick)
-        compose.onNodeWithText("确认日期和提醒").performSemanticsAction(SemanticsActions.OnClick)
+        // 提醒选完就直接写进表单，摘要行立刻写出算出来的时刻——不再有「确认日期和提醒」那一层。
         compose.onNodeWithText("提醒：准时", substring = true).assertExists()
         compose.runOnIdle {
             assertEquals("两分钟后提醒", editor.title)
-            assertEquals("Date sheet must retain the selected day", day, editor.plannedDate)
-            assertEquals("Clock selector must retain the selected time", LocalTime.of(12, 45), editor.plannedTime)
+            assertEquals("The entry page must keep the picked day", day, editor.plannedDate)
+            assertEquals("The time dialog must keep the picked time", LocalTime.of(12, 45), editor.plannedTime)
             assertEquals(ReminderKind.ON_TIME, editor.reminderKind)
         }
-        compose.onNodeWithText("保存").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithTag(EditorSaveTag).performSemanticsAction(SemanticsActions.OnClick)
         // Room resumes the view model on Android's main looper. waitUntil only
         // advances Compose frames when its condition does not query UI nodes;
         // drain the main queue as well so the actual save callback can run.
